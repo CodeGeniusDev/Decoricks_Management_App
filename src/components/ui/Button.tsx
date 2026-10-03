@@ -19,12 +19,12 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
       const handleMouseEnter = (e: MouseEvent) => {
         animations.buttonHover(button)
-        onMouseEnter?.(e)
+        onMouseEnter?.(e as unknown as React.MouseEvent<HTMLButtonElement>)
       }
 
       const handleMouseLeave = (e: MouseEvent) => {
         animations.buttonHoverOut(button)
-        onMouseLeave?.(e)
+        onMouseLeave?.(e as unknown as React.MouseEvent<HTMLButtonElement>)
       }
 
       button.addEventListener('mouseenter', handleMouseEnter)
