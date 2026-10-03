@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Exec(mkdir)",
+      "Exec(npx)",
+      "Exec(npm init)",
+      "Exec(npm test)",
+      "Exec(rm)"
+    ]
+  }
+}
