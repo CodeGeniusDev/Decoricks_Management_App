@@ -22,7 +22,7 @@ export const Table = ({ columns, data, pagination, className = '' }: TableProps)
     if (!table) return
 
     // Animate table rows on mount
-    const rows = table.querySelectorAll('tbody tr')
+    const rows = Array.from(table.querySelectorAll('tbody tr'))
     animations.staggerFadeIn(rows, 0.2, 0.05)
 
     // Add hover animations to rows
