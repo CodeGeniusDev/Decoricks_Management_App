@@ -1,33 +1,73 @@
+import path from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
+
+const PORT = Number(process.env.E2E_PORT ?? 3111)
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${PORT}`
+const founderState = path.join(__dirname, 'src/e2e/.auth/founder.json')
+
+/**
+ * E2E config.
+ *
+ * Runs against a production build by default: the layout bugs this suite guards
+ * (double route animation, sidebar/content offset mismatch, missing drawer
+ * handlers) only reproduce in the shipped bundle, because `next dev` recompiles
+ * and masks some of them. Start the server yourself and point at it with
+ * PLAYWRIGHT_BASE_URL, or let the webServer block boot it.
+ *
+ * The port is deliberately not 3000 — a stale dev server on 3000 silently serves
+ * an old build, which makes every layout assertion pass or fail for the wrong
+ * reason.
+ */
+const manageServer = process.env.PLAYWRIGHT_BASE_URL === undefined
 
 export default defineConfig({
   testDir: './src/e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: 'html',
+  // Three projects run at once; an unbounded worker count makes the heavier
+  // navigation loops contend for CPU and flake on timing assertions.
+  workers: process.env.CI ? 1 : 4,
+  reporter: process.env.CI ? 'line' : 'html',
+  timeout: 30_000,
+  // Login is a bcrypt round-trip plus a DB hop; under load it can exceed the
+  // 5s default.
+  expect: { timeout: 10_000 },
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL,
     trace: 'on-first-retry',
   },
   projects: [
+    // Runs first and saves an authenticated session for the projects below.
+    {
+      name: 'setup',
+      testMatch: /auth\.setup\.ts/,
+    },
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      testMatch: /.*\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], storageState: founderState },
+      dependencies: ['setup'],
     },
     {
       name: 'Mobile Chrome',
-      use: { ...devices['Pixel 5'] },
+      testMatch: /.*\.spec\.ts/,
+      use: { ...devices['Pixel 5'], storageState: founderState },
+      dependencies: ['setup'],
     },
     {
       name: 'Tablet',
-      use: { ...devices['iPad Pro'] },
+      testMatch: /.*\.spec\.ts/,
+      use: { ...devices['iPad Pro'], storageState: founderState },
+      dependencies: ['setup'],
     },
   ],
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: manageServer
+    ? {
+        command: `npx next build && npx next start -p ${PORT}`,
+        url: baseURL,
+        reuseExistingServer: !process.env.CI,
+        timeout: 300_000,
+      }
+    : undefined,
 })

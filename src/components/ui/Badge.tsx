@@ -1,7 +1,6 @@
 'use client'
 
-import React, { useRef, useEffect } from 'react'
-import { animations, cleanupAnimations } from '@/lib/animations'
+import React from 'react'
 
 interface BadgeProps {
   children: React.ReactNode
@@ -10,44 +9,35 @@ interface BadgeProps {
   className?: string
 }
 
-export const Badge = ({ children, variant = 'default', size = 'md', className = '' }: BadgeProps) => {
-  const badgeRef = useRef<HTMLSpanElement>(null)
-
-  useEffect(() => {
-    const badge = badgeRef.current
-    if (!badge) return
-
-    // Badge enter + hover
-    animations.badgeEnter(badge, 0.05)
-
-    const handleMouseEnter = () => animations.badgeHover(badge)
-    const handleMouseLeave = () => animations.badgeHoverOut(badge)
-
-    badge.addEventListener('mouseenter', handleMouseEnter)
-    badge.addEventListener('mouseleave', handleMouseLeave)
-
-    return () => {
-      badge.removeEventListener('mouseenter', handleMouseEnter)
-      badge.removeEventListener('mouseleave', handleMouseLeave)
-      cleanupAnimations(badge)
-    }
-  }, [])
-
+/**
+ * Badge — static status label. Pill shaped (as in the reference design) and
+ * completely inert: no hover scale, no enter animation.
+ */
+export const Badge = ({
+  children,
+  variant = 'default',
+  size = 'md',
+  className = '',
+}: BadgeProps) => {
+  /*
+   * Muted status pairs rather than saturated fills. A solid green/yellow/red chip
+   * reads as an alarm every time it appears, so routine states such as "paid" or
+   * "in stock" competed for attention with the things that genuinely need it.
+   */
   const variantStyles = {
-    default: 'bg-decoricks-dark text-decoricks-light',
-    success: 'bg-green-500 text-white',
-    warning: 'bg-yellow-500 text-white',
-    error: 'bg-red-500 text-white',
+    default: 'bg-surface-sunken text-ink-secondary',
+    success: 'bg-status-success-bg text-status-success',
+    warning: 'bg-status-warning-bg text-status-warning',
+    error: 'bg-status-danger-bg text-status-danger',
   }
 
   const sizeStyles = {
-    sm: 'px-2 py-0.5 text-xs',
-    md: 'px-3 py-1 text-sm',
+    sm: 'px-2 py-0.5 text-2xs',
+    md: 'px-2.5 py-1 text-xs',
   }
 
   return (
     <span
-      ref={badgeRef}
       className={`inline-flex items-center rounded-full font-medium ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
     >
       {children}

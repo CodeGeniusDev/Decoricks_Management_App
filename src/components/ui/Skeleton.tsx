@@ -1,7 +1,6 @@
 'use client'
 
-import React, { useRef, useEffect } from 'react'
-import { animations, cleanupAnimations } from '@/lib/animations'
+import React from 'react'
 
 interface SkeletonProps {
   className?: string
@@ -10,24 +9,18 @@ interface SkeletonProps {
   height?: string
 }
 
+/**
+ * Skeleton — loading placeholder.
+ *
+ * The pulse is a CSS animation instead of `animations.skeletonPulse`, which
+ * created a GSAP tween per placeholder element. A list of 40 rows was therefore
+ * running 40 JS tweens on the main thread just to shimmer, which competes with
+ * the data arriving. CSS runs the same animation off the main thread for free.
+ */
 export const Skeleton = ({ className = '', variant = 'rect', width, height }: SkeletonProps) => {
-  const skeletonRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const skeleton = skeletonRef.current
-    if (!skeleton) return
-
-    // Apply pulse animation
-    animations.skeletonPulse(skeleton)
-
-    return () => {
-      cleanupAnimations(skeleton)
-    }
-  }, [])
-
   const variantStyles = {
-    text: 'h-4 rounded',
-    rect: 'rounded-lg',
+    text: 'h-4 rounded-sm',
+    rect: 'rounded-md',
     circle: 'rounded-full',
   }
 
@@ -38,10 +31,9 @@ export const Skeleton = ({ className = '', variant = 'rect', width, height }: Sk
 
   return (
     <div
-      ref={skeletonRef}
-      className={`bg-decoricks-dark/20 ${variantStyles[variant]} ${className}`}
-      style={style}
       aria-hidden="true"
+      className={`animate-pulse bg-surface-sunken ${variantStyles[variant]} ${className}`}
+      style={style}
     />
   )
 }

@@ -1,10 +1,44 @@
 import { z } from 'zod'
 
+/**
+ * Runtime environment contract.
+ *
+ * SPEC.md §8.2 lists `NEXTAUTH_SECRET` / `NEXTAUTH_URL`, but NextAuth is not
+ * installed and this app hand-rolls its session layer. Requiring those two
+ * variables would have been misleading, so they are replaced by
+ * `SESSION_SECRET` (spec §8.2 keeps the same "generate a 32-byte random
+ * secret" intent) plus the session/lockout knobs from spec §10.1.1.
+ */
 const envSchema = z.object({
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
-  NEXTAUTH_SECRET: z.string().min(1, 'NEXTAUTH_SECRET is required'),
-  NEXTAUTH_URL: z.string().url('NEXTAUTH_URL must be a valid URL'),
+  SESSION_SECRET: z.string().min(16, 'SESSION_SECRET must be at least 16 characters'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+
+  // Session lifetime. SPEC §10.1.1 Threat 2 / §10.2.1 Test 3 specified 30
+  // minutes; the product requirement is now a 7-day *inactivity* timeout, so the
+  // window restarts on each qualifying authenticated request.
+  SESSION_TTL_MINUTES: z.coerce.number().int().positive().default(7 * 24 * 60),
+
+  // Minimum gap between session "slides" so a burst of requests does not turn
+  // into a burst of writes. Background / auto-polling requests never slide.
+  SESSION_SLIDE_INTERVAL_SECONDS: z.coerce.number().int().nonnegative().default(60),
+
+  // Account lockout. SPEC §10.2.1 Test 2 is authoritative: 5 failed attempts
+  // inside 15 minutes locks the account for 15 minutes.
+  LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  LOGIN_WINDOW_MINUTES: z.coerce.number().int().positive().default(15),
+  LOCKOUT_MINUTES: z.coerce.number().int().positive().default(15),
+
+  // SPEC §10.1.1 Threat 1: min 12 characters, complexity required.
+  PASSWORD_MIN_LENGTH: z.coerce.number().int().positive().default(12),
+  BCRYPT_COST: z.coerce.number().int().min(10).max(15).default(12),
+
+  /**
+   * Database name used ONLY by the automated test suite. Tests connect to a
+   * separate database (`decoricks_test`) so production data is never touched.
+   * Unset in every deployed environment.
+   */
+  MONGODB_TEST_DB: z.string().min(1).optional(),
 })
 
 // Validate environment variables at runtime (not build time)
@@ -16,9 +50,16 @@ export const getEnv = () => {
   try {
     _env = envSchema.parse({
       MONGODB_URI: process.env.MONGODB_URI,
-      NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
-      NEXTAUTH_URL: process.env.NEXTAUTH_URL,
+      SESSION_SECRET: process.env.SESSION_SECRET,
       NODE_ENV: process.env.NODE_ENV || 'development',
+      SESSION_TTL_MINUTES: process.env.SESSION_TTL_MINUTES,
+      SESSION_SLIDE_INTERVAL_SECONDS: process.env.SESSION_SLIDE_INTERVAL_SECONDS,
+      LOGIN_MAX_ATTEMPTS: process.env.LOGIN_MAX_ATTEMPTS,
+      LOGIN_WINDOW_MINUTES: process.env.LOGIN_WINDOW_MINUTES,
+      LOCKOUT_MINUTES: process.env.LOCKOUT_MINUTES,
+      PASSWORD_MIN_LENGTH: process.env.PASSWORD_MIN_LENGTH,
+      BCRYPT_COST: process.env.BCRYPT_COST,
+      MONGODB_TEST_DB: process.env.MONGODB_TEST_DB,
     })
     return _env
   } catch (error) {
@@ -30,6 +71,11 @@ export const getEnv = () => {
     }
     throw error
   }
+}
+
+/** Test-only reset so suites can vary configuration between cases. */
+export const __resetEnvForTests = () => {
+  _env = null
 }
 
 // For backward compatibility

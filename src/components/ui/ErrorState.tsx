@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useRef, useEffect } from 'react'
-import { animations, cleanupAnimations } from '@/lib/animations'
+import React from 'react'
+import { IconAlert } from './icons'
+import { Button } from './Button'
 
 interface ErrorStateProps {
   title: string
@@ -12,37 +13,29 @@ interface ErrorStateProps {
   }
 }
 
-export const ErrorState = ({ title, description, action }: ErrorStateProps) => {
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-
-    animations.fadeInUp(container, 0.5, 0.1)
-
-    return () => {
-      cleanupAnimations(container)
-    }
-  }, [])
-
-  return (
-    <div ref={containerRef} className="flex flex-col items-center justify-center py-12 px-4 text-center">
-      <div className="mb-4">
-        <svg className="w-16 h-16 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-        </svg>
-      </div>
-      <h3 className="text-lg font-semibold text-decoricks-dark mb-2">{title}</h3>
-      {description && <p className="text-decoricks-dark/60 mb-6 max-w-sm">{description}</p>}
-      {action && (
-        <button
-          onClick={action.onClick}
-          className="px-4 py-2 bg-decoricks-brown text-decoricks-light rounded-lg hover:bg-decoricks-brown-dark transition-colors min-h-[44px]"
-        >
+/**
+ * ErrorState — compact, left-aligned failure placeholder.
+ *
+ * Uses the muted `danger` token rather than a full-saturation red so an inline
+ * error does not shout louder than the data it sits above. Retry is the default
+ * action label because almost every caller here is a failed fetch.
+ */
+export const ErrorState = ({ title, description, action }: ErrorStateProps) => (
+  <div
+    className="flex flex-col items-center gap-2 px-4 py-10 text-center sm:py-12"
+    role="alert"
+  >
+    <span className="mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-status-danger-bg text-status-danger">
+      <IconAlert size={20} />
+    </span>
+    <h3 className="text-sm font-semibold text-decoricks-dark">{title}</h3>
+    {description && <p className="max-w-xs text-sm text-ink-muted">{description}</p>}
+    {action && (
+      <div className="mt-2">
+        <Button variant="outline" size="sm" onClick={action.onClick}>
           {action.label}
-        </button>
-      )}
-    </div>
-  )
-}
+        </Button>
+      </div>
+    )}
+  </div>
+)

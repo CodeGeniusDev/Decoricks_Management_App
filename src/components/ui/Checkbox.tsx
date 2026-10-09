@@ -1,7 +1,6 @@
 'use client'
 
-import React, { useRef, useEffect } from 'react'
-import { animations, cleanupAnimations } from '@/lib/animations'
+import React, { useId } from 'react'
 
 interface CheckboxProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> {
   label?: string
@@ -9,39 +8,19 @@ interface CheckboxProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>
 
 export const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
   ({ label, className = '', id, ...props }, ref) => {
-    const checkboxId = id || `checkbox-${Math.random().toString(36).substr(2, 9)}`
-    const wrapperRef = useRef<HTMLDivElement>(null)
-
-    useEffect(() => {
-      const wrapper = wrapperRef.current
-      if (!wrapper) return
-
-      const handleFocusIn = () => {
-        animations.inputFocus(wrapper)
-      }
-      const handleFocusOut = () => {
-        animations.inputFocusOut(wrapper)
-      }
-
-      wrapper.addEventListener('focusin', handleFocusIn)
-      wrapper.addEventListener('focusout', handleFocusOut)
-
-      return () => {
-        wrapper.removeEventListener('focusin', handleFocusIn)
-        wrapper.removeEventListener('focusout', handleFocusOut)
-        cleanupAnimations(wrapper)
-      }
-    }, [])
+    const generatedId = useId()
+    const checkboxId = id || generatedId
 
     return (
-      <div ref={wrapperRef} className="flex items-center gap-2">
+      <div className="flex items-center gap-2">
         <input
           ref={ref}
           id={checkboxId}
           type="checkbox"
           className={`
             w-5 h-5 rounded border-2 border-decoricks-dark/30 bg-decoricks-light
-            text-decoricks-brown focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown
+            text-decoricks-brown transition-colors
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown
             focus-visible:ring-offset-2
             disabled:opacity-50 disabled:pointer-events-none
             cursor-pointer

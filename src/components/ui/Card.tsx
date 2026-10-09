@@ -1,49 +1,38 @@
 'use client'
 
-import React, { useRef, useEffect } from 'react'
-import { animations, cleanupAnimations } from '@/lib/animations'
+import React from 'react'
 
 interface CardProps {
   children: React.ReactNode
   className?: string
   variant?: 'default' | 'dark'
+  /**
+   * Kept for API compatibility. Cards no longer animate themselves: a static
+   * information card must stay visually identical while the pointer moves over
+   * it, and GSAP transforms left inline on a remount caused visible jitter.
+   */
   animate?: boolean
 }
 
-export const Card = ({ children, className = '', variant = 'default', animate = true }: CardProps) => {
-  const cardRef = useRef<HTMLDivElement>(null)
+/**
+ * Card — static surface for grouped content.
+ *
+ * Intentionally has no hover styles of any kind (no lift, scale, shadow or
+ * colour change) and no enter animation. Interactive cards should be built from
+ * a button/link so keyboard and focus behaviour stays correct.
+ */
+export const Card = ({ children, className = '', variant = 'default' }: CardProps) => {
+  const baseStyles = 'rounded-lg border'
 
-  useEffect(() => {
-    if (!animate) return
-
-    const card = cardRef.current
-    if (!card) return
-
-    // Initial fade in animation
-    animations.scaleIn(card, 0.4, 0)
-
-    const handleMouseEnter = () => animations.cardHover(card)
-    const handleMouseLeave = () => animations.cardHoverOut(card)
-
-    card.addEventListener('mouseenter', handleMouseEnter)
-    card.addEventListener('mouseleave', handleMouseLeave)
-
-    return () => {
-      card.removeEventListener('mouseenter', handleMouseEnter)
-      card.removeEventListener('mouseleave', handleMouseLeave)
-      cleanupAnimations(card)
-    }
-  }, [animate])
-
-  const baseStyles = 'rounded-xl shadow-glass border'
   const variantStyles = {
-    default: 'glass bg-decoricks-light/70 border-decoricks-black/10',
-    dark: 'glass-dark bg-decoricks-dark/80 border-decoricks-light/10 text-decoricks-light',
+    // Opaque, hairline-bordered. A translucent surface over a busy page is
+    // what made every panel look like frosted glass; cards now read as
+    // surfaces, and elevation is expressed with the border alone.
+    default: 'bg-surface-raised border-line-subtle text-ink',
+    dark: 'bg-decoricks-dark border-decoricks-dark text-decoricks-light',
   }
 
   return (
-    <div ref={cardRef} className={`${baseStyles} ${variantStyles[variant]} ${className}`}>
-      {children}
-    </div>
+    <div className={`${baseStyles} ${variantStyles[variant]} ${className}`}>{children}</div>
   )
 }

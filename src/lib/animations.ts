@@ -12,7 +12,7 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, y: 20 },
-      { opacity: 1, y: 0, duration, delay, ease: 'power2.out' }
+      { opacity: 1, y: 0, duration, delay, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
     )
   },
 
@@ -21,7 +21,7 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, y: -20 },
-      { opacity: 1, y: 0, duration, delay, ease: 'power2.out' }
+      { opacity: 1, y: 0, duration, delay, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
     )
   },
 
@@ -30,7 +30,7 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, x: -20 },
-      { opacity: 1, x: 0, duration, delay, ease: 'power2.out' }
+      { opacity: 1, x: 0, duration, delay, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
     )
   },
 
@@ -39,7 +39,7 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, x: 20 },
-      { opacity: 1, x: 0, duration, delay, ease: 'power2.out' }
+      { opacity: 1, x: 0, duration, delay, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
     )
   },
 
@@ -52,50 +52,13 @@ export const animations = {
     )
   },
 
-  // Scale in with fade
-  scaleIn: (element: Element | Element[], duration = 0.4, delay = 0) => {
-    return gsap.fromTo(
-      element,
-      { opacity: 0, scale: 0.9 },
-      { opacity: 1, scale: 1, duration, delay, ease: 'back.out(1.7)' }
-    )
-  },
-
   // Staggered fade in for lists
   staggerFadeIn: (elements: Element | Element[], duration = 0.3, stagger = 0.1) => {
     return gsap.fromTo(
       elements,
       { opacity: 0, y: 10 },
-      { opacity: 1, y: 0, duration, stagger, ease: 'power2.out' }
+      { opacity: 1, y: 0, duration, stagger, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
     )
-  },
-
-  // Button hover animation
-  buttonHover: (element: Element) => {
-    return gsap.to(element, { scale: 1.05, duration: 0.2, ease: 'power2.out' })
-  },
-
-  buttonHoverOut: (element: Element) => {
-    return gsap.to(element, { scale: 1, duration: 0.2, ease: 'power2.out' })
-  },
-
-  // Card hover animation
-  cardHover: (element: Element) => {
-    return gsap.to(element, {
-      y: -4,
-      boxShadow: '0 20px 25px -5px rgba(10, 9, 8, 0.15), 0 10px 10px -5px rgba(10, 9, 8, 0.08)',
-      duration: 0.3,
-      ease: 'power2.out',
-    })
-  },
-
-  cardHoverOut: (element: Element) => {
-    return gsap.to(element, {
-      y: 0,
-      boxShadow: '0 4px 6px -1px rgba(10, 9, 8, 0.1), 0 2px 4px -1px rgba(10, 9, 8, 0.06)',
-      duration: 0.3,
-      ease: 'power2.out',
-    })
   },
 
   // Modal enter animation
@@ -166,7 +129,7 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, y: 20 },
-      { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' }
+      { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
     )
   },
 
@@ -203,7 +166,7 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, scale: 0.8 },
-      { opacity: 1, scale: 1, duration: 0.2, ease: 'back.out(1.7)' }
+      { opacity: 1, scale: 1, duration: 0.2, ease: 'back.out(1.7)', clearProps: 'transform', overwrite: 'auto' }
     )
   },
 
@@ -213,66 +176,6 @@ export const animations = {
       scale: 0.8,
       duration: 0.15,
       ease: 'power2.in',
-    })
-  },
-
-  // Table row hover
-  tableRowHover: (element: Element) => {
-    return gsap.to(element, {
-      backgroundColor: 'rgba(43, 43, 43, 0.05)',
-      duration: 0.2,
-      ease: 'power2.out',
-    })
-  },
-
-  tableRowHoverOut: (element: Element) => {
-    return gsap.to(element, {
-      backgroundColor: 'transparent',
-      duration: 0.2,
-      ease: 'power2.out',
-    })
-  },
-
-  // Badge enter animation
-  badgeEnter: (element: Element, delay = 0) => {
-    return gsap.fromTo(
-      element,
-      { opacity: 0, scale: 0.8 },
-      { opacity: 1, scale: 1, duration: 0.3, delay, ease: 'back.out(1.7)' }
-    )
-  },
-
-  // Badge hover animation
-  badgeHover: (element: Element) => {
-    return gsap.to(element, {
-      scale: 1.1,
-      duration: 0.2,
-      ease: 'power2.out',
-    })
-  },
-
-  badgeHoverOut: (element: Element) => {
-    return gsap.to(element, {
-      scale: 1,
-      duration: 0.2,
-      ease: 'power2.out',
-    })
-  },
-
-  // Input focus animation
-  inputFocus: (element: Element) => {
-    return gsap.to(element, {
-      scale: 1.02,
-      duration: 0.2,
-      ease: 'power2.out',
-    })
-  },
-
-  inputFocusOut: (element: Element) => {
-    return gsap.to(element, {
-      scale: 1,
-      duration: 0.2,
-      ease: 'power2.out',
     })
   },
 
@@ -298,7 +201,7 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, scale: 0.5, y: 20 },
-      { opacity: 1, scale: 1, y: 0, duration: 0.5, delay, ease: 'back.out(1.7)' }
+      { opacity: 1, scale: 1, y: 0, duration: 0.5, delay, ease: 'back.out(1.7)', clearProps: 'transform', overwrite: 'auto' }
     )
   },
 
@@ -307,7 +210,7 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, y: -20 },
-      { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out' }
+      { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
     )
   },
 
@@ -316,7 +219,7 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, x: -20 },
-      { opacity: 1, x: 0, duration: 0.3, delay, ease: 'power2.out' }
+      { opacity: 1, x: 0, duration: 0.3, delay, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
     )
   },
 
@@ -325,12 +228,23 @@ export const animations = {
     return gsap.fromTo(
       elements,
       { opacity: 0, y: 15 },
-      { opacity: 1, y: 0, duration, stagger, ease: 'power2.out' }
+      { opacity: 1, y: 0, duration, stagger, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
     )
   },
 }
 
-// Cleanup all animations on an element
+/**
+ * Stops any in-flight animation on an element and removes the inline styles
+ * GSAP applied.
+ *
+ * Clearing the props matters: `killTweensOf` alone freezes the element at its
+ * current interpolated value, so a tween killed between `opacity: 0` and
+ * `opacity: 1` leaves the element permanently invisible. That produced blank
+ * pages on client-side navigation — the outgoing page container stayed mounted
+ * at opacity 0 — while a direct load still looked fine because the prerendered
+ * HTML was painted before hydration.
+ */
 export const cleanupAnimations = (element: Element) => {
   gsap.killTweensOf(element)
+  gsap.set(element, { clearProps: 'all' })
 }

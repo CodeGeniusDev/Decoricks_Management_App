@@ -5,7 +5,13 @@
       "Exec(npx)",
       "Exec(npm init)",
       "Exec(npm test)",
-      "Exec(rm)"
+      "Exec(rm)",
+      "Exec(curl)",
+      "Exec(node)",
+      "Exec(awk)",
+      "Exec(cat)",
+      "Exec(grep)",
+      "Exec(lsof)"
     ]
   }
 }

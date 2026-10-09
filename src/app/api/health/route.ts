@@ -14,7 +14,7 @@ export async function GET() {
         {
           status: 'ok',
           database: result.status,
-          message: result.message,
+          message: result.status === "healthy" ? "Database connected" : "Database unavailable",
           timestamp: new Date().toISOString(),
         },
         { status: 200 }
@@ -24,7 +24,7 @@ export async function GET() {
         {
           status: 'error',
           database: result.status,
-          message: result.message,
+          message: result.status === "healthy" ? "Database connected" : "Database unavailable",
           timestamp: new Date().toISOString(),
         },
         { status: 503 }
@@ -35,7 +35,7 @@ export async function GET() {
       {
         status: 'error',
         database: 'unreachable',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: "Service unavailable",
         timestamp: new Date().toISOString(),
       },
       { status: 503 }

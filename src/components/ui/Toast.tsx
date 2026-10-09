@@ -1,75 +1,59 @@
 'use client'
 
-import React, { useEffect, useRef } from 'react'
-import { animations, cleanupAnimations } from '@/lib/animations'
+import React, { useEffect } from 'react'
+import { IconAlert, IconCheck, IconClose } from './icons'
 
 interface ToastProps {
   message: string
   type?: 'success' | 'error' | 'warning' | 'info'
   onClose?: () => void
+  /** Auto-dismiss delay in ms. Pass 0 for a toast that requires acknowledgement. */
+  duration?: number
 }
 
-export const Toast = ({ message, type = 'info', onClose }: ToastProps) => {
-  const toastRef = useRef<HTMLDivElement>(null)
-
+/**
+ * Toast — transient feedback.
+ *
+ * Entry is a CSS animation rather than a GSAP timeline: a JS timeline can be
+ * interrupted mid-flight and leave a toast half-faded or stranded off-screen,
+ * and it runs layout work on the main thread for something that only ever
+ * translates a few pixels.
+ *
+ * The close button is the first focusable element and the toast announces itself
+ * as a status, so a screen reader hears the result of the action that triggered it.
+ */
+export const Toast = ({ message, type = 'info', onClose, duration = 5000 }: ToastProps) => {
   useEffect(() => {
-    const toast = toastRef.current
-    if (!toast) return
-
-    // Apply enter animation
-    animations.toastEnter(toast)
-
-    return () => {
-      cleanupAnimations(toast)
-    }
-  }, [])
+    if (!onClose || duration <= 0) return
+    const timer = window.setTimeout(onClose, duration)
+    return () => window.clearTimeout(timer)
+  }, [onClose, duration])
 
   const typeStyles = {
-    success: 'bg-green-500 text-white',
-    error: 'bg-red-500 text-white',
-    warning: 'bg-yellow-500 text-white',
-    info: 'bg-decoricks-brown text-white',
+    success: 'border-status-success/30 bg-status-success-bg text-status-success',
+    error: 'border-status-danger/30 bg-status-danger-bg text-status-danger',
+    warning: 'border-status-warning/30 bg-status-warning-bg text-status-warning',
+    info: 'border-status-info/30 bg-status-info-bg text-status-info',
   }
 
-  const icons = {
-    success: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-      </svg>
-    ),
-    error: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-      </svg>
-    ),
-    warning: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-      </svg>
-    ),
-    info: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 0 0118 0z" />
-      </svg>
-    ),
-  }
+  const Glyph = type === 'success' ? IconCheck : IconAlert
 
   return (
     <div
-      ref={toastRef}
-      className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-glass ${typeStyles[type]}`}
+      role="status"
+      aria-live="polite"
+      className={`toast-enter flex items-start gap-2.5 rounded-lg border px-3 py-2.5 shadow-md ${typeStyles[type]}`}
     >
-      {icons[type]}
+      <Glyph size={16} className="mt-0.5 shrink-0" />
       <span className="flex-1 text-sm font-medium">{message}</span>
       {onClose && (
         <button
+          type="button"
           onClick={onClose}
-          className="p-1 rounded hover:bg-white/20 min-h-[28px] min-w-[28px]"
-          aria-label="Close"
+          className="-mr-1 -mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded transition-colors hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-current"
+          aria-label="Dismiss notification"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <IconClose size={14} />
         </button>
       )}
     </div>

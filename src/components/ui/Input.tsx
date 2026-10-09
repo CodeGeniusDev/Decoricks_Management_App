@@ -1,7 +1,6 @@
 'use client'
 
-import React, { useRef, useEffect } from 'react'
-import { animations, cleanupAnimations } from '@/lib/animations'
+import React, { useId } from 'react'
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string
@@ -10,34 +9,13 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ label, error, className = '', id, ...props }, ref) => {
-    const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`
-    const wrapperRef = useRef<HTMLDivElement>(null)
-
-    useEffect(() => {
-      const wrapper = wrapperRef.current
-      if (!wrapper) return
-
-      const handleFocusIn = () => {
-        animations.inputFocus(wrapper)
-      }
-      const handleFocusOut = () => {
-        animations.inputFocusOut(wrapper)
-      }
-
-      wrapper.addEventListener('focusin', handleFocusIn)
-      wrapper.addEventListener('focusout', handleFocusOut)
-
-      return () => {
-        wrapper.removeEventListener('focusin', handleFocusIn)
-        wrapper.removeEventListener('focusout', handleFocusOut)
-        cleanupAnimations(wrapper)
-      }
-    }, [])
+    const generatedId = useId()
+    const inputId = id || generatedId
 
     return (
-      <div ref={wrapperRef} className="flex flex-col gap-1">
+      <div className="flex w-full flex-col gap-1.5">
         {label && (
-          <label htmlFor={inputId} className="text-sm font-medium text-decoricks-dark">
+          <label htmlFor={inputId} className="text-xs font-medium text-ink-secondary">
             {label}
           </label>
         )}
@@ -45,17 +23,21 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           id={inputId}
           className={`
-            px-4 py-2 rounded-lg border-2 bg-decoricks-light text-decoricks-black
-            placeholder:text-decoricks-dark/50
-            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown focus-visible:border-transparent
-            disabled:opacity-50 disabled:pointer-events-none
-            min-h-[44px]
-            ${error ? 'border-red-500 focus-visible:ring-red-500' : 'border-decoricks-dark/30'}
+            h-10 w-full rounded-md border bg-surface-raised px-3 text-sm text-ink-secondary
+            transition-colors placeholder:text-ink-muted
+            focus-visible:border-decoricks-brown focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown
+            disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-ink-muted
+            ${error ? 'border-status-danger' : 'border-line'}
             ${className}
           `}
+          aria-invalid={error ? true : undefined}
           {...props}
         />
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        {error && (
+          <p className="text-xs text-status-danger" role="alert">
+            {error}
+          </p>
+        )}
       </div>
     )
   }
