@@ -25,6 +25,27 @@ export interface RequestMeta {
   userAgent: string | undefined
 }
 
+/**
+ * A domain error carrying the HTTP status/code it should surface as.
+ *
+ * Routes that do not throw an `AuthenticationError`/`AuthorizationError`/
+ * `ZodError` still need an exact status (for example a 409 when a withdrawal is
+ * locked, or a 404 for an unknown account). `handleRouteError` maps this class
+ * before falling through to a generic 500, so the response body matches the
+ * app's standard error envelope instead of leaking an internal message.
+ */
+export class HttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number = 400,
+    readonly code: string = 'BAD_REQUEST',
+    readonly details?: unknown
+  ) {
+    super(message)
+    this.name = 'HttpError'
+  }
+}
+
 /** Client IP + user agent for audit entries (SPEC §3.1.19). */
 export const getRequestMeta = async (): Promise<RequestMeta> => {
   const h = await headers()
@@ -84,6 +105,9 @@ export const handleRouteError = (error: unknown): NextResponse => {
         message: issue.message,
       })),
     })
+  }
+  if (error instanceof HttpError) {
+    return errorResponse(error.message, error.status, error.code, error.details)
   }
 
   const traceId = randomUUID()

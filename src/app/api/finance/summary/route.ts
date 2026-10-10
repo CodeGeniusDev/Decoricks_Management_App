@@ -1,100 +1,67 @@
-import { withAuth } from '@/lib/http'
+import { handleRouteError, withAuth } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
-import { getIncomeCollection, getExpenseCollection, getTransferCollection } from '@/lib/models/Finance'
-import { getStartOfMonth, getEndOfMonth } from '@/lib/date'
-import { formatPaisa, pkrToPaisa } from '@/lib/money'
+import { formatPaisa } from '@/lib/money'
+import { isWithin, karachiMonthRange, summarize } from '@/lib/finance'
+import {
+  buildSerializeContext,
+  loadAccounts,
+  loadCategories,
+  normalizeEntry,
+  serializeEntry,
+} from '@/lib/finance-ledger'
+import { getLedgerCollection } from '@/lib/models/Ledger'
 
-async function __GET(request: NextRequest) {
+/**
+ * GET /api/finance/summary
+ *
+ * Month-to-date figures for the dashboard, now backed by the unified ledger.
+ * Kept (rather than deleted with the Phase 1 collections) so existing callers
+ * keep working; the figures are derived from `transactions`, not the retired
+ * `income`/`expenses` collections.
+ */
+async function __GET() {
   try {
     await authorize('finance', 'view')
 
     const db = await getDatabase()
-    const now = getStartOfMonth()
-    const monthStart = getStartOfMonth()
-    const monthEnd = getEndOfMonth()
+    const month = karachiMonthRange(new Date())
+    const collection = getLedgerCollection(db)
 
-    const incomeCol = getIncomeCollection(db)
-    const expenseCol = getExpenseCollection(db)
-    const transferCol = getTransferCollection(db)
+    const [monthEntries, recentIncome, recentExpenses, accounts, categories] = await Promise.all([
+      collection.find({ date: { $gte: month.start, $lte: month.end } }).toArray(),
+      collection.find({ type: 'income' }).sort({ date: -1, createdAt: -1 }).limit(5).toArray(),
+      collection.find({ type: 'expense' }).sort({ date: -1, createdAt: -1 }).limit(5).toArray(),
+      loadAccounts(db),
+      loadCategories(db),
+    ])
 
-    // MTD Income
-    const incomeAgg = await incomeCol
-      .aggregate([
-        { $match: { date: { $gte: monthStart, $lte: monthEnd } } },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
-      ])
-      .toArray()
-    const mtdIncome = incomeAgg[0]?.total || 0
+    const ctx = buildSerializeContext(accounts, categories)
+    const summary = summarize(monthEntries.map(normalizeEntry))
+    const mtdTransfers = monthEntries
+      .filter((entry) => entry.type === 'transfer')
+      .reduce((sum, entry) => sum + (entry.isReversal ? -entry.amount : entry.amount), 0)
 
-    // MTD Expenses
-    const expenseAgg = await expenseCol
-      .aggregate([
-        { $match: { date: { $gte: monthStart, $lte: monthEnd } } },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
-      ])
-      .toArray()
-    const mtdExpenses = expenseAgg[0]?.total || 0
-
-    // MTD Transfers
-    const transferAgg = await transferCol
-      .aggregate([
-        { $match: { date: { $gte: monthStart, $lte: monthEnd } } },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
-      ])
-      .toArray()
-    const mtdTransfers = transferAgg[0]?.total || 0
-
-    const netCashFlow = mtdIncome - mtdExpenses
-
-    // Recent entries (last 10)
-    const recentIncome = await incomeCol.find({}).sort({ date: -1 }).limit(5).toArray()
-    const recentExpenses = await expenseCol.find({}).sort({ date: -1 }).limit(5).toArray()
+    const netCashFlow = summary.netCashFlow
 
     return NextResponse.json({
       success: true,
       data: {
-        mtdIncome,
-        mtdIncomeDisplay: formatPaisa(mtdIncome),
-        mtdExpenses,
-        mtdExpensesDisplay: formatPaisa(mtdExpenses),
+        mtdIncome: summary.revenue,
+        mtdIncomeDisplay: formatPaisa(summary.revenue),
+        mtdExpenses: summary.expense,
+        mtdExpensesDisplay: formatPaisa(summary.expense),
         mtdTransfers,
         netCashFlow,
         netCashFlowDisplay: formatPaisa(netCashFlow),
-        recentIncome: recentIncome.map((i) => ({
-          _id: i._id?.toString(),
-          incomeNumber: i.incomeNumber,
-          amount: i.amount,
-          amountDisplay: formatPaisa(i.amount),
-          category: i.category,
-          source: i.source,
-          description: i.description,
-          date: i.date,
-          createdAt: i.createdAt,
-        })),
-        recentExpenses: recentExpenses.map((e) => ({
-          _id: e._id?.toString(),
-          expenseNumber: e.expenseNumber,
-          amount: e.amount,
-          amountDisplay: formatPaisa(e.amount),
-          category: e.category,
-          description: e.description,
-          date: e.date,
-          createdAt: e.createdAt,
-        })),
+        recentIncome: recentIncome.map((entry) => serializeEntry(entry, ctx)),
+        recentExpenses: recentExpenses.map((entry) => serializeEntry(entry, ctx)),
         timestamp: new Date().toISOString(),
       },
     })
   } catch (error) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: { message: error instanceof Error ? error.message : 'Internal server error' },
-        timestamp: new Date().toISOString(),
-      },
-      { status: 500 }
-    )
+    return handleRouteError(error)
   }
 }
 
