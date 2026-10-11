@@ -73,8 +73,33 @@ export interface LedgerTransaction {
 }
 
 /**
- * Singleton business configuration. Only the fields Phase 3 needs are
- * modelled; the settings module keeps owning the rest of SPEC §3.1.18.
+ * One entry in the configured profit-share list. `userId` is present when the
+ * partner also has a user account; the distribution engine only ever needs the
+ * name and the percentages, so a partner can be configured before onboarding.
+ */
+export interface ProfitSharePartner {
+  userId?: string
+  name: string
+  /** Integer percent of net profit (SPEC §3.1.18 example: 20). */
+  percentage: number
+  /** Integer percent of that partner's share retained as reinvestment (§5.8). */
+  reinvestPercentage: number
+}
+
+/** Business-spending warnings fed to budget views (and later notifications). */
+export interface BudgetThresholds {
+  /** Percent-used level that raises a warning (SPEC-adjacent default 80). */
+  warning: number
+  /** Percent-used level that is critical (default 100). */
+  critical: number
+}
+
+/**
+ * Singleton business configuration. Phase 3 owned the withdrawal lock; Phase 4
+ * adds the profit-sharing policy and budget thresholds. All Phase 4 fields are
+ * optional on the document so pre-Phase-4 deployments stay valid — the
+ * business-policy resolver fills SPEC Appendix A defaults when unset, and the
+ * settings UI makes it obvious when defaults are still in play.
  */
 export interface BusinessSettings {
   _id?: ObjectId
@@ -82,6 +107,11 @@ export interface BusinessSettings {
   key: 'business'
   /** Withdrawals are refused before this instant (Karachi wall-clock). */
   withdrawalLockedUntil?: Date
+  profitSharing?: {
+    partners: ProfitSharePartner[]
+    charityPercentage: number
+  }
+  budgetThresholds?: BudgetThresholds
   createdAt: Date
   updatedAt: Date
   updatedBy?: ObjectId

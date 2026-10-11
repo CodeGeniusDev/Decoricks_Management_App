@@ -121,16 +121,37 @@ export const supplierSchema = z.object({
 
 /* --------------------------------- budgets --------------------------------- */
 
+export const BUDGET_PERIOD_KINDS = ['weekly', 'monthly', 'custom'] as const;
+
 export const budgetCategorySchema = z.object({
   category: z.string().trim().min(1, 'Category is required').max(100),
   budgeted: z.number().int().min(0, 'Budget cannot be negative'),
-})
+});
 
 export const budgetSchema = z.object({
   name: z.string().trim().min(1, 'Budget name is required').max(200),
   periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Start date must be YYYY-MM-DD'),
   periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'End date must be YYYY-MM-DD'),
+  /** Omitted on create means "derive from the dates"; validated against them when sent. */
+  periodKind: z.enum(BUDGET_PERIOD_KINDS).optional(),
   status: z.enum(['draft', 'active', 'archived']).default('draft'),
   categories: z.array(budgetCategorySchema).min(1, 'Add at least one budget category'),
   approvedBy: z.string().trim().max(120).optional(),
-})
+  /** Client-generated retry guard; unique when present. */
+  idempotencyKey: z.string().trim().min(8).max(120, 'Idempotency key is too long').optional(),
+});
+
+/** Partial edits keep history; `status` transitions go through the action endpoint. */
+export const budgetUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Budget name is required').max(200).optional(),
+    periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Start date must be YYYY-MM-DD').optional(),
+    periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'End date must be YYYY-MM-DD').optional(),
+    categories: z.array(budgetCategorySchema).min(1, 'Add at least one budget category').optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, { message: 'No changes sent' });
+
+export const budgetActionSchema = z.object({
+  action: z.enum(['approve', 'archive', 'reopen']),
+  reason: z.string().trim().max(500).optional(),
+});

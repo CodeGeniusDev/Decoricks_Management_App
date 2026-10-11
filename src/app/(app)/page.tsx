@@ -1,142 +1,156 @@
-'use client'
+'use client';
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { PageTransition } from '@/components/PageTransition'
-import { Card } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
-import { Table } from '@/components/ui/Table'
-import { Badge } from '@/components/ui/Badge'
-import { Skeleton } from '@/components/ui/Skeleton'
-import { EmptyState } from '@/components/ui/EmptyState'
-import { Toast } from '@/components/ui/Toast'
-import { formatPaisa } from '@/lib/money'
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { PageTransition } from '@/components/PageTransition';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Table } from '@/components/ui/Table';
+import { Badge } from '@/components/ui/Badge';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Toast } from '@/components/ui/Toast';
+import { formatPaisa } from '@/lib/money';
+import { formatKarachiDate } from '@/lib/date';
+
+/** Serialized ledger entry as returned by the Phase 3 finance API. */
+interface LedgerEntryView {
+  _id: string;
+  type: string;
+  amount: number;
+  amountDisplay: string;
+  date: string;
+  accountName?: string;
+  category?: string;
+  categoryLabel?: string;
+  partnerName?: string;
+  paymentMethod?: string;
+  note?: string;
+  isReversal: boolean;
+  status: 'posted' | 'reversed';
+}
 
 interface DashboardSummary {
-  mtdIncome: number
-  mtdIncomeDisplay: string
-  mtdExpenses: number
-  mtdExpensesDisplay: string
-  netCashFlow: number
-  netCashFlowDisplay: string
-  recentIncome: Array<{
-    _id: string
-    incomeNumber: string
-    amount: number
-    amountDisplay: string
-    category: string
-    source: string
-    description?: string
-    date: string
-    createdAt: string
-  }>
-  recentExpenses: Array<{
-    _id: string
-    expenseNumber: string
-    amount: number
-    amountDisplay: string
-    category: string
-    description?: string
-    date: string
-    createdAt: string
-  }>
+  mtdIncome: number;
+  mtdIncomeDisplay: string;
+  mtdExpenses: number;
+  mtdExpensesDisplay: string;
+  netCashFlow: number;
+  netCashFlowDisplay: string;
+  recentIncome: LedgerEntryView[];
+  recentExpenses: LedgerEntryView[];
 }
 
 interface DashboardAggregates {
-  generatedAt: string
-  counts: { openTasks: number; orders: number }
-  revenueTrend7d: Array<{ date: string; income: number; expenses: number }>
-  ordersTrend30d: Array<{ date: string; revenue: number; orders: number }>
+  generatedAt: string;
+  counts: { openTasks: number; orders: number };
+  revenueTrend7d: Array<{ date: string; income: number; expenses: number }>;
+  ordersTrend30d: Array<{ date: string; revenue: number; orders: number }>;
   stockByLocation: Array<{
-    location: string
-    label: string
-    units: number
-    valuePaisa: number
-    valueDisplay: string
-  }>
-  stockValueDisplay: string
-  lifetimeOrderRevenueDisplay: string
+    location: string;
+    label: string;
+    units: number;
+    valuePaisa: number;
+    valueDisplay: string;
+  }>;
+  stockValueDisplay: string;
+  lifetimeOrderRevenueDisplay: string;
 }
 
 const STOCK_COLUMNS = [
   { key: 'location', label: 'Location' },
   { key: 'value', label: 'Value' },
   { key: 'items', label: 'Items' },
-]
+];
 
 export default function DashboardPage() {
-  const router = useRouter()
-  const [summary, setSummary] = useState<DashboardSummary | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [aggregates, setAggregates] = useState<DashboardAggregates | null>(null)
+  const router = useRouter();
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [aggregates, setAggregates] = useState<DashboardAggregates | null>(null);
   const [toastMessage, setToastMessage] = useState<{
-    type: 'success' | 'error' | 'info' | 'warning'
-    message: string
-  } | null>(null)
+    type: 'success' | 'error' | 'info' | 'warning';
+    message: string;
+  } | null>(null);
 
   const fetchSummary = useCallback(async (opts: { background?: boolean } = {}) => {
     // The server treats this header as "not user activity": the 60s auto-refresh
     // must not keep an idle session alive, while the first load (navigation) can.
-    const headers = opts.background ? { 'x-session-background': '1' } : undefined
+    const headers = opts.background ? { 'x-session-background': '1' } : undefined;
     try {
-      setError(null)
-      const res = await fetch('/api/finance/summary', { headers })
-      if (!res.ok) throw new Error('Failed to fetch dashboard data')
-      const result = await res.json()
-      if (!result.success) throw new Error(result.error?.message || 'API error')
-      setSummary(result.data)
+      setError(null);
+      const res = await fetch('/api/finance/summary', { headers });
+      if (!res.ok) throw new Error('Failed to fetch dashboard data');
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error?.message || 'API error');
+      setSummary(result.data);
 
       // Dashboard aggregates (stock, order trends) come from the same database.
       try {
-        const aggRes = await fetch('/api/dashboard/summary', { headers })
-        const aggBody = await aggRes.json()
-        if (aggRes.ok && aggBody.success) setAggregates(aggBody.data)
+        const aggRes = await fetch('/api/dashboard/summary', { headers });
+        const aggBody = await aggRes.json();
+        if (aggRes.ok && aggBody.success) setAggregates(aggBody.data);
       } catch {
         // The finance cards still render if the aggregate read fails.
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [])
+  }, []);
 
   useEffect(() => {
-    fetchSummary()
+    fetchSummary();
     // Poll every 60 seconds for fresh data (without extending the session)
-    const interval = setInterval(() => fetchSummary({ background: true }), 60000)
-    return () => clearInterval(interval)
-  }, [fetchSummary])
+    const interval = setInterval(() => fetchSummary({ background: true }), 60000);
+    return () => clearInterval(interval);
+  }, [fetchSummary]);
 
   const quickActions = [
     { label: 'Add Order', href: '/sales', color: 'bg-decoricks-brown' },
     { label: 'Add Expense', href: '/finance', color: 'bg-red-500' },
     { label: 'Add Task', href: '/tasks', color: 'bg-blue-500' },
     { label: 'Add Product', href: '/inventory', color: 'bg-green-500' },
-  ]
+  ];
 
   /** Real 7-day income/expense series from the finance collections. */
   const revenueData = (aggregates?.revenueTrend7d ?? []).flatMap((row) => {
-    const label = new Date(row.date).toLocaleDateString('en-PK', { month: 'short', day: 'numeric' })
-    const entries = []
+    const label = new Date(row.date).toLocaleDateString('en-PK', {
+      month: 'short',
+      day: 'numeric',
+    });
+    const entries: { id: string; date: string; type: string; amount: string; color: string }[] = [];
     if (row.income > 0) {
-      entries.push({ date: label, type: 'Revenue', amount: formatPaisa(row.income), color: 'text-green-600' })
+      entries.push({
+        id: `${row.date}:income`,
+        date: label,
+        type: 'Revenue',
+        amount: formatPaisa(row.income),
+        color: 'text-green-600',
+      });
     }
     if (row.expenses > 0) {
-      entries.push({ date: label, type: 'Expenses', amount: formatPaisa(row.expenses), color: 'text-red-500' })
+      entries.push({
+        id: `${row.date}:expense`,
+        date: label,
+        type: 'Expenses',
+        amount: formatPaisa(row.expenses),
+        color: 'text-red-500',
+      });
     }
-    return entries
-  })
+    return entries;
+  });
 
-  const stockData = aggregates?.stockByLocation ?? []
+  const stockData = aggregates?.stockByLocation ?? [];
 
   /** Real monthly order revenue for the last 30 days. */
   const profitData = (aggregates?.ordersTrend30d ?? []).map((row) => ({
     date: new Date(row.date).toLocaleDateString('en-PK', { month: 'short', day: 'numeric' }),
     amount: formatPaisa(row.revenue),
     color: 'text-green-600',
-  }))
+  }));
 
   if (loading) {
     return (
@@ -153,7 +167,7 @@ export default function DashboardPage() {
         </div>
         <Skeleton variant="rect" className="h-48" />
       </PageTransition>
-    )
+    );
   }
 
   return (
@@ -194,7 +208,9 @@ export default function DashboardPage() {
           </Card>
           <Card className="p-6 text-center">
             <p className="text-sm text-decoricks-dark/60 mb-2">Open Tasks</p>
-            <p className="text-2xl font-bold text-decoricks-brown">{aggregates?.counts.openTasks ?? 0}</p>
+            <p className="text-2xl font-bold text-decoricks-brown">
+              {aggregates?.counts.openTasks ?? 0}
+            </p>
           </Card>
         </div>
       )}
@@ -203,11 +219,13 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Revenue vs Expenses Chart */}
         <Card className="p-6">
-          <h3 className="text-lg font-semibold text-decoricks-dark mb-4">Revenue vs Expenses (7-day)</h3>
+          <h3 className="text-lg font-semibold text-decoricks-dark mb-4">
+            Revenue vs Expenses (7-day)
+          </h3>
           {revenueData.length > 0 ? (
             <div className="space-y-3">
-              {revenueData.map((row, i) => (
-                <div key={i} className="flex items-center justify-between">
+              {revenueData.map((row) => (
+                <div key={row.id} className="flex items-center justify-between">
                   <span className="text-sm text-decoricks-dark/70">{row.date}</span>
                   <span className={`text-sm font-medium ${row.color}`}>
                     {row.type}: {row.amount}
@@ -225,23 +243,23 @@ export default function DashboardPage() {
 
         {/* Stock Levels Chart */}
         <Card className="p-6">
-          <h3 className="text-lg font-semibold text-decoricks-dark mb-4">Stock Levels by Location</h3>
+          <h3 className="text-lg font-semibold text-decoricks-dark mb-4">
+            Stock Levels by Location
+          </h3>
           {stockData.length === 0 ? (
             <EmptyState
               title="No stock yet"
               description="Add products and record stock to see levels by location."
             />
           ) : (
-          <Table
-            columns={STOCK_COLUMNS}
-            data={stockData.map((row) => ({
-              location: row.label,
-              value: (
-                <span className="font-medium text-decoricks-dark">{row.valueDisplay}</span>
-              ),
-              items: <Badge variant="default">{row.units} units</Badge>,
-            }))}
-          />
+            <Table
+              columns={STOCK_COLUMNS}
+              data={stockData.map((row) => ({
+                location: row.label,
+                value: <span className="font-medium text-decoricks-dark">{row.valueDisplay}</span>,
+                items: <Badge variant="default">{row.units} units</Badge>,
+              }))}
+            />
           )}
         </Card>
       </div>
@@ -270,18 +288,18 @@ export default function DashboardPage() {
           {summary?.recentIncome && summary.recentIncome.length > 0 ? (
             <Table
               columns={[
-                { key: 'number', label: 'Number' },
+                { key: 'number', label: 'Ref' },
                 { key: 'amount', label: 'Amount' },
                 { key: 'category', label: 'Category' },
-                { key: 'source', label: 'Source' },
+                { key: 'account', label: 'Account' },
                 { key: 'date', label: 'Date' },
               ]}
               data={summary.recentIncome.map((item) => ({
-                number: item.incomeNumber || item._id.slice(-6),
+                number: `#${item._id.slice(-6)}`,
                 amount: item.amountDisplay,
-                category: item.category,
-                source: item.source,
-                date: new Date(item.date).toLocaleDateString('en-PK'),
+                category: item.categoryLabel ?? item.category ?? '—',
+                account: item.accountName ?? '—',
+                date: formatKarachiDate(new Date(item.date), 'date'),
               }))}
             />
           ) : (
@@ -291,7 +309,7 @@ export default function DashboardPage() {
               action={{
                 label: 'Go to Sales',
                 onClick: () => {
-                  router.push('/sales')
+                  router.push('/sales');
                 },
               }}
             />
@@ -306,16 +324,18 @@ export default function DashboardPage() {
           {summary?.recentExpenses && summary.recentExpenses.length > 0 ? (
             <Table
               columns={[
-                { key: 'number', label: 'Number' },
+                { key: 'number', label: 'Ref' },
                 { key: 'amount', label: 'Amount' },
                 { key: 'category', label: 'Category' },
+                { key: 'account', label: 'Account' },
                 { key: 'date', label: 'Date' },
               ]}
               data={summary.recentExpenses.map((item) => ({
-                number: item.expenseNumber || item._id.slice(-6),
+                number: `#${item._id.slice(-6)}`,
                 amount: <span className="text-red-500 font-medium">{item.amountDisplay}</span>,
-                category: item.category,
-                date: new Date(item.date).toLocaleDateString('en-PK'),
+                category: item.categoryLabel ?? item.category ?? '—',
+                account: item.accountName ?? '—',
+                date: formatKarachiDate(new Date(item.date), 'date'),
               }))}
             />
           ) : (
@@ -335,8 +355,8 @@ export default function DashboardPage() {
             />
           ) : (
             <div className="space-y-3">
-              {profitData.map((row, i) => (
-                <div key={i} className="flex items-center justify-between">
+              {profitData.map((row) => (
+                <div key={row.date} className="flex items-center justify-between">
                   <span className="text-sm text-decoricks-dark/70">{row.date}</span>
                   <span className={`text-sm font-medium ${row.color}`}>{row.amount}</span>
                 </div>
@@ -346,5 +366,5 @@ export default function DashboardPage() {
         </Card>
       </div>
     </PageTransition>
-  )
+  );
 }

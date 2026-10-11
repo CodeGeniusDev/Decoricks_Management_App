@@ -1,10 +1,13 @@
 import type React from 'react'
 import {
   IconBudgets,
+  IconCashFlow,
   IconChat,
   IconDashboard,
+  IconDistribution,
   IconFinance,
   IconInventory,
+  IconProfitLoss,
   IconSales,
   IconSettings,
   IconSuppliers,
@@ -36,6 +39,9 @@ export const navItems: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: <IconDashboard size={20} />, shortName: 'Home' },
   { name: 'Finance', href: '/finance', icon: <IconFinance size={20} /> },
   { name: 'Budgets', href: '/budgets', icon: <IconBudgets size={20} /> },
+  { name: 'Profit & Loss', href: '/profit-loss', icon: <IconProfitLoss size={20} />, shortName: 'P&L' },
+  { name: 'Cash Flow', href: '/cash-flow', icon: <IconCashFlow size={20} /> },
+  { name: 'Profit Distribution', href: '/distributions', icon: <IconDistribution size={20} />, shortName: 'Distribution' },
   { name: 'Inventory', href: '/inventory', icon: <IconInventory size={20} /> },
   { name: 'Sales', href: '/sales', icon: <IconSales size={20} /> },
   { name: 'Tasks', href: '/tasks', icon: <IconTasks size={20} /> },

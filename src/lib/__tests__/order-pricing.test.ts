@@ -27,9 +27,15 @@ const orderCollection = {
   createIndex: vi.fn(),
 }
 
+const auditCollection = {
+  insertOne: vi.fn(async (_doc: Record<string, unknown>) => ({ insertedId: new ObjectId(KNOWN_ID) })),
+  insertMany: vi.fn(),
+}
+
 const collections: Record<string, unknown> = {
   products: productCollection,
   orders: orderCollection,
+  auditLog: auditCollection,
 }
 
 vi.mock('@/lib/mongodb', () => ({
@@ -119,6 +125,12 @@ describe('POST /api/orders pricing', () => {
     expect(inserted.items[0].total).toBe(500000)
     expect(inserted.subtotal).toBe(500000)
     expect(inserted.total).toBe(500000)
+
+    // SPEC §10.2.6 Test 16: a successful create must leave an audit entry.
+    expect(auditCollection.insertOne).toHaveBeenCalledTimes(1)
+    const audit = auditCollection.insertOne.mock.calls[0][0] as { action: string; entityType: string }
+    expect(audit.action).toBe('order_created')
+    expect(audit.entityType).toBe('order')
   })
 
   it('rejects a line whose product does not exist', async () => {

@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
@@ -8,6 +8,7 @@ import { orderSchema } from '@/lib/schemas/operations'
 import { priceOrderItems } from '@/lib/order-pricing'
 import { getKarachiDate } from '@/lib/date'
 import { getActor } from '@/lib/current-user'
+import { recordAuditEntry } from '@/lib/audit'
 import { errorResponse, successResponse, validationError } from '@/lib/api-response'
 
 const isDuplicateKeyError = (e: unknown) => (e as { code?: number })?.code === 11000
@@ -88,7 +89,7 @@ async function __GET(request: NextRequest) {
  */
 async function __POST(request: NextRequest) {
   try {
-    await authorize('sales', 'create')
+    const auth = await authorize('sales', 'create')
 
     const body = await request.json()
     const parsed = orderSchema.safeParse(body)
@@ -140,7 +141,21 @@ async function __POST(request: NextRequest) {
       const orderNumber = await nextOrderNumber(col)
       try {
         const result = await col.insertOne({ ...base, orderNumber } as never)
-        return successResponse(orderToJSON({ ...(base as unknown as Order), _id: result.insertedId, orderNumber }), 201)
+        const created = { ...(base as unknown as Order), _id: result.insertedId, orderNumber }
+
+        const meta = await getRequestMeta()
+        await recordAuditEntry(db, {
+          userId: auth.user._id as ObjectId,
+          userEmail: auth.user.email,
+          action: 'order_created',
+          entityType: 'order',
+          entityId: result.insertedId,
+          newValue: orderToJSON(created),
+          details: `Order ${orderNumber} for ${parsed.data.customerName}`,
+          ipAddress: meta.ipAddress,
+          userAgent: meta.userAgent,
+        })
+        return successResponse(orderToJSON(created), 201)
       } catch (error) {
         if (isDuplicateKeyError(error) && attempt === 0) continue
         throw error

@@ -1,11 +1,13 @@
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
+import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
 import { ensureOperationsIndexes, getSupplierCollection, supplierToJSON } from '@/lib/models/Operations'
 import { supplierSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
 import { getActor } from '@/lib/current-user'
+import { recordAuditEntry } from '@/lib/audit'
 import { errorResponse, successResponse, validationError } from '@/lib/api-response'
 
 /** GET /api/suppliers — query params: search, city, active */
@@ -45,7 +47,7 @@ async function __GET(request: NextRequest) {
 /** POST /api/suppliers */
 async function __POST(request: NextRequest) {
   try {
-    await authorize('suppliers', 'create')
+    const auth = await authorize('suppliers', 'create')
 
     const parsed = supplierSchema.safeParse(await request.json())
     if (!parsed.success) {
@@ -86,7 +88,20 @@ async function __POST(request: NextRequest) {
     }
 
     const result = await col.insertOne(doc as never)
-    return successResponse(supplierToJSON({ ...doc, _id: result.insertedId }), 201)
+    const created = { ...doc, _id: result.insertedId }
+
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: 'supplier_created',
+      entityType: 'supplier',
+      entityId: result.insertedId,
+      newValue: supplierToJSON(created),
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
+    return successResponse(supplierToJSON(created), 201)
   } catch (error) {
     console.error('POST /api/suppliers failed:', error)
     return handleRouteError(error)

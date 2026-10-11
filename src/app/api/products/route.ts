@@ -1,10 +1,12 @@
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
+import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
 import { getProductCollection, getStockCollection, productToJSON } from '@/lib/models/Product'
 import { productSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
+import { recordAuditEntry } from '@/lib/audit'
 import { errorResponse, successResponse, validationError } from '@/lib/api-response'
 
 /**
@@ -75,7 +77,7 @@ async function __GET(request: NextRequest) {
 /** POST /api/products — creates a product. */
 async function __POST(request: NextRequest) {
   try {
-    await authorize('inventory', 'create')
+    const auth = await authorize('inventory', 'create')
 
     const body = await request.json()
     const parsed = productSchema.safeParse(body)
@@ -104,7 +106,20 @@ async function __POST(request: NextRequest) {
     }
 
     const result = await col.insertOne(doc)
-    return successResponse({ ...doc, _id: result.insertedId.toString() }, 201)
+    const created = { ...doc, _id: result.insertedId }
+
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: 'product_created',
+      entityType: 'product',
+      entityId: result.insertedId,
+      newValue: productToJSON(created),
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
+    return successResponse(productToJSON(created), 201)
   } catch (error) {
     console.error('POST /api/products failed:', error)
     return handleRouteError(error)

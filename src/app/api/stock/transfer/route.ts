@@ -5,8 +5,9 @@ import { getStockCollection, stockToJSON } from '@/lib/models/Product'
 import { stockTransferSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
 import { errorResponse, successResponse, validationError } from '@/lib/api-response'
-import { handleRouteError, withAuth } from '@/lib/http'
-import { authorizeStockWrite } from '@/lib/authorization'
+import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { authorizeStockWrite, requireAuth } from '@/lib/authorization'
+import { recordAuditEntry } from '@/lib/audit'
 
 /**
  * POST /api/stock/transfer
@@ -92,6 +93,19 @@ async function __POST(request: NextRequest) {
     }
 
     const rows = await stockCol.find({ productId: oid } as never).toArray()
+
+    const auth = await requireAuth()
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: 'stock_transfer_completed',
+      entityType: 'stock',
+      entityId: oid,
+      details: `Moved ${quantity} unit(s) from ${fromLocation} to ${toLocation}`,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
     return successResponse(rows.map(stockToJSON))
   } catch (error) {
     if (error instanceof TransferConflictError) {

@@ -1,11 +1,13 @@
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
+import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
 import { ensureOperationsIndexes, getTaskCollection, taskToJSON, type Task } from '@/lib/models/Operations'
 import { taskSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
 import { getActor } from '@/lib/current-user'
+import { recordAuditEntry } from '@/lib/audit'
 import { errorResponse, successResponse, validationError } from '@/lib/api-response'
 
 const isDuplicateKeyError = (e: unknown) => (e as { code?: number })?.code === 11000
@@ -83,7 +85,7 @@ async function __GET(request: NextRequest) {
 /** POST /api/tasks */
 async function __POST(request: NextRequest) {
   try {
-    await authorize('tasks', 'create')
+    const auth = await authorize('tasks', 'create')
 
     const body = await request.json()
     const parsed = taskSchema.safeParse(body)
@@ -116,6 +118,17 @@ async function __POST(request: NextRequest) {
       const taskNumber = await nextTaskNumber(col)
       try {
         const result = await col.insertOne({ ...base, taskNumber } as never)
+        const meta = await getRequestMeta()
+        await recordAuditEntry(db, {
+          userId: auth.user._id as ObjectId,
+          userEmail: auth.user.email,
+          action: 'task_created',
+          entityType: 'task',
+          entityId: result.insertedId,
+          newValue: { ...base, taskNumber },
+          ipAddress: meta.ipAddress,
+          userAgent: meta.userAgent,
+        })
         return successResponse(taskToJSON({ ...(base as Task), _id: result.insertedId, taskNumber }), 201)
       } catch (error) {
         if (isDuplicateKeyError(error) && attempt === 0) continue

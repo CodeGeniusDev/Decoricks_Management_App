@@ -1,11 +1,12 @@
-import { handleRouteError, withAuth } from '@/lib/http'
-import { authorize, authorizeStockWrite } from '@/lib/authorization'
+import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { authorize, authorizeStockWrite, requireAuth } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
 import { getProductCollection, getStockCollection, stockToJSON } from '@/lib/models/Product'
 import { stockSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
+import { recordAuditEntry } from '@/lib/audit'
 import { errorResponse, notFoundError, successResponse, validationError } from '@/lib/api-response'
 
 const isObjectId = (v: string) => /^[0-9a-fA-F]{24}$/.test(v)
@@ -83,6 +84,7 @@ async function __POST(request: NextRequest) {
     if (!product) return notFoundError('Product not found')
 
     const stockCol = getStockCollection(db)
+    const before = await stockCol.findOne({ productId, location } as never)
     const result = await stockCol.updateOne(
       { productId, location } as never,
       { $set: { quantity: parsed.data.quantity, lastUpdated: now, updatedAt: now } } as never,
@@ -90,6 +92,21 @@ async function __POST(request: NextRequest) {
     )
 
     const row = await stockCol.findOne({ productId, location } as never)
+
+    const auth = await requireAuth()
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: result.upsertedCount ? 'stock_created' : 'stock_updated',
+      entityType: 'stock',
+      entityId: row?._id ?? null,
+      oldValue: before ? { location, quantity: before.quantity } : undefined,
+      newValue: { location, quantity: parsed.data.quantity },
+      details: `${product.name} @ ${location}`,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
     return successResponse(stockToJSON(row!), result.upsertedCount ? 201 : 200)
   } catch (error) {
     console.error('POST /api/stock failed:', error)

@@ -1,636 +1,446 @@
-'use client'
+'use client';
 
-import { IconClose, IconPlus } from '@/components/ui/icons'
+import React, { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { PageTransition } from '@/components/PageTransition';
+import { PageHeader, Metric, MetricGrid } from '@/components/layout/Page';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { Input } from '@/components/ui/Input';
+import { Toast } from '@/components/ui/Toast';
+import { apiJson, ApiError } from '@/lib/api-client';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { can } from '@/lib/permissions-client';
+import { ENTRY_TYPE_LABELS } from '@/lib/finance';
+import { formatKarachiDate } from '@/lib/date';
+import { formatPaisa } from '@/lib/money';
+import { ReverseModal } from '@/modules/finance/ReverseModal';
+import {
+  TYPE_BADGE_VARIANT,
+  toKarachiInputDate,
+  type OverviewView,
+} from '@/modules/finance/finance-ui';
 
-import { useState, useEffect, useRef } from 'react'
-import { PageTransition } from '@/components/PageTransition'
-import { Card } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Select } from '@/components/ui/Select'
-import { Textarea } from '@/components/ui/Textarea'
-import { Table } from '@/components/ui/Table'
-import { Modal } from '@/components/ui/Modal'
-import { Badge } from '@/components/ui/Badge'
-import { Skeleton } from '@/components/ui/Skeleton'
-import { EmptyState } from '@/components/ui/EmptyState'
-import { Toast } from '@/components/ui/Toast'
-import { useFinanceData, FinancialEntry } from '@/hooks/useFinanceData'
-import { formatPaisa, pkrToPaisa } from '@/lib/money'
-import { getKarachiDate } from '@/lib/date'
-import { apiFetch } from '@/lib/api-client'
-
-type EntryType = 'income' | 'expense' | 'transfer'
-
-interface FormErrors {
-  amount?: string
-  category?: string
-  source?: string
-  fromAccount?: string
-  toAccount?: string
-  description?: string
-  date?: string
-  general?: string
-}
-
-const EXPENSE_CATEGORIES = [
-  'meta_ads',
-  'shopify_subscription',
-  'flyers_printing',
-  'product_purchasing',
-  'shipping_courier',
-  'packaging',
-  'refunds_return_costs',
-  'platform_fees',
-  'content_production',
-  'miscellaneous',
-]
-
-const INCOME_CATEGORIES = ['sales', 'other']
-const INCOME_SOURCES = ['cod', 'bank_transfer', 'cash', 'jazzcash', 'other']
-const TRANSFER_ACCOUNTS = ['cash', 'bank_account', 'jazzcash_wallet', 'other']
-
-const FIELD_ERROR_KEYS: Array<keyof FormErrors> = [
-  'amount',
-  'category',
-  'source',
-  'fromAccount',
-  'toAccount',
-  'description',
-  'date',
-]
-
-function createRequestId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID()
-  }
-  return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-}
+const entryAccountLabel = (entry: OverviewView['recentTransactions'][number]): string =>
+  entry.type === 'transfer'
+    ? `${entry.fromAccountName ?? '?'} → ${entry.toAccountName ?? '?'}`
+    : (entry.accountName ?? '—');
 
 /**
- * Turn a server validation payload into per-field messages so the user sees the
- * error next to the input that caused it. Falls back to a single general message.
+ * Finance overview — the front door of the Phase 3 ledger.
+ *
+ * Cash position, Karachi day/week/month figures, lifetime operating results
+ * kept apart from cash flow (SPEC §5: transfers and equity movements are not
+ * profit), account balances, the withdrawal lock control and the newest
+ * entries. Everything is one `/api/finance/overview` read.
  */
-function mapServerFieldErrors(details: unknown, fallback: string): FormErrors {
-  const list = Array.isArray(details) ? details : []
+export default function FinanceOverviewPage() {
+  const router = useRouter();
+  const { user } = useAuth();
+  const canCreate = user ? can({ role: user.role }, 'finance', 'create') : false;
+  const canApprove = user ? can({ role: user.role }, 'finance', 'approve') : false;
 
-  if (list.length === 0) {
-    return { general: fallback }
-  }
+  const [data, setData] = useState<OverviewView | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const fieldErrors: FormErrors = {}
+  const [reverseTarget, setReverseTarget] = useState<
+    OverviewView['recentTransactions'][number] | null
+  >(null);
 
-  for (const item of list) {
-    const path = typeof item?.path === 'string' ? item.path.split('.')[0] : ''
-    const message = typeof item?.message === 'string' ? item.message : fallback
-
-    if (FIELD_ERROR_KEYS.includes(path as keyof FormErrors)) {
-      fieldErrors[path as keyof FormErrors] = message
-    } else if (!fieldErrors.general) {
-      fieldErrors.general = message
-    }
-  }
-
-  return Object.keys(fieldErrors).length > 0 ? fieldErrors : { general: fallback }
-}
-
-export default function FinancePage() {
-  const {
-    data,
-    income,
-    expenses,
-    transfers,
-    summary,
-    summaryError,
-    loading,
-    error,
-    refetch,
-  } = useFinanceData()
-
-  const [activeTab, setActiveTab] = useState<'income' | 'expenses' | 'transfers'>('income')
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [entryType, setEntryType] = useState<EntryType>('income')
-  const [editingEntry, setEditingEntry] = useState<FinancialEntry | null>(null)
-
-  // Form state preserved across tab switches
-  const [formAmount, setFormAmount] = useState('')
-  const [formCategory, setFormCategory] = useState('sales')
-  const [formSource, setFormSource] = useState('cod')
-  const [formFromAccount, setFormFromAccount] = useState('cash')
-  const [formToAccount, setFormToAccount] = useState('bank_account')
-  const [formDescription, setFormDescription] = useState('')
-  const [formDate, setFormDate] = useState('')
-  const [formErrors, setFormErrors] = useState<FormErrors>({})
-  const [isSubmitting, setIsSubmitting] = useState(false)
-const isSubmittingRef = useRef(false)
-const submitRequestIdRef = useRef<string>(createRequestId())
-  const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error' | 'info' | 'warning'; message: string } | null>(null)
+  // Withdrawal lock editor (Founder only). The draft mirrors the stored value
+  // once loaded, so the date input never shows a stale or blank state and an
+  // empty draft genuinely means "clear the lock".
+  const [lockDraft, setLockDraft] = useState('');
+  const [lockSaving, setLockSaving] = useState(false);
+  const lockSubmittingRef = React.useRef(false);
 
   useEffect(() => {
-    // Initialize form date with today's date in Karachi timezone
-    if (!formDate) {
-      const today = getKarachiDate()
-      const dateStr = today.toISOString().split('T')[0]
-      setFormDate(dateStr)
-    }
-  }, [formDate])
+    setLockDraft(data?.withdrawalLockedUntil ? toKarachiInputDate(data.withdrawalLockedUntil) : '');
+  }, [data?.withdrawalLockedUntil]);
 
-  const resetForm = () => {
-    setFormAmount('')
-    setFormCategory('sales')
-    setFormSource('cod')
-    setFormFromAccount('cash')
-    setFormToAccount('bank_account')
-    setFormDescription('')
-    setFormErrors({})
-    setEditingEntry(null)
-  }
-
-  const openModal = (type: EntryType) => {
-    setEntryType(type)
-    resetForm()
-    setIsModalOpen(true)
-  }
-
-  const openEditModal = (entry: FinancialEntry, type: EntryType) => {
-    setEntryType(type)
-    setEditingEntry(entry)
-    setFormAmount(formatPaisaInput(entry.amount))
-    setFormCategory(entry.category)
-    setFormSource(entry.source)
-    setFormDescription(entry.description || '')
-    setFormDate(new Date(entry.date).toISOString().split('T')[0])
-    setFormErrors({})
-    setIsModalOpen(true)
-  }
-
-  const closeModal = () => {
-    setIsModalOpen(false)
-    resetForm()
-  }
-
-  const formatPaisaInput = (paisa: number): string => {
-    // Convert paisa to PKR for input display
-    return (paisa / 100).toFixed(2)
-  }
-
-  const validateForm = (): FormErrors => {
-    const errors: FormErrors = {}
-    const amount = parseFloat(formAmount)
-
-    if (!formAmount || isNaN(amount) || amount <= 0) {
-      errors.amount = 'Please enter a valid positive amount'
-    }
-    if (!formCategory) {
-      errors.category = 'Please select a category'
-    }
-    if (entryType === 'income' && !formSource) {
-      errors.source = 'Please select a source'
-    }
-    if (entryType === 'transfer') {
-      if (!formFromAccount) errors.fromAccount = 'Please select from account'
-      if (!formToAccount) errors.toAccount = 'Please select to account'
-      if (formFromAccount === formToAccount) {
-        errors.fromAccount = 'From and to accounts must be different'
-      }
-    }
-    if (!formDate) {
-      errors.general = 'Please select a date'
-    }
-
-    return errors
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    // Hard guard against double submits (double click / Enter twice): React state
-    // is not applied synchronously, so `isSubmitting` alone is not enough.
-    if (isSubmittingRef.current) return
-
-    const errors = validateForm()
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors)
-      return
-    }
-
-    isSubmittingRef.current = true
-    setIsSubmitting(true)
-
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const amount = pkrToPaisa(parseFloat(formAmount))
-      const payload = {
-        type: entryType,
-        amount,
-        category: entryType === 'income' ? formCategory : entryType === 'expense' ? formCategory : undefined,
-        source: entryType === 'income' ? formSource : undefined,
-        fromAccount: entryType === 'transfer' ? formFromAccount : undefined,
-        toAccount: entryType === 'transfer' ? formToAccount : undefined,
-        description: formDescription || undefined,
-        date: new Date(formDate).toISOString(),
-      }
-
-      const isEdit = Boolean(editingEntry)
-      const url = isEdit ? `/api/finance/${entryType}/${editingEntry!._id}` : '/api/finance'
-      const method = isEdit ? 'PUT' : 'POST'
-
-      const res = await apiFetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...payload,
-          // Idempotency key: a retried/duplicated POST returns the original
-          // record instead of writing a second financial entry.
-          ...(isEdit ? {} : { clientRequestId: submitRequestIdRef.current }),
-        }),
-      })
-
-      const result = await res.json().catch(() => null)
-
-      if (!result || result.success !== true) {
-        const errorMsg = result?.error?.message || `Request failed (${res.status})`
-        setFormErrors(mapServerFieldErrors(result?.error?.details, errorMsg))
-        setToastMessage({ type: 'error', message: errorMsg })
-        // Form values are intentionally left untouched so nothing typed is lost.
-        return
-      }
-
-      // Only clear the form once the server has confirmed the write.
-      closeModal()
-      setToastMessage({
-        type: 'success',
-        message: isEdit ? `${entryType} updated successfully` : `${entryType} added successfully`,
-      })
-      // Rotate the idempotency key so the next entry is a genuinely new record.
-      submitRequestIdRef.current = createRequestId()
-      await refetch()
+      setData(await apiJson<OverviewView>('/api/finance/overview'));
     } catch (err) {
-      setFormErrors({ general: err instanceof Error ? err.message : 'Network error' })
-      setToastMessage({ type: 'error', message: 'Network error. Please try again.' })
+      setError(err instanceof Error ? err.message : 'Failed to load finance overview');
     } finally {
-      isSubmittingRef.current = false
-      setIsSubmitting(false)
+      setLoading(false);
     }
-  }
+  }, []);
 
-  const handleDelete = async (entry: FinancialEntry, type: EntryType) => {
-    if (!confirm(`Are you sure you want to delete this ${type} entry?`)) return
+  useEffect(() => {
+    void load();
+  }, [load]);
 
+  const saveLock = async () => {
+    if (lockSubmittingRef.current) return;
+    lockSubmittingRef.current = true;
+    setLockSaving(true);
     try {
-      const res = await apiFetch(`/api/finance/${type}/${entry._id}`, { method: 'DELETE' })
-      const result = await res.json()
-
-      if (result.success) {
-        setToastMessage({ type: 'success', message: `${type} entry deleted` })
-        refetch()
-      } else {
-        setToastMessage({ type: 'error', message: result.error?.message || 'Delete failed' })
-      }
+      await apiJson('/api/finance/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ withdrawalLockedUntil: lockDraft || null }),
+      });
+      setToast({
+        type: 'success',
+        message: lockDraft ? `Withdrawals locked until ${lockDraft}` : 'Withdrawal lock cleared',
+      });
+      await load();
     } catch (err) {
-      setToastMessage({ type: 'error', message: 'Network error' })
+      setToast({
+        type: 'error',
+        message: err instanceof ApiError ? err.message : 'Could not update the withdrawal lock',
+      });
+    } finally {
+      lockSubmittingRef.current = false;
+      setLockSaving(false);
     }
-  }
+  };
 
-  const getCategoryOptions = () => {
-    if (entryType === 'income') return INCOME_CATEGORIES.map((c) => ({ value: c, label: c }))
-    if (entryType === 'expense') return EXPENSE_CATEGORIES.map((c) => ({ value: c, label: c }))
-    return [{ value: 'transfer', label: 'transfer' }]
-  }
-
-  const getSourceOptions = () => {
-    return INCOME_SOURCES.map((s) => ({ value: s, label: s }))
-  }
-
-  const accountOptions = TRANSFER_ACCOUNTS.map((a) => ({ value: a, label: a }))
-
-  const currentItems = activeTab === 'income' ? income : activeTab === 'expenses' ? expenses : transfers
-  const columns =
-    activeTab === 'income'
-      ? [
-          { key: 'amountDisplay', label: 'Amount' },
-          { key: 'category', label: 'Category' },
-          { key: 'source', label: 'Source' },
-          { key: 'date', label: 'Date' },
-          { key: 'actions', label: 'Actions' },
-        ]
-      : activeTab === 'expenses'
-      ? [
-          { key: 'amountDisplay', label: 'Amount' },
-          { key: 'category', label: 'Category' },
-          { key: 'description', label: 'Description' },
-          { key: 'date', label: 'Date' },
-          { key: 'actions', label: 'Actions' },
-        ]
-      : [
-          { key: 'amountDisplay', label: 'Amount' },
-          { key: 'fromAccount', label: 'From' },
-          { key: 'toAccount', label: 'To' },
-          { key: 'date', label: 'Date' },
-          { key: 'actions', label: 'Actions' },
-        ]
-
-  const tableData = currentItems.map((entry) => ({
-    ...entry,
-    actions: (
-      <div className="flex gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => openEditModal(entry, activeTab === 'income' ? 'income' : activeTab === 'expenses' ? 'expense' : 'transfer')}
-        >
-          Edit
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() =>
-            handleDelete(
-              entry,
-              activeTab === 'income' ? 'income' : activeTab === 'expenses' ? 'expense' : 'transfer'
-            )
-          }
-        >
-          Delete
-        </Button>
-      </div>
-    ),
-  }))
+  const clearLock = async () => {
+    if (lockSubmittingRef.current) return;
+    lockSubmittingRef.current = true;
+    setLockSaving(true);
+    try {
+      await apiJson('/api/finance/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ withdrawalLockedUntil: null }),
+      });
+      setToast({ type: 'success', message: 'Withdrawal lock cleared' });
+      await load();
+    } catch {
+      setToast({ type: 'error', message: 'Could not clear the lock' });
+    } finally {
+      lockSubmittingRef.current = false;
+      setLockSaving(false);
+    }
+  };
 
   if (loading) {
     return (
       <PageTransition>
-        <h1 className="text-2xl font-bold text-decoricks-dark mb-6">Finance</h1>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          <Skeleton variant="rect" className="h-24" />
-          <Skeleton variant="rect" className="h-24" />
-          <Skeleton variant="rect" className="h-24" />
+        <PageHeader title="Finance" description="Ledger overview, balances and cash flow." />
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} variant="rect" className="h-24" />
+          ))}
         </div>
-        <Skeleton variant="rect" className="h-96 mb-6" />
+        <Skeleton variant="rect" className="mt-4 h-40" />
+        <Skeleton variant="rect" className="mt-4 h-64" />
       </PageTransition>
-    )
+    );
   }
+
+  if (error || !data) {
+    return (
+      <PageTransition>
+        <PageHeader title="Finance" />
+        <Card>
+          <ErrorState
+            title="Could not load finance"
+            description={error ?? 'Unexpected empty response.'}
+            action={{ label: 'Retry', onClick: () => void load() }}
+          />
+        </Card>
+      </PageTransition>
+    );
+  }
+
+  const { overall, periods } = data;
 
   return (
     <PageTransition>
-      <h1 className="text-2xl font-bold text-decoricks-dark mb-6">Finance</h1>
-
-      {/* Toast */}
-      {toastMessage && (
-        <div className="fixed top-20 right-4 z-50">
-          <Toast
-            message={toastMessage.message}
-            type={toastMessage.type}
-            onClose={() => setToastMessage(null)}
-          />
+      {toast && (
+        <div className="fixed top-20 right-4 z-50 max-w-[90vw]">
+          <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
         </div>
       )}
 
-      {/* Summary Cards */}
-      {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <Card animate={false} className="p-6 text-center">
-            <p className="text-sm text-decoricks-dark/60 mb-2">MTD Income</p>
-            <p className="text-2xl font-bold text-green-600">{summary.mtdIncomeDisplay}</p>
-          </Card>
-          <Card animate={false} className="p-6 text-center">
-            <p className="text-sm text-decoricks-dark/60 mb-2">MTD Expenses</p>
-            <p className="text-2xl font-bold text-red-500">{summary.mtdExpensesDisplay}</p>
-          </Card>
-          <Card animate={false} className="p-6 text-center">
-            <p className="text-sm text-decoricks-dark/60 mb-2">Net Cash Flow</p>
-            <p
-              className={`text-2xl font-bold ${
-                summary.netCashFlow >= 0 ? 'text-green-600' : 'text-red-500'
-              }`}
-            >
-              {summary.netCashFlowDisplay}
-            </p>
-          </Card>
-        </div>
-      )}
+      <PageHeader
+        title="Finance"
+        description="Cash position, balances and the append-only ledger. Posted entries are corrected only by linked reversals."
+        actions={
+          <>
+            <Button variant="outline" onClick={() => router.push('/finance/accounts')}>
+              Accounts
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/finance/categories')}>
+              Categories
+            </Button>
+            {canCreate && (
+              <Button onClick={() => router.push('/finance/transactions?new=1')}>
+                New transaction
+              </Button>
+            )}
+          </>
+        }
+      />
 
-      {/* Error display */}
-      {error && !data && (
-        <Card className="p-6 mb-6 border-red-200">
-          <p className="text-red-600">Failed to load finance data: {error}</p>
-          <Button variant="outline" size="sm" onClick={refetch} className="mt-2">
-            Retry
-          </Button>
-        </Card>
-      )}
+      {/* Cash position */}
+      <MetricGrid>
+        <Metric
+          label="Total cash"
+          value={data.totalCashDisplay}
+          hint="Across all active accounts"
+        />
+        <Metric
+          label="Today (Karachi)"
+          value={periods.day.summary.netCashFlowDisplay}
+          tone={periods.day.summary.netCashFlow >= 0 ? 'positive' : 'negative'}
+          hint={`In ${periods.day.summary.cashInDisplay} · Out ${periods.day.summary.cashOutDisplay}`}
+        />
+        <Metric
+          label="This week"
+          value={periods.week.summary.netCashFlowDisplay}
+          tone={periods.week.summary.netCashFlow >= 0 ? 'positive' : 'negative'}
+          hint={`Mon–Sun, Karachi boundaries`}
+        />
+        <Metric
+          label="This month"
+          value={periods.month.summary.netCashFlowDisplay}
+          tone={periods.month.summary.netCashFlow >= 0 ? 'positive' : 'negative'}
+          hint={`In ${periods.month.summary.cashInDisplay} · Out ${periods.month.summary.cashOutDisplay}`}
+        />
+      </MetricGrid>
 
-      {/* The table can still be usable when only the summary failed, so this is
-          reported separately rather than blanking the page or showing a
-          fabricated all-zero summary. */}
-      {summaryError && (
-        <Card variant="default" className="p-4 mb-6 border-amber-200">
-          <p className="text-sm text-amber-800">
-            Could not load the month-to-date summary: {summaryError}
+      {/* Operating results vs cash flow — deliberately two blocks (SPEC §5). */}
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card className="p-4">
+          <h2 className="mb-3 text-sm font-semibold text-decoricks-dark">
+            Lifetime operating results
+          </h2>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+            <div>
+              <dt className="text-xs text-ink-muted">Revenue</dt>
+              <dd className="font-semibold tabular-nums text-status-success">
+                {overall.revenueDisplay}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-ink-muted">Expenses</dt>
+              <dd className="font-semibold tabular-nums text-status-danger">
+                {overall.expenseDisplay}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-ink-muted">Operating profit</dt>
+              <dd className="font-semibold tabular-nums text-decoricks-dark">
+                {overall.netProfitDisplay}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-ink-muted">Net cash flow</dt>
+              <dd className="font-semibold tabular-nums text-decoricks-dark">
+                {overall.netCashFlowDisplay}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-3 text-xs text-ink-muted">
+            Cash flow ≠ profit: capital in, withdrawals and transfers move cash without touching
+            operating results.
           </p>
-          <Button variant="outline" size="sm" onClick={refetch} className="mt-2">
-            Retry summary
-          </Button>
         </Card>
-      )}
 
-      {/* Tabs + Add Button */}
-      <Card className="mb-6">
-        <div className="flex items-center justify-between p-4 border-b border-decoricks-black/10">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab('income')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'income'
-                  ? 'bg-decoricks-brown text-decoricks-light'
-                  : 'text-decoricks-dark hover:bg-decoricks-dark/10'
-              }`}
-            >
-              Income
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('expenses')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'expenses'
-                  ? 'bg-decoricks-brown text-decoricks-light'
-                  : 'text-decoricks-dark hover:bg-decoricks-dark/10'
-              }`}
-            >
-              Expenses
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('transfers')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'transfers'
-                  ? 'bg-decoricks-brown text-decoricks-light'
-                  : 'text-decoricks-dark hover:bg-decoricks-dark/10'
-              }`}
-            >
-              Transfers
-            </button>
-          </div>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => openModal(activeTab === 'income' ? 'income' : activeTab === 'expenses' ? 'expense' : 'transfer')}
-          >
-            <IconPlus size={16}  />
-            Add {activeTab === 'income' ? 'Income' : activeTab === 'expenses' ? 'Expense' : 'Transfer'}
-          </Button>
-        </div>
-
-        {/* Table */}
-        <div className="p-4">
-          {currentItems.length === 0 ? (
-            <EmptyState
-              title="No entries found"
-              description={`No ${activeTab} entries have been recorded yet.`}
-              action={{
-                label: `Add ${activeTab === 'income' ? 'Income' : activeTab === 'expenses' ? 'Expense' : 'Transfer'}`,
-                onClick: () =>
-                  openModal(
-                    activeTab === 'income'
-                      ? 'income'
-                      : activeTab === 'expenses'
-                      ? 'expense'
-                      : 'transfer'
-                  ),
-              }}
-            />
+        <Card className="p-4">
+          <h2 className="mb-3 text-sm font-semibold text-decoricks-dark">Partners & equity</h2>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+            <div>
+              <dt className="text-xs text-ink-muted">Capital contributed</dt>
+              <dd className="font-semibold tabular-nums text-decoricks-dark">
+                {overall.capitalDisplay}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-ink-muted">Withdrawals</dt>
+              <dd className="font-semibold tabular-nums text-decoricks-dark">
+                {overall.withdrawalsDisplay}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-ink-muted">Reinvested profit</dt>
+              <dd className="font-semibold tabular-nums text-decoricks-dark">
+                {overall.reinvestmentDisplay}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-ink-muted">Net equity</dt>
+              <dd className="font-semibold tabular-nums text-decoricks-dark">
+                {formatPaisa(overall.equity)}
+              </dd>
+            </div>
+          </dl>
+          {data.withdrawalsLocked ? (
+            <p className="mt-3 rounded-md bg-status-warning-bg px-3 py-2 text-xs text-status-warning">
+              Partner withdrawals are locked until{' '}
+              {data.withdrawalLockedUntil
+                ? formatKarachiDate(new Date(data.withdrawalLockedUntil), 'date')
+                : 'an unset date'}
+              .
+            </p>
           ) : (
-            <Table columns={columns} data={tableData} />
+            <p className="mt-3 text-xs text-ink-muted">Partner withdrawals are open.</p>
           )}
+        </Card>
+      </div>
+
+      {/* Account balances */}
+      <Card className="mt-4 p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-decoricks-dark">Account balances</h2>
+          <Link
+            href="/finance/accounts"
+            className="text-xs font-medium text-decoricks-brown hover:underline"
+          >
+            Manage accounts →
+          </Link>
         </div>
+        {data.accounts.length === 0 ? (
+          <EmptyState
+            title="No accounts yet"
+            description="Add a cash, bank or wallet account to start recording transactions."
+            action={{ label: 'Add account', onClick: () => router.push('/finance/accounts') }}
+          />
+        ) : (
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {data.accounts.map((account) => (
+              <li
+                key={account._id}
+                className="rounded-lg border border-line-subtle bg-surface-sunken px-3 py-2.5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm font-medium text-decoricks-dark">
+                    {account.name}
+                  </span>
+                  {!account.isActive && <Badge size="sm">Inactive</Badge>}
+                </div>
+                <p className="mt-0.5 text-lg font-semibold tabular-nums text-decoricks-dark">
+                  {account.balanceDisplay}
+                </p>
+                <p className="text-xs text-ink-muted">
+                  {account.kindLabel} · opening {account.openingBalanceDisplay}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
 
-      {/* Add/Edit Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={closeModal}
-        title={editingEntry ? 'Edit Entry' : `Add ${entryType === 'income' ? 'Income' : entryType === 'expense' ? 'Expense' : 'Transfer'}`}
-        size="lg"
-      >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Entry Type Selector (when not editing) */}
-          {!editingEntry && (
-            <div className="flex gap-2 mb-4">
-              {(['income', 'expense', 'transfer'] as EntryType[]).map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => {
-                    setEntryType(type)
-                    setFormCategory(type === 'income' ? 'sales' : type === 'expense' ? 'miscellaneous' : 'transfer')
-                    setFormSource('cod')
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    entryType === type
-                      ? 'bg-decoricks-brown text-decoricks-light'
-                      : 'text-decoricks-dark/60 hover:text-decoricks-dark bg-decoricks-dark/5'
-                  }`}
-                >
-                  {type === 'income' ? 'Income' : type === 'expense' ? 'Expense' : 'Transfer'}
-                </button>
-              ))}
+      {/* Withdrawal lock control (Founder only) */}
+      {canApprove && (
+        <Card className="mt-4 p-4">
+          <h2 className="text-sm font-semibold text-decoricks-dark">Withdrawal lock</h2>
+          <p className="mt-1 text-xs text-ink-muted">
+            Partner withdrawals are rejected before this Karachi date. SPEC Appendix A starts the
+            business locked until 2027-02-04.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="sm:w-48">
+              <Input
+                label="Locked until (blank = open)"
+                type="date"
+                value={lockDraft}
+                onChange={(e) => setLockDraft(e.target.value)}
+                disabled={lockSaving}
+              />
             </div>
-          )}
-
-          <Input
-            label="Amount (PKR)"
-            type="number"
-            step="0.01"
-            placeholder="0.00"
-            value={formAmount}
-            onChange={(e) => setFormAmount(e.target.value)}
-            error={formErrors.amount}
-            disabled={isSubmitting}
-          />
-
-          {entryType === 'income' && (
-            <>
-              <Select
-                label="Category"
-                options={getCategoryOptions()}
-                value={formCategory}
-                onChange={(e) => setFormCategory(e.target.value)}
-                error={formErrors.category}
-                disabled={isSubmitting}
-              />
-              <Select
-                label="Source"
-                options={getSourceOptions()}
-                value={formSource}
-                onChange={(e) => setFormSource(e.target.value)}
-                error={formErrors.source}
-                disabled={isSubmitting}
-              />
-            </>
-          )}
-
-          {entryType === 'expense' && (
-            <Select
-              label="Category"
-              options={getCategoryOptions()}
-              value={formCategory}
-              onChange={(e) => setFormCategory(e.target.value)}
-              error={formErrors.category}
-              disabled={isSubmitting}
-            />
-          )}
-
-          {entryType === 'transfer' && (
-            <>
-              <Select
-                label="From Account"
-                options={accountOptions}
-                value={formFromAccount}
-                onChange={(e) => setFormFromAccount(e.target.value)}
-                error={formErrors.fromAccount}
-                disabled={isSubmitting}
-              />
-              <Select
-                label="To Account"
-                options={accountOptions}
-                value={formToAccount}
-                onChange={(e) => setFormToAccount(e.target.value)}
-                error={formErrors.toAccount}
-                disabled={isSubmitting}
-              />
-            </>
-          )}
-
-          <Input
-            label="Date"
-            type="date"
-            value={formDate}
-            onChange={(e) => setFormDate(e.target.value)}
-            error={formErrors.date}
-            disabled={isSubmitting}
-          />
-          <Textarea
-            label="Description (optional)"
-            placeholder="Enter description..."
-            value={formDescription}
-            onChange={(e) => setFormDescription(e.target.value)}
-            error={formErrors.description}
-            disabled={isSubmitting}
-            rows={3}
-          />
-
-          {formErrors.general && <p className="text-sm text-red-500">{formErrors.general}</p>}
-
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={closeModal} disabled={isSubmitting}>
-              Cancel
+            <Button onClick={() => void saveLock()} loading={lockSaving} disabled={lockSaving}>
+              Save lock
             </Button>
-            <Button variant="primary" type="submit" loading={isSubmitting} disabled={isSubmitting}>
-              {editingEntry ? 'Update' : 'Add'} {entryType === 'income' ? 'Income' : entryType === 'expense' ? 'Expense' : 'Transfer'}
+            <Button
+              variant="outline"
+              disabled={lockSaving || !data.withdrawalLockedUntil}
+              onClick={() => void clearLock()}
+            >
+              Clear lock
             </Button>
           </div>
-        </form>
-      </Modal>
+        </Card>
+      )}
+
+      {/* Recent transactions */}
+      <Card className="mt-4 p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-decoricks-dark">Recent transactions</h2>
+          <Link
+            href="/finance/transactions"
+            className="text-xs font-medium text-decoricks-brown hover:underline"
+          >
+            Full ledger →
+          </Link>
+        </div>
+        {data.recentTransactions.length === 0 ? (
+          <EmptyState
+            title="Nothing in the ledger yet"
+            description="Record income, expenses and transfers from the transactions screen."
+            action={
+              canCreate
+                ? {
+                    label: 'New transaction',
+                    onClick: () => router.push('/finance/transactions?new=1'),
+                  }
+                : undefined
+            }
+          />
+        ) : (
+          <ul className="divide-y divide-line-subtle">
+            {data.recentTransactions.map((entry) => (
+              <li key={entry._id} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Badge variant={TYPE_BADGE_VARIANT[entry.type]} size="sm">
+                    {ENTRY_TYPE_LABELS[entry.type]}
+                  </Badge>
+                  <span className="hidden truncate text-sm text-ink-secondary sm:block">
+                    {entryAccountLabel(entry)}
+                    {entry.categoryLabel ? ` · ${entry.categoryLabel}` : ''}
+                    {entry.partnerName ? ` · ${entry.partnerName}` : ''}
+                  </span>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <div className="text-right">
+                    <p
+                      className={`text-sm font-semibold tabular-nums ${
+                        entry.isReversal
+                          ? 'text-ink-muted'
+                          : entry.type === 'expense' || entry.type === 'partner_withdrawal'
+                            ? 'text-status-danger'
+                            : 'text-decoricks-dark'
+                      }`}
+                    >
+                      {entry.amountDisplay}
+                    </p>
+                    <p className="text-xs text-ink-muted">
+                      {formatKarachiDate(new Date(entry.date), 'date')}
+                    </p>
+                  </div>
+                  {canApprove && !entry.isReversal && entry.status === 'posted' && (
+                    <Button variant="ghost" size="sm" onClick={() => setReverseTarget(entry)}>
+                      Reverse
+                    </Button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <ReverseModal
+        entry={reverseTarget}
+        onClose={() => setReverseTarget(null)}
+        onReversed={() => {
+          setToast({ type: 'success', message: 'Reversal posted.' });
+          void load();
+        }}
+      />
     </PageTransition>
-  )
+  );
 }

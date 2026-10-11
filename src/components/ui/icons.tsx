@@ -69,6 +69,9 @@ import {
   LuScrollText,
   LuUserCog,
   LuBell,
+  LuTrendingUp,
+  LuArrowLeftRight,
+  LuHandCoins,
 } from 'react-icons/lu'
 import { MdLogout, MdPersonOutline } from 'react-icons/md'
 
@@ -86,6 +89,9 @@ export const IconSuppliers = LuTruck
 export const IconSettings = LuSettings
 export const IconSummary = LuClipboard
 export const IconDesign = LuPalette
+export const IconProfitLoss = LuTrendingUp
+export const IconCashFlow = LuArrowLeftRight
+export const IconDistribution = LuHandCoins
 
 /** Chrome and controls. */
 export const IconMenu = HiOutlineBars3

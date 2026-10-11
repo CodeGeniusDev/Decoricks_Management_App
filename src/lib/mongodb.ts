@@ -20,8 +20,10 @@ declare global {
  * The automated test suite sets `MONGODB_TEST_DB` so every suite runs against a
  * separate database (`decoricks_test`) and can never touch production data.
  * A guard refuses to hand out a test database handle unless the process is
- * actually running tests, so a stray env var in production cannot silently
- * redirect traffic.
+ * actually running tests — either the Vitest runner (`NODE_ENV=test`) or the
+ * Playwright-managed app server (`E2E_TEST_MODE=1`, set only by the webServer
+ * block in `playwright.config.ts`) — so a stray env var in production cannot
+ * silently redirect traffic.
  */
 const resolveDbName = (): string | undefined => {
   const env = getEnv()
@@ -29,9 +31,10 @@ const resolveDbName = (): string | undefined => {
 
   if (!testDb) return undefined
 
-  if (env.NODE_ENV !== 'test') {
+  const inTestRunner = env.NODE_ENV === 'test' || process.env.E2E_TEST_MODE === '1'
+  if (!inTestRunner) {
     throw new Error(
-      'MONGODB_TEST_DB is set but NODE_ENV is not "test". Refusing to use a test database outside the test runner.'
+      'MONGODB_TEST_DB is set but the process is not a test runner (NODE_ENV is not "test" and E2E_TEST_MODE is not "1"). Refusing to use a test database outside the test runner.'
     )
   }
 

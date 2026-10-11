@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
@@ -6,6 +6,7 @@ import { getDatabase } from '@/lib/mongodb'
 import { getTaskCollection, taskToJSON } from '@/lib/models/Operations'
 import { taskSchema, taskStatusUpdateSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
+import { recordAuditEntry } from '@/lib/audit'
 import { errorResponse, notFoundError, successResponse, validationError } from '@/lib/api-response'
 
 type RouteContext = { params: Promise<{ id: string }> }
@@ -35,7 +36,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
 /** PUT /api/tasks/[id] */
 async function __PUT(request: NextRequest, context: RouteContext) {
   try {
-    await authorize('tasks', 'edit')
+    const auth = await authorize('tasks', 'edit')
 
     const { id } = await context.params
     if (!isObjectId(id)) return badId()
@@ -52,6 +53,9 @@ async function __PUT(request: NextRequest, context: RouteContext) {
     const col = getTaskCollection(db)
     const _id = new ObjectId(id)
 
+    const before = await col.findOne({ _id } as never)
+    if (!before) return notFoundError('Task not found')
+
     const result = await col.updateOne(
       { _id } as never,
       {
@@ -65,6 +69,18 @@ async function __PUT(request: NextRequest, context: RouteContext) {
     if (result.matchedCount === 0) return notFoundError('Task not found')
 
     const updated = await col.findOne({ _id } as never)
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: 'task_updated',
+      entityType: 'task',
+      entityId: _id,
+      oldValue: taskToJSON(before),
+      newValue: updated ? taskToJSON(updated) : undefined,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
     return successResponse(taskToJSON(updated!))
   } catch (error) {
     console.error('PUT /api/tasks/[id] failed:', error)
@@ -79,7 +95,7 @@ async function __PUT(request: NextRequest, context: RouteContext) {
  */
 async function __PATCH(request: NextRequest, context: RouteContext) {
   try {
-    await authorize('tasks', 'edit')
+    const auth = await authorize('tasks', 'edit')
 
     const { id } = await context.params
     if (!isObjectId(id)) return badId()
@@ -96,6 +112,9 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
     const col = getTaskCollection(db)
     const _id = new ObjectId(id)
 
+    const before = await col.findOne({ _id } as never)
+    if (!before) return notFoundError('Task not found')
+
     const result = await col.updateOne(
       { _id } as never,
       { $set: { status: parsed.data.status, updatedAt: getKarachiDate() } } as never
@@ -103,6 +122,18 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
     if (result.matchedCount === 0) return notFoundError('Task not found')
 
     const updated = await col.findOne({ _id } as never)
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: 'task_status_changed',
+      entityType: 'task',
+      entityId: _id,
+      oldValue: { status: before.status },
+      newValue: { status: parsed.data.status },
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
     return successResponse(taskToJSON(updated!))
   } catch (error) {
     console.error('PATCH /api/tasks/[id] failed:', error)
@@ -113,14 +144,32 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
 /** DELETE /api/tasks/[id] */
 async function __DELETE(_request: NextRequest, context: RouteContext) {
   try {
-    await authorize('tasks', 'delete')
+    const auth = await authorize('tasks', 'delete')
 
     const { id } = await context.params
     if (!isObjectId(id)) return badId()
 
     const db = await getDatabase()
-    const result = await getTaskCollection(db).deleteOne({ _id: new ObjectId(id) } as never)
+    const col = getTaskCollection(db)
+    const _id = new ObjectId(id)
+
+    const before = await col.findOne({ _id } as never)
+    if (!before) return notFoundError('Task not found')
+
+    const result = await col.deleteOne({ _id } as never)
     if (result.deletedCount === 0) return notFoundError('Task not found')
+
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: 'task_deleted',
+      entityType: 'task',
+      entityId: _id,
+      oldValue: taskToJSON(before),
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
 
     return successResponse({ _id: id })
   } catch (error) {

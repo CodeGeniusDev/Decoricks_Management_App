@@ -240,10 +240,10 @@ async function __GET(request: NextRequest) {
         totalValue: inventoryValue,
         totalValueDisplay: formatPaisa(inventoryValue),
         lowStockItems: [...lowStockProducts.entries()].map(([id, quantity]) => ({
+          id,
           name: nameById.get(id) ?? 'Unknown product',
           quantity,
         })),
-        recentTransfers: 0,
       },
       tasksCompleted: {
         count: tasksDone,

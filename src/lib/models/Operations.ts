@@ -74,10 +74,38 @@ export interface BudgetCategory {
   budgeted: number // paisa
 }
 
+/**
+ * One immutable snapshot of a budget taken before an edit, so changes keep
+ * history (Phase 4 brief: no silent edits, no hard deletes). The newest
+ * revision sits at the end of the array.
+ */
+export interface BudgetRevision {
+  revisedAt: Date
+  revisedBy: ObjectId
+  revisedByName?: string
+  /** Human-readable summary of what changed, e.g. "meta_ads 200000 -> 250000". */
+  changes: string[]
+  /** The full pre-edit document (minus its own revision history). */
+  previous: {
+    name: string
+    periodStart: Date
+    periodEnd: Date
+    status: Budget['status']
+    categories: BudgetCategory[]
+    totalBudgeted: number
+  }
+}
+
 export interface Budget {
   _id?: ObjectId
   budgetNumber?: string
   name: string
+  /**
+   * Derived from the dates at create time; drives list grouping. Optional on
+   * the document because Phase 1–2 budgets predate it — readers derive it from
+   * the period when absent.
+   */
+  periodKind?: 'weekly' | 'monthly' | 'custom'
   periodStart: Date
   periodEnd: Date
   status: 'draft' | 'active' | 'archived'
@@ -85,6 +113,9 @@ export interface Budget {
   totalBudgeted: number // paisa
   approvedBy?: string
   approvedAt?: Date
+  /** Client-generated; unique when present, so retries cannot double-create. */
+  idempotencyKey?: string
+  revisions?: BudgetRevision[]
   createdAt: Date
   updatedAt: Date
   createdBy: ObjectId
@@ -110,6 +141,10 @@ export function ensureOperationsIndexes(db: Db): Promise<void> {
           getSupplierCollection(db).createIndex({ createdAt: -1 }),
           getBudgetCollection(db).createIndex({ budgetNumber: 1 }, { unique: true, sparse: true }),
           getBudgetCollection(db).createIndex({ status: 1, periodStart: -1 }),
+          getBudgetCollection(db).createIndex(
+            { idempotencyKey: 1 },
+            { unique: true, sparse: true, name: 'budgets_idempotency_unique' }
+          ),
         ])
       } catch (error) {
         console.error('ensureOperationsIndexes failed:', error)
@@ -123,6 +158,7 @@ export const budgetToJSON = (b: Budget) => ({
   _id: b._id?.toString(),
   budgetNumber: b.budgetNumber,
   name: b.name,
+  periodKind: b.periodKind,
   periodStart: b.periodStart,
   periodEnd: b.periodEnd,
   status: b.status,
@@ -130,6 +166,7 @@ export const budgetToJSON = (b: Budget) => ({
   totalBudgeted: b.totalBudgeted,
   approvedBy: b.approvedBy,
   approvedAt: b.approvedAt,
+  revisionCount: b.revisions?.length ?? 0,
   createdAt: b.createdAt,
   updatedAt: b.updatedAt,
 })

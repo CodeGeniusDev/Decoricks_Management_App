@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
@@ -6,6 +6,7 @@ import { getDatabase } from '@/lib/mongodb'
 import { getSupplierCollection, supplierToJSON } from '@/lib/models/Operations'
 import { supplierSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
+import { recordAuditEntry } from '@/lib/audit'
 import { errorResponse, notFoundError, successResponse, validationError } from '@/lib/api-response'
 
 type RouteContext = { params: Promise<{ id: string }> }
@@ -35,7 +36,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
 /** PUT /api/suppliers/[id] */
 async function __PUT(request: NextRequest, context: RouteContext) {
   try {
-    await authorize('suppliers', 'edit')
+    const auth = await authorize('suppliers', 'edit')
 
     const { id } = await context.params
     if (!isObjectId(id)) return badId()
@@ -51,6 +52,9 @@ async function __PUT(request: NextRequest, context: RouteContext) {
     const db = await getDatabase()
     const col = getSupplierCollection(db)
     const _id = new ObjectId(id)
+
+    const before = await col.findOne({ _id } as never)
+    if (!before) return notFoundError('Supplier not found')
 
     if (parsed.data.name) {
       const clash = await col.findOne({
@@ -71,6 +75,18 @@ async function __PUT(request: NextRequest, context: RouteContext) {
     if (result.matchedCount === 0) return notFoundError('Supplier not found')
 
     const updated = await col.findOne({ _id } as never)
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: 'supplier_updated',
+      entityType: 'supplier',
+      entityId: _id,
+      oldValue: supplierToJSON(before),
+      newValue: updated ? supplierToJSON(updated) : undefined,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
     return successResponse(supplierToJSON(updated!))
   } catch (error) {
     console.error('PUT /api/suppliers/[id] failed:', error)
@@ -86,7 +102,7 @@ async function __PUT(request: NextRequest, context: RouteContext) {
  */
 async function __DELETE(_request: NextRequest, context: RouteContext) {
   try {
-    await authorize('suppliers', 'delete')
+    const auth = await authorize('suppliers', 'delete')
 
     const { id } = await context.params
     if (!isObjectId(id)) return badId()
@@ -97,6 +113,7 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
 
     const existing = await col.findOne({ _id } as never)
     if (!existing) return notFoundError('Supplier not found')
+    const meta = await getRequestMeta()
 
     const expenseRef = await db
       .collection('expenses')
@@ -106,6 +123,18 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
     if (expenseRef > 0) {
       await col.updateOne({ _id } as never, { $set: { isActive: false, updatedAt: getKarachiDate() } } as never)
       const updated = await col.findOne({ _id } as never)
+      await recordAuditEntry(db, {
+        userId: auth.user._id as ObjectId,
+        userEmail: auth.user.email,
+        action: 'supplier_deactivated',
+        entityType: 'supplier',
+        entityId: _id,
+        oldValue: { isActive: existing.isActive },
+        newValue: { isActive: false },
+        details: `Referenced by ${expenseRef} expense record(s), deactivated instead of deleted.`,
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent,
+      })
       return successResponse({
         ...supplierToJSON(updated!),
         deactivated: true,
@@ -114,6 +143,16 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
     }
 
     await col.deleteOne({ _id } as never)
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: 'supplier_deleted',
+      entityType: 'supplier',
+      entityId: _id,
+      oldValue: supplierToJSON(existing),
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
     return successResponse({ _id: id })
   } catch (error) {
     console.error('DELETE /api/suppliers/[id] failed:', error)

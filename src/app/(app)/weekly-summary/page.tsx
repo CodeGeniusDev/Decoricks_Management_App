@@ -55,8 +55,7 @@ interface WeeklySummaryData {
   stockSummary: {
     totalValue: number
     totalValueDisplay: string
-    lowStockItems: Array<{ name: string; quantity: number }>
-    recentTransfers: number
+    lowStockItems: Array<{ id: string; name: string; quantity: number }>
   }
   tasksCompleted: {
     count: number
@@ -289,16 +288,12 @@ export default function WeeklySummaryPage() {
                   <span className="text-sm text-decoricks-dark/60">Total Inventory Value</span>
                   <span className="font-medium">{data.stockSummary.totalValueDisplay}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-decoricks-dark/60">Recent Transfers</span>
-                  <span className="font-medium">{data.stockSummary.recentTransfers}</span>
-                </div>
                 {data.stockSummary.lowStockItems.length > 0 && (
                   <div className="mt-3">
                     <p className="text-sm font-medium text-decoricks-dark mb-2">Low Stock Items</p>
                     <div className="space-y-1">
-                      {data.stockSummary.lowStockItems.map((item, i) => (
-                        <div key={i} className="flex justify-between text-sm">
+                      {data.stockSummary.lowStockItems.map((item) => (
+                        <div key={item.id} className="flex justify-between text-sm">
                           <span>{item.name}</span>
                           <Badge variant="error">{item.quantity} left</Badge>
                         </div>

@@ -22,6 +22,9 @@ interface Message {
 
 const initials = (name: string) => name.trim().charAt(0).toUpperCase() || '?'
 
+/** How often to ask the server for messages newer than what's on screen. */
+const POLL_INTERVAL_MS = 8000
+
 export default function ChatPage() {
   // Identity comes from the verified session; the server derives the stored
   // sender itself and ignores anything the client sends.
@@ -32,6 +35,11 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // A failed background poll must not wipe the conversation or show the
+  // full-page error card — that reads as "chat is broken" when it's really
+  // just a hiccup. This flag only dims the "Live" indicator until the next
+  // poll succeeds.
+  const [pollFailing, setPollFailing] = useState(false)
   const [inputValue, setInputValue] = useState('')
   const [sending, setSending] = useState(false)
   const [toastMessage, setToastMessage] = useState<{
@@ -41,6 +49,26 @@ export default function ChatPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // High-water mark for incremental polling — only messages created after
+  // this timestamp are fetched on subsequent requests, so the client never
+  // re-downloads the whole history every few seconds.
+  const lastSeenAtRef = useRef<number>(0)
+
+  const mergeMessages = useCallback((incoming: Message[]) => {
+    if (incoming.length === 0) return
+    setMessages((prev) => {
+      // The optimistic append in sendMessage() can race a poll that already
+      // fetched the same document; dedupe by id so nothing ever shows twice.
+      const seen = new Set(prev.map((m) => m._id))
+      const fresh = incoming.filter((m) => !seen.has(m._id))
+      if (fresh.length === 0) return prev
+      return [...prev, ...fresh]
+    })
+    const newest = incoming[incoming.length - 1]
+    const newestTime = new Date(newest.createdAt).getTime()
+    if (newestTime > lastSeenAtRef.current) lastSeenAtRef.current = newestTime
+  }, [])
 
   const fetchMessages = useCallback(async () => {
     try {
@@ -52,6 +80,8 @@ export default function ChatPage() {
         throw new Error(body?.error?.message || 'Failed to load messages')
       }
       setMessages(body.data)
+      const newest = body.data.length ? new Date(body.data[body.data.length - 1].createdAt).getTime() : 0
+      lastSeenAtRef.current = newest
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Failed to load messages')
     } finally {
@@ -62,6 +92,48 @@ export default function ChatPage() {
   useEffect(() => {
     fetchMessages()
   }, [fetchMessages])
+
+  // Poll for messages from other team members. Without this the chat only
+  // ever shows what existed at page load plus whatever *this* client sent —
+  // a real gap, since the API already supports an incremental `since`
+  // query for exactly this purpose.
+  useEffect(() => {
+    if (loadError) return // initial load failed; don't hammer a broken endpoint
+
+    let cancelled = false
+
+    const poll = async () => {
+      // A hidden tab doesn't need fresh messages rendered; skip the request
+      // and catch up on the next tick (or immediately on visibility, below).
+      if (document.hidden) return
+      try {
+        const url = lastSeenAtRef.current
+          ? `/api/chat?since=${lastSeenAtRef.current}`
+          : '/api/chat'
+        const res = await apiFetch(url)
+        const body = await res.json()
+        if (cancelled) return
+        if (!res.ok || !body.success) throw new Error(body?.error?.message || 'Poll failed')
+        setPollFailing(false)
+        mergeMessages(body.data as Message[])
+      } catch {
+        if (!cancelled) setPollFailing(true)
+      }
+    }
+
+    const interval = setInterval(poll, POLL_INTERVAL_MS)
+
+    const onVisible = () => {
+      if (!document.hidden) poll()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [loadError, mergeMessages])
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -131,7 +203,24 @@ export default function ChatPage() {
 
   return (
     <PageTransition>
-      <h1 className="text-2xl font-bold text-decoricks-dark mb-6">Team Chat</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-bold text-decoricks-dark">Team Chat</h1>
+        {!loadError && (
+          <span
+            className="flex items-center gap-1.5 text-xs text-ink-muted"
+            role="status"
+            aria-live="polite"
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${
+                pollFailing ? 'bg-status-warning' : 'bg-status-success'
+              }`}
+              aria-hidden
+            />
+            {pollFailing ? 'Reconnecting…' : 'Live'}
+          </span>
+        )}
+      </div>
 
       {/* Toast */}
       {toastMessage && (

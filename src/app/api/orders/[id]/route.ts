@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
 import { authorize, authorizeScoped, SCOPED_SALES_FULL_EDIT } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
@@ -7,6 +7,7 @@ import { getOrderCollection, orderToJSON, type Order } from '@/lib/models/Sales'
 import { orderStatusUpdateSchema, orderSchema } from '@/lib/schemas/operations'
 import { priceOrderItems } from '@/lib/order-pricing'
 import { getKarachiDate } from '@/lib/date'
+import { recordAuditEntry } from '@/lib/audit'
 import { errorResponse, notFoundError, successResponse, validationError } from '@/lib/api-response'
 
 type RouteContext = { params: Promise<{ id: string }> }
@@ -36,7 +37,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
 /** PATCH /api/orders/[id] — updates fulfilment/payment status only. */
 async function __PATCH(request: NextRequest, context: RouteContext) {
   try {
-    await authorize('sales', 'edit')
+    const auth = await authorize('sales', 'edit')
 
     const { id } = await context.params
     if (!isObjectId(id)) return badId()
@@ -76,6 +77,23 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
     await col.updateOne({ _id } as never, { $set: { ...updates, updatedAt: getKarachiDate() } } as never)
     const updated = await col.findOne({ _id } as never)
 
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: 'order_status_changed',
+      entityType: 'order',
+      entityId: _id,
+      oldValue: {
+        orderStatus: existing.orderStatus,
+        paymentStatus: existing.paymentStatus,
+        codOutcome: existing.codOutcome,
+      },
+      newValue: { ...updates },
+      details: `Order ${existing.orderNumber} updated`,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
     return successResponse(orderToJSON(updated!))
   } catch (error) {
     console.error('PATCH /api/orders/[id] failed:', error)
@@ -96,7 +114,7 @@ async function __PUT(request: NextRequest, context: RouteContext) {
     // not order contents, customer details or pricing — so PUT (full rewrite)
     // needs the separate `sales.full_edit` grant, which is Founder-only by
     // default. Hasnat uses PATCH below for delivery outcomes and returns.
-    await authorizeScoped('sales', 'edit', SCOPED_SALES_FULL_EDIT)
+    const auth = await authorizeScoped('sales', 'edit', SCOPED_SALES_FULL_EDIT)
 
     const { id } = await context.params
     if (!isObjectId(id)) return badId()
@@ -149,6 +167,20 @@ async function __PUT(request: NextRequest, context: RouteContext) {
 
     await col.updateOne({ _id } as never, { $set: { ...updates, updatedAt: getKarachiDate() } } as never)
     const updated = await col.findOne({ _id } as never)
+
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: 'order_updated',
+      entityType: 'order',
+      entityId: _id,
+      oldValue: orderToJSON(existing),
+      newValue: updated ? orderToJSON(updated) : undefined,
+      details: `Order ${existing.orderNumber} edited`,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
     return successResponse(orderToJSON(updated!))
   } catch (error) {
     console.error('PUT /api/orders/[id] failed:', error)
@@ -164,7 +196,7 @@ async function __PUT(request: NextRequest, context: RouteContext) {
  */
 async function __DELETE(_request: NextRequest, context: RouteContext) {
   try {
-    await authorize('sales', 'delete')
+    const auth = await authorize('sales', 'delete')
 
     const { id } = await context.params
     if (!isObjectId(id)) return badId()
@@ -186,6 +218,19 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
     }
 
     await col.deleteOne({ _id } as never)
+
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: 'order_deleted',
+      entityType: 'order',
+      entityId: _id,
+      oldValue: orderToJSON(existing),
+      details: `Cancelled order ${existing.orderNumber} deleted`,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
     return successResponse({ _id: id })
   } catch (error) {
     console.error('DELETE /api/orders/[id] failed:', error)

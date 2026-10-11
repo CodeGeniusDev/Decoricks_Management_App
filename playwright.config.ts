@@ -64,7 +64,16 @@ export default defineConfig({
   ],
   webServer: manageServer
     ? {
-        command: `npx next build && npx next start -p ${PORT}`,
+        // Boot order matters: seed the isolated `decoricks_test` database
+        // first (scripts/seed-e2e.ts can only ever target a test-named DB),
+        // then build and start the server against it. E2E_TEST_MODE +
+        // MONGODB_TEST_DB make src/lib/mongodb.ts resolve the test database,
+        // so the suite can never write into the application database.
+        command: `npx tsx scripts/seed-e2e.ts && npx next build && npx next start -p ${PORT}`,
+        env: {
+          E2E_TEST_MODE: '1',
+          MONGODB_TEST_DB: process.env.MONGODB_TEST_DB ?? 'decoricks_test',
+        },
         url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 300_000,

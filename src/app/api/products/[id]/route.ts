@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
@@ -6,6 +6,7 @@ import { getDatabase } from '@/lib/mongodb'
 import { getProductCollection, getStockCollection, productToJSON } from '@/lib/models/Product'
 import { productSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
+import { recordAuditEntry } from '@/lib/audit'
 import { errorResponse, notFoundError, successResponse, validationError } from '@/lib/api-response'
 
 type RouteContext = { params: Promise<{ id: string }> }
@@ -36,7 +37,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
 /** PUT /api/products/[id] */
 async function __PUT(request: NextRequest, context: RouteContext) {
   try {
-    await authorize('inventory', 'edit')
+    const auth = await authorize('inventory', 'edit')
 
     const { id } = await context.params
     if (!isObjectId(id)) return badId()
@@ -54,6 +55,9 @@ async function __PUT(request: NextRequest, context: RouteContext) {
     const col = getProductCollection(db)
     const _id = new ObjectId(id)
 
+    const before = await col.findOne({ _id } as never)
+    if (!before) return notFoundError('Product not found')
+
     if (parsed.data.sku) {
       const clash = await col.findOne({ sku: parsed.data.sku, _id: { $ne: _id } } as never)
       if (clash) {
@@ -68,6 +72,18 @@ async function __PUT(request: NextRequest, context: RouteContext) {
     if (result.matchedCount === 0) return notFoundError('Product not found')
 
     const updated = await col.findOne({ _id } as never)
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: 'product_updated',
+      entityType: 'product',
+      entityId: _id,
+      oldValue: productToJSON(before),
+      newValue: updated ? productToJSON(updated) : undefined,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
     return successResponse(productToJSON(updated!))
   } catch (error) {
     console.error('PUT /api/products/[id] failed:', error)
@@ -83,13 +99,17 @@ async function __PUT(request: NextRequest, context: RouteContext) {
  */
 async function __DELETE(_request: NextRequest, context: RouteContext) {
   try {
-    await authorize('inventory', 'delete')
+    const auth = await authorize('inventory', 'delete')
 
     const { id } = await context.params
     if (!isObjectId(id)) return badId()
 
     const db = await getDatabase()
     const _id = new ObjectId(id)
+
+    const productCol = getProductCollection(db)
+    const before = await productCol.findOne({ _id } as never)
+    if (!before) return notFoundError('Product not found')
 
     const stockCol = getStockCollection(db)
     const stockRows = await stockCol.find({ productId: _id } as never).toArray()
@@ -103,9 +123,20 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
 
     if (stockRows.length > 0) await stockCol.deleteMany({ productId: _id } as never)
 
-    const result = await getProductCollection(db).deleteOne({ _id } as never)
+    const result = await productCol.deleteOne({ _id } as never)
     if (result.deletedCount === 0) return notFoundError('Product not found')
 
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: auth.user._id as ObjectId,
+      userEmail: auth.user.email,
+      action: 'product_deleted',
+      entityType: 'product',
+      entityId: _id,
+      oldValue: productToJSON(before),
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
     return successResponse({ _id: id })
   } catch (error) {
     console.error('DELETE /api/products/[id] failed:', error)

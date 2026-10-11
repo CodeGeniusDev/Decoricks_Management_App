@@ -33,6 +33,22 @@ interface OrderItem {
   total: number // paisa
 }
 
+/** A form row: an order line plus a client-only stable identity. */
+interface FormOrderItem extends OrderItem {
+  // React key for the editable rows — rows are added and removed mid-list,
+  // so index keys would reuse the wrong DOM. Never sent to the API.
+  rowId: string
+}
+
+const blankFormItem = (): FormOrderItem => ({
+  productId: '',
+  productName: '',
+  quantity: 1,
+  unitPrice: 0,
+  total: 0,
+  rowId: crypto.randomUUID(),
+})
+
 interface Order {
   _id: string
   orderNumber: string
@@ -101,9 +117,7 @@ export default function SalesPage() {
   const [formCustomerAddress, setFormCustomerAddress] = useState('')
   const [formSalesChannel, setFormSalesChannel] = useState('shopify')
   const [formNotes, setFormNotes] = useState('')
-  const [formItems, setFormItems] = useState<OrderItem[]>([
-    { productId: '', productName: '', quantity: 1, unitPrice: 0, total: 0 },
-  ])
+  const [formItems, setFormItems] = useState<FormOrderItem[]>([blankFormItem()])
   const [formShippingCost, setFormShippingCost] = useState(0)
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
 
@@ -144,7 +158,7 @@ export default function SalesPage() {
     setFormCustomerAddress('')
     setFormSalesChannel('shopify')
     setFormNotes('')
-    setFormItems([{ productId: '', productName: '', quantity: 1, unitPrice: 0, total: 0 }])
+    setFormItems([blankFormItem()])
     setFormShippingCost(0)
     setFormErrors({})
     setEditingOrder(null)
@@ -163,7 +177,8 @@ export default function SalesPage() {
     setFormCustomerAddress(order.customerAddress)
     setFormSalesChannel(order.salesChannel)
     setFormNotes(order.notes || '')
-    setFormItems(order.items)
+    // Saved lines carry no client identity; mint fresh row ids for this session.
+    setFormItems(order.items.map((item) => ({ ...item, rowId: crypto.randomUUID() })))
     setFormShippingCost(Math.round(order.shippingCost / 100))
     setFormErrors({})
     setIsModalOpen(true)
@@ -203,7 +218,7 @@ export default function SalesPage() {
   }
 
   const addItemRow = () => {
-    setFormItems([...formItems, { productId: '', productName: '', quantity: 1, unitPrice: 0, total: 0 }])
+    setFormItems([...formItems, blankFormItem()])
   }
 
   const removeItemRow = (index: number) => {
@@ -547,7 +562,7 @@ export default function SalesPage() {
               </p>
             )}
             {formItems.map((item, index) => (
-              <div key={index} className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
+              <div key={item.rowId} className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
                 <Select
                   label="Product"
                   options={catalog.map((p) => ({ value: p._id, label: `${p.name} (${p.sku})` }))}

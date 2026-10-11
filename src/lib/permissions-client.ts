@@ -1,4 +1,4 @@
-import type { PermissionSet } from '@/lib/models/User'
+import type { PermissionSet } from '@/lib/models/User';
 import {
   LAHORE_STOCK_ROLES,
   PERMISSION_MODULES,
@@ -8,7 +8,7 @@ import {
   SCOPED_SALES_FULL_EDIT,
   isFounderRole,
   type PermissionModule,
-} from '@/lib/roles'
+} from '@/lib/roles';
 
 /**
  * Client-side permission check.
@@ -27,71 +27,69 @@ import {
  */
 
 export interface NavPermissionSource {
-  role: string
-  permissions?: PermissionSet
+  role: string;
+  permissions?: PermissionSet;
 }
 
-export const can = (
-  source: NavPermissionSource,
-  module: string,
-  action: string
-): boolean => {
+export const can = (source: NavPermissionSource, module: string, action: string): boolean => {
   // The Founder is the root of the trust model and always passes.
-  if (isFounderRole(source.role)) return true
+  if (isFounderRole(source.role)) return true;
 
   if (source.permissions) {
-    const modulePermissions = source.permissions[module]
-    if (!modulePermissions) return false
-    return modulePermissions[action] === true
+    const modulePermissions = source.permissions[module];
+    if (!modulePermissions) return false;
+    return modulePermissions[action] === true;
   }
 
   // Fall back to the SPEC defaults when no stored matrix was supplied.
-  return SPEC_DEFAULT_MATRIX[source.role]?.[module]?.[action] === true
-}
+  return SPEC_DEFAULT_MATRIX[source.role]?.[module]?.[action] === true;
+};
 
 /** SPEC Appendix A, flattened for direct lookup. */
-const SPEC_DEFAULT_MATRIX: Record<string, Record<string, Record<string, boolean>>> =
-  Object.fromEntries(
-    ROLE_NAMES.map((role) => [
-      role,
-      role === 'founder'
-        ? Object.fromEntries(
-            PERMISSION_MODULES.map((module) => [
-              module,
-              {
-                view: true,
-                create: true,
-                edit: true,
-                delete: true,
-                approve: true,
-              },
-            ])
-          )
-        : role === 'partner_hasnat'
-          ? {
-              finance: { view: true, create: false, edit: false, delete: false, approve: false },
-              budget: { view: true, create: false, edit: false, delete: false, approve: false },
-              inventory: { view: true, create: false, edit: false, delete: false },
-              sales: { view: true, create: true, edit: true, delete: false },
-              tasks: { view: true, create: true, edit: true, delete: true },
-              chat: { view: true, create: true, edit: true, delete: true },
-              suppliers: { view: true, create: false, edit: false, delete: false },
-              settings: { view: false, create: false, edit: false, delete: false },
-              users: { view: false, create: false, edit: false, delete: false },
-            }
-          : {
-              finance: { view: true, create: false, edit: false, delete: false, approve: false },
-              budget: { view: true, create: false, edit: false, delete: false, approve: false },
-              inventory: { view: true, create: false, edit: false, delete: false },
-              sales: { view: true, create: false, edit: false, delete: false },
-              tasks: { view: true, create: true, edit: true, delete: true },
-              chat: { view: true, create: true, edit: true, delete: true },
-              suppliers: { view: true, create: false, edit: false, delete: false },
-              settings: { view: false, create: false, edit: false, delete: false },
-              users: { view: false, create: false, edit: false, delete: false },
+const SPEC_DEFAULT_MATRIX: Record<
+  string,
+  Record<string, Record<string, boolean>>
+> = Object.fromEntries(
+  ROLE_NAMES.map((role) => [
+    role,
+    role === 'founder'
+      ? Object.fromEntries(
+          PERMISSION_MODULES.map((module) => [
+            module,
+            {
+              view: true,
+              create: true,
+              edit: true,
+              delete: true,
+              approve: true,
             },
-    ])
-  )
+          ])
+        )
+      : role === 'partner_hasnat'
+        ? {
+            finance: { view: true, create: false, edit: false, delete: false, approve: false },
+            budget: { view: true, create: false, edit: false, delete: false, approve: false },
+            inventory: { view: true, create: false, edit: false, delete: false },
+            sales: { view: true, create: true, edit: true, delete: false },
+            tasks: { view: true, create: true, edit: true, delete: true },
+            chat: { view: true, create: true, edit: true, delete: true },
+            suppliers: { view: true, create: false, edit: false, delete: false },
+            settings: { view: false, create: false, edit: false, delete: false },
+            users: { view: false, create: false, edit: false, delete: false },
+          }
+        : {
+            finance: { view: true, create: false, edit: false, delete: false, approve: false },
+            budget: { view: true, create: false, edit: false, delete: false, approve: false },
+            inventory: { view: true, create: false, edit: false, delete: false },
+            sales: { view: true, create: false, edit: false, delete: false },
+            tasks: { view: true, create: true, edit: true, delete: true },
+            chat: { view: true, create: true, edit: true, delete: true },
+            suppliers: { view: true, create: false, edit: false, delete: false },
+            settings: { view: false, create: false, edit: false, delete: false },
+            users: { view: false, create: false, edit: false, delete: false },
+          },
+  ])
+);
 
 /**
  * Route → module/action pairs guarding it. Drives nav visibility for screens
@@ -105,7 +103,14 @@ export const ROUTE_PERMISSIONS: Record<string, { module: PermissionModule; actio
     { module: 'tasks', action: 'view' },
   ],
   '/finance': [{ module: 'finance', action: 'view' }],
+  '/finance/transactions': [{ module: 'finance', action: 'view' }],
+  '/finance/accounts': [{ module: 'finance', action: 'view' }],
+  '/finance/categories': [{ module: 'finance', action: 'view' }],
   '/budgets': [{ module: 'budget', action: 'view' }],
+  // Phase 4 report screens are finance views — all roles read the numbers.
+  '/profit-loss': [{ module: 'finance', action: 'view' }],
+  '/cash-flow': [{ module: 'finance', action: 'view' }],
+  '/distributions': [{ module: 'finance', action: 'view' }],
   '/inventory': [{ module: 'inventory', action: 'view' }],
   '/sales': [{ module: 'sales', action: 'view' }],
   '/tasks': [{ module: 'tasks', action: 'view' }],
@@ -114,25 +119,36 @@ export const ROUTE_PERMISSIONS: Record<string, { module: PermissionModule; actio
   '/weekly-summary': [{ module: 'finance', action: 'view' }],
   // SPEC §4.2 Settings and Users rows are Founder-only.
   '/settings': [{ module: 'settings', action: 'view' }],
-}
+};
 
 /** Every check for a route must pass. */
-export const canAccessRoute = (
-  source: NavPermissionSource,
-  pathname: string
-): boolean => {
-  const requirements = ROUTE_PERMISSIONS[normaliseRoute(pathname)]
-  if (!requirements) return true // no declared requirement, e.g. /profile
-  return requirements.every((req) => can(source, req.module, req.action))
-}
+export const canAccessRoute = (source: NavPermissionSource, pathname: string): boolean => {
+  const route = normaliseRoute(pathname);
+  // Detail routes inherit their section's guard via the longest registered
+  // prefix: /budgets/<id> is treated as /budgets, /distributions/<id> as
+  // /distributions. Routes with no match at all (e.g. /profile) stay open —
+  // this is nav display logic, enforcement is server-side anyway.
+  const requirements =
+    ROUTE_PERMISSIONS[route] ??
+    Object.entries(ROUTE_PERMISSIONS)
+      .filter(([prefix]) => prefix !== '/' && route.startsWith(`${prefix}/`))
+      .sort((a, b) => b[0].length - a[0].length)[0]?.[1];
+  if (!requirements) return true; // no declared requirement, e.g. /profile
+  return requirements.every((req) => can(source, req.module, req.action));
+};
 
 const normaliseRoute = (pathname: string): string => {
-  if (pathname === '/') return '/'
-  const withoutQuery = pathname.split('?')[0].replace(/\/+$/, '')
-  return withoutQuery || '/'
-}
+  if (pathname === '/') return '/';
+  const withoutQuery = pathname.split('?')[0].replace(/\/+$/, '');
+  return withoutQuery || '/';
+};
 
-export const isFounder = (role?: string): boolean => isFounderRole(role)
+export const isFounder = (role?: string): boolean => isFounderRole(role);
 
 /** Re-exported so the settings screens show the same scoped grants the API checks. */
-export { LAHORE_STOCK_ROLES, SALES_FULL_EDIT_ROLES, SCOPED_LAHORE_STOCK_PERMISSION, SCOPED_SALES_FULL_EDIT }
+export {
+  LAHORE_STOCK_ROLES,
+  SALES_FULL_EDIT_ROLES,
+  SCOPED_LAHORE_STOCK_PERMISSION,
+  SCOPED_SALES_FULL_EDIT,
+};
