@@ -1,11 +1,22 @@
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
-import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
+import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
-import { getTaskCollection, taskToJSON } from '@/lib/models/Operations'
-import { taskSchema, taskStatusUpdateSchema } from '@/lib/schemas/operations'
-import { getKarachiDate } from '@/lib/date'
+import {
+  getTaskActivityCollection,
+  getTaskCommentCollection,
+  getTaskDocCollection,
+  taskToJSON,
+  type TaskDoc,
+} from '@/lib/models/Tasks'
+import { taskUpdateSchema } from '@/lib/schemas/tasks'
+import {
+  TaskVersionConflictError,
+  recordTaskActivity,
+  writeTaskWithVersion,
+} from '@/lib/task-service'
+import { getActor } from '@/lib/current-user'
 import { recordAuditEntry } from '@/lib/audit'
 import { errorResponse, notFoundError, successResponse, validationError } from '@/lib/api-response'
 
@@ -14,7 +25,32 @@ type RouteContext = { params: Promise<{ id: string }> }
 const isObjectId = (v: string) => /^[0-9a-fA-F]{24}$/.test(v)
 const badId = () => validationError('Invalid task id', [{ path: 'id', message: 'Malformed id' }])
 
-/** GET /api/tasks/[id] */
+/**
+ * Ownership check.
+ *
+ * SPEC §4.2: a Partner may edit or archive only tasks they created or are
+ * assigned to. The Founder holds `tasks.editOthers` and `tasks.deleteOthers`,
+ * which bypasses this entirely. `authorize('tasks','edit')` alone is not
+ * enough — the row-level rule lives here so it cannot be forgotten by any
+ * new endpoint that mutates tasks.
+ */
+const canActOnTask = (
+  doc: TaskDoc,
+  userId: ObjectId,
+  canActOnOthers: boolean
+): boolean => {
+  if (canActOnOthers) return true
+  if (doc.createdBy.equals(userId)) return true
+  return doc.assigneeIds.some((a) => a.equals(userId))
+}
+
+/**
+ * GET /api/tasks/[id]
+ *
+ * Returns the task plus its comments (newest-last) and activity feed
+ * (newest-first, capped at 100). The board drawer shows both; keeping them in
+ * a single fetch avoids three round-trips every time a card is opened.
+ */
 async function __GET(_request: NextRequest, context: RouteContext) {
   try {
     await authorize('tasks', 'view')
@@ -23,67 +59,43 @@ async function __GET(_request: NextRequest, context: RouteContext) {
     if (!isObjectId(id)) return badId()
 
     const db = await getDatabase()
-    const doc = await getTaskCollection(db).findOne({ _id: new ObjectId(id) } as never)
+    const _id = new ObjectId(id)
+    const doc = await getTaskDocCollection(db).findOne({ _id } as never)
     if (!doc) return notFoundError('Task not found')
 
-    return successResponse(taskToJSON(doc))
+    const [comments, activity] = await Promise.all([
+      getTaskCommentCollection(db)
+        .find({ taskId: _id, isDeleted: false } as never)
+        .sort({ createdAt: 1 })
+        .toArray(),
+      getTaskActivityCollection(db)
+        .find({ taskId: _id } as never)
+        .sort({ at: -1 })
+        .limit(100)
+        .toArray(),
+    ])
+
+    return successResponse({
+      task: taskToJSON(doc),
+      comments: comments.map((c) => ({
+        _id: c._id?.toString(),
+        taskId: c.taskId.toString(),
+        authorId: c.authorId.toString(),
+        body: c.body,
+        editedAt: c.editedAt ?? null,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+      })),
+      activity: activity.map((a) => ({
+        _id: a._id?.toString(),
+        kind: a.kind,
+        actorId: a.actorId.toString(),
+        changes: a.changes,
+        at: a.at,
+      })),
+    })
   } catch (error) {
     console.error('GET /api/tasks/[id] failed:', error)
-    return handleRouteError(error)
-  }
-}
-
-/** PUT /api/tasks/[id] */
-async function __PUT(request: NextRequest, context: RouteContext) {
-  try {
-    const auth = await authorize('tasks', 'edit')
-
-    const { id } = await context.params
-    if (!isObjectId(id)) return badId()
-
-    const parsed = taskSchema.partial().safeParse(await request.json())
-    if (!parsed.success) {
-      return validationError(
-        'Validation failed',
-        parsed.error.errors.map((e) => ({ path: e.path.join('.'), message: e.message }))
-      )
-    }
-
-    const db = await getDatabase()
-    const col = getTaskCollection(db)
-    const _id = new ObjectId(id)
-
-    const before = await col.findOne({ _id } as never)
-    if (!before) return notFoundError('Task not found')
-
-    const result = await col.updateOne(
-      { _id } as never,
-      {
-        $set: {
-          ...parsed.data,
-          dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : undefined,
-          updatedAt: getKarachiDate(),
-        },
-      } as never
-    )
-    if (result.matchedCount === 0) return notFoundError('Task not found')
-
-    const updated = await col.findOne({ _id } as never)
-    const meta = await getRequestMeta()
-    await recordAuditEntry(db, {
-      userId: auth.user._id as ObjectId,
-      userEmail: auth.user.email,
-      action: 'task_updated',
-      entityType: 'task',
-      entityId: _id,
-      oldValue: taskToJSON(before),
-      newValue: updated ? taskToJSON(updated) : undefined,
-      ipAddress: meta.ipAddress,
-      userAgent: meta.userAgent,
-    })
-    return successResponse(taskToJSON(updated!))
-  } catch (error) {
-    console.error('PUT /api/tasks/[id] failed:', error)
     return handleRouteError(error)
   }
 }
@@ -91,7 +103,12 @@ async function __PUT(request: NextRequest, context: RouteContext) {
 /**
  * PATCH /api/tasks/[id]
  *
- * Used by the Kanban column drag/drop to move a task between status columns.
+ * Version-guarded. `writeTaskWithVersion` throws `TaskVersionConflictError`
+ * with the current document attached, which becomes a 409 response body so
+ * the client can show "someone moved this card" and refresh.
+ *
+ * Column moves go through `/api/tasks/[id]/move`; this route never touches
+ * `columnId` or `position`.
  */
 async function __PATCH(request: NextRequest, context: RouteContext) {
   try {
@@ -100,48 +117,89 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
     const { id } = await context.params
     if (!isObjectId(id)) return badId()
 
-    const parsed = taskStatusUpdateSchema.safeParse(await request.json())
+    const parsed = taskUpdateSchema.safeParse(await request.json())
     if (!parsed.success) {
       return validationError(
         'Validation failed',
-        parsed.error.errors.map((e) => ({ path: e.path.join('.'), message: e.message }))
+        parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message }))
       )
     }
 
     const db = await getDatabase()
-    const col = getTaskCollection(db)
     const _id = new ObjectId(id)
-
-    const before = await col.findOne({ _id } as never)
+    const before = await getTaskDocCollection(db).findOne({ _id } as never)
     if (!before) return notFoundError('Task not found')
 
-    const result = await col.updateOne(
-      { _id } as never,
-      { $set: { status: parsed.data.status, updatedAt: getKarachiDate() } } as never
-    )
-    if (result.matchedCount === 0) return notFoundError('Task not found')
+    const canEditOthers = auth.permissions?.tasks?.editOthers === true
+    if (!canActOnTask(before, auth.user._id as ObjectId, canEditOthers)) {
+      return errorResponse('You can only edit tasks you created or are assigned to', 403, 'FORBIDDEN')
+    }
 
-    const updated = await col.findOne({ _id } as never)
+    const set: Partial<Omit<TaskDoc, '_id' | 'version' | 'createdAt' | 'createdBy'>> = {}
+    if (parsed.data.title !== undefined) set.title = parsed.data.title
+    if (parsed.data.description !== undefined) set.description = parsed.data.description
+    if (parsed.data.priority !== undefined) set.priority = parsed.data.priority
+    if (parsed.data.dueDate !== undefined) set.dueDate = parsed.data.dueDate ? new Date(parsed.data.dueDate) : null
+    if (parsed.data.assigneeIds !== undefined) {
+      set.assigneeIds = parsed.data.assigneeIds.map((a) => new ObjectId(a))
+    }
+    if (parsed.data.labelIds !== undefined) {
+      set.labelIds = parsed.data.labelIds.map((l) => new ObjectId(l))
+    }
+    if (parsed.data.checklist !== undefined) {
+      set.checklist = parsed.data.checklist.map((c) => ({
+        _id: c._id ? new ObjectId(c._id) : undefined,
+        text: c.text,
+        isDone: c.isDone,
+        doneAt: c.isDone ? new Date() : null,
+        doneBy: c.isDone ? (auth.user._id as ObjectId) : null,
+      }))
+    }
+
+    let updated: TaskDoc & { _id: ObjectId }
+    try {
+      updated = await writeTaskWithVersion(db, _id, parsed.data.version, set)
+    } catch (error) {
+      if (error instanceof TaskVersionConflictError) {
+        return errorResponse(error.message, 409, error.code, { current: taskToJSON(error.current) })
+      }
+      throw error
+    }
+
+    const actor = await getActor()
+    await recordTaskActivity(db, {
+      taskId: _id,
+      actorId: actor.id,
+      kind: 'edited',
+      changes: { fields: Object.keys(set) },
+    })
+
     const meta = await getRequestMeta()
     await recordAuditEntry(db, {
       userId: auth.user._id as ObjectId,
       userEmail: auth.user.email,
-      action: 'task_status_changed',
+      action: 'task_updated',
       entityType: 'task',
       entityId: _id,
-      oldValue: { status: before.status },
-      newValue: { status: parsed.data.status },
+      oldValue: { title: before.title, description: before.description, priority: before.priority },
+      newValue: { title: updated.title, description: updated.description, priority: updated.priority },
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     })
-    return successResponse(taskToJSON(updated!))
+
+    return successResponse(taskToJSON(updated))
   } catch (error) {
     console.error('PATCH /api/tasks/[id] failed:', error)
     return handleRouteError(error)
   }
 }
 
-/** DELETE /api/tasks/[id] */
+/**
+ * DELETE /api/tasks/[id] — soft archive only. Sets `isArchived: true` and
+ * `archivedAt`; the card disappears from the board but stays in the
+ * activity/history trail. Requires `tasks.delete` and the row-level ownership
+ * rule (or `deleteOthers`).
+ */
 async function __DELETE(_request: NextRequest, context: RouteContext) {
   try {
     const auth = await authorize('tasks', 'delete')
@@ -150,28 +208,45 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
     if (!isObjectId(id)) return badId()
 
     const db = await getDatabase()
-    const col = getTaskCollection(db)
     const _id = new ObjectId(id)
-
-    const before = await col.findOne({ _id } as never)
+    const before = await getTaskDocCollection(db).findOne({ _id } as never)
     if (!before) return notFoundError('Task not found')
 
-    const result = await col.deleteOne({ _id } as never)
-    if (result.deletedCount === 0) return notFoundError('Task not found')
+    const canDeleteOthers = auth.permissions?.tasks?.deleteOthers === true
+    if (!canActOnTask(before, auth.user._id as ObjectId, canDeleteOthers)) {
+      return errorResponse('You can only archive tasks you created or are assigned to', 403, 'FORBIDDEN')
+    }
+
+    let updated: TaskDoc & { _id: ObjectId }
+    try {
+      updated = await writeTaskWithVersion(db, _id, before.version, {
+        isArchived: true,
+        archivedAt: new Date(),
+      })
+    } catch (error) {
+      if (error instanceof TaskVersionConflictError) {
+        return errorResponse(error.message, 409, error.code, { current: taskToJSON(error.current) })
+      }
+      throw error
+    }
+
+    const actor = await getActor()
+    await recordTaskActivity(db, { taskId: _id, actorId: actor.id, kind: 'archived' })
 
     const meta = await getRequestMeta()
     await recordAuditEntry(db, {
       userId: auth.user._id as ObjectId,
       userEmail: auth.user.email,
-      action: 'task_deleted',
+      action: 'task_archived',
       entityType: 'task',
       entityId: _id,
       oldValue: taskToJSON(before),
+      newValue: taskToJSON(updated),
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     })
 
-    return successResponse({ _id: id })
+    return successResponse({ _id: id, isArchived: true })
   } catch (error) {
     console.error('DELETE /api/tasks/[id] failed:', error)
     return handleRouteError(error)
@@ -179,6 +254,6 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
 }
 
 export const GET = withAuth(__GET)
-export const PUT = withAuth(__PUT)
 export const PATCH = withAuth(__PATCH)
 export const DELETE = withAuth(__DELETE)
+

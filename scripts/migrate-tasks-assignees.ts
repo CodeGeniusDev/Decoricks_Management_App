@@ -56,6 +56,13 @@ type LegacyTask = {
   assigneeName?: string
   assigneeIds?: ObjectId[]
   version?: number
+  status?: 'todo' | 'in_progress' | 'review' | 'done'
+  boardId?: ObjectId
+  columnId?: ObjectId
+  position?: number
+  createdBy?: ObjectId
+  createdAt?: Date
+  title?: string
 }
 
 type UserRow = { _id: ObjectId; role: string; isActive: boolean; name: string }
@@ -120,6 +127,154 @@ const run = async () => {
       `Found ${totalTasks} tasks (${withLegacyName} with legacy assigneeName, ` +
         `${alreadyMigrated} already migrated, ${missingVersion} missing version).`
     )
+
+    /* --------------------------------------------------------------------- \
+     | Step 1 — board onboarding                                            |
+     |                                                                      |
+     | Ensure a single "Team Board" with the four default columns exists,   |
+     | then stamp every task that does not yet belong to a board with       |
+     | `boardId` + `columnId` + a starting `position` ordered by            |
+     | `createdAt`. Existing (already-onboarded) documents are left alone   |
+     | so re-runs are safe.                                                 |
+     \ -------------------------------------------------------------------- */
+    const boards = db.collection<{
+      _id: ObjectId
+      name: string
+      isActive: boolean
+      archivedAt?: Date | null
+      createdBy?: ObjectId
+      createdAt?: Date
+      updatedAt?: Date
+      description?: string
+    }>('boards')
+    const columns = db.collection<{
+      _id: ObjectId
+      boardId: ObjectId
+      name: string
+      position: number
+      isDoneColumn: boolean
+      isArchived: boolean
+      createdBy: ObjectId
+      createdAt: Date
+      updatedAt: Date
+    }>('columns')
+
+    // Need a founder id to stamp createdBy. Use whichever user holds the
+    // founder role; if none exists, fall back to the earliest user (an
+    // internal tool always has at least one).
+    const founder = await users.findOne({ role: 'founder', isActive: true } as never)
+    const fallbackUser = founder ?? (await users.findOne({ isActive: true } as never))
+    if (!fallbackUser) {
+      console.error('No active users to attribute the seed board to. Run `npm run seed` first.')
+      process.exit(1)
+    }
+    const boardCreatorId = fallbackUser._id
+
+    let boardId: ObjectId
+    const foundBoard = await boards.findOne({ name: 'Team Board', isActive: true } as never)
+    if (foundBoard) {
+      boardId = foundBoard._id
+    } else if (DRY_RUN) {
+      console.log('DRY RUN: would create default "Team Board".')
+      boardId = new ObjectId()
+    } else {
+      const now = new Date()
+      const inserted = await boards.insertOne({
+        name: 'Team Board',
+        description: 'Default board created by the Phase 6 assignee migration.',
+        isActive: true,
+        archivedAt: null,
+        createdBy: boardCreatorId,
+        createdAt: now,
+        updatedAt: now,
+      } as never)
+      boardId = inserted.insertedId
+      console.log('Created default "Team Board".')
+    }
+
+    const DEFAULT_COLUMNS: Array<[name: string, done: boolean]> = [
+      ['To Do', false],
+      ['In Progress', false],
+      ['Review', false],
+      ['Done', true],
+    ]
+    const columnByName = new Map<string, ObjectId>()
+    for (const [idx, [name, isDone]] of DEFAULT_COLUMNS.entries()) {
+      const existing = await columns.findOne({ boardId, name } as never)
+      if (existing) {
+        columnByName.set(name, existing._id)
+        continue
+      }
+      if (DRY_RUN) {
+        columnByName.set(name, new ObjectId())
+        continue
+      }
+      const now = new Date()
+      const inserted = await columns.insertOne({
+        boardId,
+        name,
+        position: (idx + 1) * 1024,
+        isDoneColumn: isDone,
+        isArchived: false,
+        createdBy: boardCreatorId,
+        createdAt: now,
+        updatedAt: now,
+      } as never)
+      columnByName.set(name, inserted.insertedId)
+    }
+
+    // Legacy `status` field → column name.
+    const STATUS_TO_COLUMN: Record<NonNullable<LegacyTask['status']>, string> = {
+      todo: 'To Do',
+      in_progress: 'In Progress',
+      review: 'Review',
+      done: 'Done',
+    }
+
+    const unboarded = await tasks
+      .find<LegacyTask>({ $or: [{ boardId: { $exists: false } }, { columnId: { $exists: false } }] } as never)
+      .sort({ createdAt: 1 })
+      .toArray()
+
+    const perColumnCounter = new Map<string, number>()
+    for (const id of columnByName.values()) perColumnCounter.set(id.toString(), 0)
+
+    let onboarded = 0
+    for (const t of unboarded) {
+      const columnName = STATUS_TO_COLUMN[t.status ?? 'todo'] ?? 'To Do'
+      const columnId = columnByName.get(columnName) ?? [...columnByName.values()][0]
+      const nextIdx = (perColumnCounter.get(columnId.toString()) ?? 0) + 1
+      perColumnCounter.set(columnId.toString(), nextIdx)
+      const position = nextIdx * 1024
+      if (!DRY_RUN) {
+        await tasks.updateOne(
+          { _id: t._id } as never,
+          {
+            $set: {
+              boardId,
+              columnId,
+              position,
+              // Phase 6 model expects these; safe defaults for legacy rows.
+              isArchived: false,
+              archivedAt: null,
+              assigneeIds: t.assigneeIds ?? [],
+              labelIds: [],
+              checklist: [],
+            },
+          } as never
+        )
+      }
+      onboarded += 1
+    }
+    console.log(
+      DRY_RUN
+        ? `DRY RUN: would onboard ${onboarded} task(s) onto "Team Board" and its default columns.`
+        : `Onboarded ${onboarded} task(s) onto "Team Board".`
+    )
+
+    /* --------------------------------------------------------------------- \
+     | Step 2 — assignee mapping                                            |
+     \ -------------------------------------------------------------------- */
 
     // Walk tasks that have legacy data AND have not been assigned through
     // the board UI yet. Empty assigneeIds array counts as "not assigned".

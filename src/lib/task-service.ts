@@ -10,7 +10,6 @@ import {
   type TaskActivityKind,
   type TaskDoc,
 } from '@/lib/models/Tasks'
-import { getKarachiDate } from '@/lib/date'
 
 /**
  * Server-side helpers for the Phase 6 task board (SPEC §3.1.15, §6.6).
@@ -303,4 +302,32 @@ export async function createBoardWithDefaults(
   await getColumnCollection(db).insertMany(columns as never)
 
   return { _id: boardId, ...boardDoc } as WithId<Board>
+}
+
+/* ------------------------------ Task numbers ----------------------------- */
+
+/**
+ * Builds `TASK-YYYYMM-NNNN` from the highest existing number in the current
+ * month, retrying on collision (a concurrent insert between our read and our
+ * write). The unique-sparse index on `taskNumber` catches the race; the route
+ * layer surfaces a duplicate as a 409 so the caller can retry with a fresh
+ * idempotency key.
+ */
+export async function createTaskNumber(col: Collection<TaskDoc>): Promise<string> {
+  const now = new Date()
+  const ym = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+  const prefix = `TASK-${ym}`
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const highest = await col
+      .find({ taskNumber: { $regex: `^${prefix}-` } } as never)
+      .sort({ taskNumber: -1 })
+      .limit(1)
+      .toArray()
+    const last = highest[0]?.taskNumber
+    const seq = last ? parseInt(last.slice(prefix.length + 1), 10) + 1 : 1
+    const candidate = `${prefix}-${String(seq).padStart(4, '0')}`
+    if (!(await col.findOne({ taskNumber: candidate } as never))) return candidate
+  }
+  throw new Error('Could not allocate a unique task number')
 }
