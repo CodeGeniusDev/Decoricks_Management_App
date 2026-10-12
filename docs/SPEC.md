@@ -132,7 +132,7 @@
 - **Returns Screen:** Return processing with restock/damaged/write-off options. Add/Edit/View actions.
 
 #### Tasks Module
-- **Kanban Board:** Columns (To Do, In Progress, Review, Done). Drag-and-drop. Per-task details, assignee, due date.
+- **Kanban Board:** Boards (create/rename/archive by Founder) with editable columns — defaults To Do, In Progress, Review, Done; Founder can add/rename/reorder/archive. Cards drag between columns (dnd-kit; keyboard and touch supported) with optimistic writes and version-based conflict rejection; mobile also offers a "Move to…" menu. Task detail opens in a right drawer on desktop, full-screen sheet on mobile. Assignees, priorities (low/medium/high/urgent), due dates, labels, checklists, activity timeline, comments. Views: Board, My Tasks, Overdue. Weekly summary reports task completions and per-member overdue counts (informational; penalties remain a manual Founder action).
 
 #### Chat Module
 - **Chat Screen:** Real-time messaging with all team members. Message history, typing indicators, read receipts.
@@ -217,8 +217,12 @@ Indexes:
     tasks: {
       view: Boolean,
       create: Boolean,
-      edit: Boolean,
-      delete: Boolean
+      edit: Boolean,           // edit / move own tasks
+      editOthers: Boolean,     // edit / move others' tasks (Founder default)
+      delete: Boolean,         // archive own tasks
+      deleteOthers: Boolean,   // archive others' tasks (Founder default)
+      comment: Boolean,        // comment on any task
+      manage: Boolean          // manage boards and columns (Founder-only, not grantable)
     },
     chat: {
       view: Boolean,
@@ -552,27 +556,161 @@ Indexes:
 - partnerId: 1
 ```
 
-#### 3.1.15 tasks
+#### 3.1.15 tasks (board model — Phase 6)
+
+The task module is a Trello-style board. It is five collections, not one. The
+original `status` enum is gone; a task's stage is derived from the column it
+sits in, and columns themselves belong to a board. All timestamps are stored
+in UTC and rendered in Asia/Karachi. Nothing in the task family is ever hard-
+deleted — every document archives.
+
+##### 3.1.15.1 boards
 ```javascript
 {
   _id: ObjectId,
-  title: String,
-  description: String,
-  status: String, // 'todo', 'in_progress', 'review', 'done'
-  priority: String, // 'low', 'medium', 'high'
-  assigneeId: ObjectId, // references users
-  dueDate: Date,
-  completedAt: Date,
+  name: String,                       // e.g. "Operations"
+  description: String,                // optional
+  isActive: Boolean,                  // default true; false = archived
+  archivedAt: Date,                   // set when archived, never unset
+  createdBy: ObjectId,                // references users (Founder-only creation)
   createdAt: Date,
-  updatedAt: Date,
-  createdBy: ObjectId
+  updatedAt: Date
 }
 
 Indexes:
-- status: 1
-- assigneeId: 1
+- isActive: 1, updatedAt: -1
+- createdBy: 1
+```
+
+##### 3.1.15.2 columns
+```javascript
+{
+  _id: ObjectId,
+  boardId: ObjectId,                  // references boards
+  name: String,                       // default "To Do", "In Progress", "Review", "Done"
+  position: Number,                   // 0..n, sparse gaps of 1024 for insert-between
+  isDoneColumn: Boolean,              // exactly one per board; drives completedAt
+  isArchived: Boolean,                // never hard-deleted
+  createdBy: ObjectId,
+  createdAt: Date,
+  updatedAt: Date
+}
+
+Indexes:
+- boardId: 1, position: 1
+- boardId: 1, isDoneColumn: 1
+```
+
+##### 3.1.15.3 tasks
+```javascript
+{
+  _id: ObjectId,
+  taskNumber: String,                 // "TASK-YYYYMM-NNNN" (unchanged from Phase 5)
+  boardId: ObjectId,                  // references boards
+  columnId: ObjectId,                 // references columns — the source of truth for stage
+  position: Number,                   // 0..n within column; sparse gaps for insert-between
+  title: String,
+  description: String,                // optional
+  assigneeIds: [ObjectId],            // references users; empty = unassigned
+  /** Legacy single-assignee role label. Read-only; migration populates
+   *  assigneeIds from it. New writes do not touch it. */
+  assigneeName: String,
+  priority: String,                   // 'low' | 'medium' | 'high' | 'urgent'
+  dueDate: Date,                      // optional; UTC; overdue evaluated at Karachi midnight
+  labelIds: [ObjectId],               // references taskLabels (see 3.1.15.6)
+  checklist: [{                       // ordered sub-tasks
+    _id: ObjectId,
+    text: String,
+    isDone: Boolean,
+    doneAt: Date,
+    doneBy: ObjectId
+  }],
+  completedAt: Date,                  // set when the task enters the board's isDoneColumn
+  completedBy: ObjectId,              // who moved it there
+  version: Number,                    // optimistic concurrency; incremented on every write
+  isArchived: Boolean,                // never hard-deleted
+  idempotencyKey: String,             // unique-sparse; prevents duplicate creates
+  createdBy: ObjectId,
+  createdAt: Date,
+  updatedAt: Date
+}
+
+Indexes:
+- boardId: 1, columnId: 1, position: 1
+- assigneeIds: 1
 - dueDate: 1
-- createdAt: -1
+- priority: 1
+- isArchived: 1, updatedAt: -1
+- taskNumber: unique, sparse
+- idempotencyKey: unique, sparse
+```
+
+A task's stage (`todo / in_progress / review / done` in older reads) is derived
+by joining `columnId → columns.name` (or `columns.isDoneColumn` for done).
+The stored `status` field is removed; readers must not depend on it.
+
+##### 3.1.15.4 taskComments
+```javascript
+{
+  _id: ObjectId,
+  taskId: ObjectId,                   // references tasks
+  authorId: ObjectId,                 // references users
+  body: String,
+  editedAt: Date,                     // set only if the author edited within the window
+  isDeleted: Boolean,                 // soft delete; body is redacted
+  deletedAt: Date,
+  deletedBy: ObjectId,
+  createdAt: Date,
+  updatedAt: Date
+}
+
+Indexes:
+- taskId: 1, createdAt: 1
+- authorId: 1
+```
+
+Authors may edit or delete only their own comments, and only within
+`businessSettings.commentEditWindowMinutes` (default 15). Deletes are soft and
+audit-logged.
+
+##### 3.1.15.5 taskActivity
+```javascript
+{
+  _id: ObjectId,
+  taskId: ObjectId,
+  actorId: ObjectId,
+  kind: String,                       // 'created' | 'assigned' | 'moved' | 'completed'
+                                      // | 'reopened' | 'commented' | 'archived' | 'edited'
+  changes: Object,                    // field-by-field diff, e.g.
+                                      //   { from: { columnId, position },
+                                      //     to:   { columnId, position } }
+  at: Date
+}
+
+Indexes:
+- taskId: 1, at: -1
+```
+
+Append-only. Moving a task into the board's done column writes a `completed`
+entry and sets `completedBy/completedAt`; moving it out writes a `reopened`
+entry and clears those fields, but the original `completed` entry stays in the
+timeline.
+
+##### 3.1.15.6 taskLabels
+```javascript
+{
+  _id: ObjectId,
+  name: String,
+  color: String,                      // brand hex only, e.g. "#0EA5E9"
+  isActive: Boolean,                  // archive rather than delete
+  createdBy: ObjectId,
+  createdAt: Date,
+  updatedAt: Date
+}
+
+Indexes:
+- name: unique
+- isActive: 1
 ```
 
 #### 3.1.16 messages
@@ -633,6 +771,10 @@ Indexes:
   timezone: String, // 'Asia/Karachi'
   budgetApprovalThreshold: Number, // paisa, optional
   lowStockThreshold: Number, // integer
+  /** Phase 6: window (in minutes) after posting during which a comment's
+   *  author may still edit or soft-delete it. Default 15. Founder-editable
+   *  under Settings → Business. */
+  commentEditWindowMinutes: Number,
   updatedAt: Date,
   updatedBy: ObjectId
 }
@@ -738,7 +880,13 @@ Indexes:
 - `budgetActuals` → `budgets` (many-to-one)
 - `profitDistributions` → `users` (approvedBy, createdBy)
 - `profitShareAdjustments` → `profitDistributions` (many-to-one)
-- `tasks` → `users` (assignee, createdBy)
+- `tasks` → `users` (assigneeIds[], createdBy, completedBy)
+- `tasks` → `boards` (many-to-one)
+- `tasks` → `columns` (many-to-one, current column)
+- `taskComments` → `tasks` (many-to-one), → `users` (authorId, deletedBy)
+- `taskActivity` → `tasks` (many-to-one), → `users` (actorId)
+- `columns` → `boards` (many-to-one)
+- `taskLabels` → (standalone; joined via `tasks.labelIds`)
 - `messages` → `users` (senderId)
 - `auditLog` → `users` (userId)
 - `offlineQueue` → `users` (userId)
@@ -752,10 +900,10 @@ Indexes:
 
 | Role | Description |
 |------|-------------|
-| Founder | Full control over all modules and settings |
-| Partner (Hasnat) | Create/update orders, record delivery outcomes/returns, record Lahore stock movements, view all dashboards/finance/budgets/inventory/sales, tasks and chat |
-| Partner (Ali) | Record Lahore stock movements, view all dashboards/finance/budgets/inventory/sales, tasks and chat |
-| Partner (Afnan) | View-only access to dashboards, finance, budgets, inventory, sales, tasks and chat |
+| Founder | Full control over all modules and settings. Sole owner of board and column management (create/rename/archive boards, add/rename/reorder/archive columns). Can edit or archive any task, including others'. |
+| Partner (Hasnat) | Create/update orders, record delivery outcomes/returns, record Lahore stock movements, view all dashboards/finance/budgets/inventory/sales. Tasks and chat are open: create, edit or move own, comment on any. Can edit or move others' tasks only if the corresponding permission is granted. Cannot manage boards or columns. |
+| Partner (Ali) | Record Lahore stock movements, view all dashboards/finance/budgets/inventory/sales. Tasks and chat are open on the same terms as Hasnat. Cannot manage boards or columns. |
+| Partner (Afnan) | View-only access to dashboards, finance, budgets, inventory, sales. Tasks and chat are still open on the same terms (create, edit or move own, comment on any) — the earlier "view-only on tasks and chat" line contradicted §4.2 and is corrected here. Cannot manage boards or columns. |
 
 ### 4.2 Permission Matrix
 
@@ -786,8 +934,15 @@ Indexes:
 | **Tasks** | | | | | |
 | | View | ✅ | ✅ | ✅ | ✅ |
 | | Create | ✅ | ✅ | ✅ | ✅ |
-| | Edit | ✅ | ✅ | ✅ | ✅ |
-| | Delete | ✅ | ✅ | ✅ | ✅ |
+| | Edit own | ✅ | ✅ | ✅ | ✅ |
+| | Edit any | ✅ | ❌* | ❌* | ❌* |
+| | Move (drag) own | ✅ | ✅ | ✅ | ✅ |
+| | Move (drag) any | ✅ | ❌* | ❌* | ❌* |
+| | Comment | ✅ | ✅ | ✅ | ✅ |
+| | Edit/Delete own comment | ✅ | ✅ | ✅ | ✅ |
+| | Delete/Archive own task | ✅ | ✅ | ✅ | ✅ |
+| | Archive any task | ✅ | ❌ | ❌ | ❌ |
+| | Manage boards and columns | ✅ | ❌ | ❌ | ❌ |
 | **Chat** | | | | | |
 | | View | ✅ | ✅ | ✅ | ✅ |
 | | Create | ✅ | ✅ | ✅ | ✅ |
@@ -806,6 +961,11 @@ Indexes:
 | | Create | ✅ | ❌ | ❌ | ❌ |
 | | Edit | ✅ | ❌ | ❌ | ❌ |
 | | Delete | ✅ | ❌ | ❌ | ❌ |
+
+Notes on the Tasks rows:
+
+- ❌\* marks actions that are off by default for that role but can be granted per-role through the Settings → Permissions editor (Founder-only screen). The Phase 6 server checks these on every route via `authorize('tasks', <action>)` and, where the action targets another member's task, additionally verifies the grant.
+- Board and column management (`manage`) is not grantable — Founder only. The board's default columns (To Do, In Progress, Review, Done) are seeded at board creation and remain editable only by the Founder.
 
 ### 4.3 Enforcement
 
@@ -1079,8 +1239,9 @@ user123_order_create_1728038400000_abc123
 - Server returns current state and client detects conflict
 
 **Conflict Resolution:**
-1. **Non-financial data:** Auto-merge with last-write-wins (e.g., task descriptions, chat messages)
-2. **Financial data:** Always require manual resolution
+1. **Task moves and edits:** Optimistic-concurrency with a version field. Every task document carries `version: Number` (starting at 1, incremented server-side on each successful write). Clients send `version` on `PATCH /api/tasks/[id]` and on `POST /api/tasks/[id]/move`. If the stored version has advanced, the server returns `409 Conflict` with the current document; the client shows a clear toast — "Someone moved this card. Refreshed." — rolls back the optimistic change and re-fetches. Never a silent overwrite; never a lost card. Column reordering follows the same rule per board.
+2. **Chat messages:** Append-only and non-conflicting (last-write wins is safe because each message is a new document). Auto-merge.
+3. **Financial data:** Always require manual resolution.
    - Show both versions (local vs server)
    - Allow user to choose which to keep
    - Or create a reversal entry for the server version and apply local version
@@ -1993,7 +2154,16 @@ The following business policies were not defined in Phase 0 and should be addres
     budget: { view: true, create: true, edit: true, delete: true, approve: true },
     inventory: { view: true, create: true, edit: true, delete: true },
     sales: { view: true, create: true, edit: true, delete: true },
-    tasks: { view: true, create: true, edit: true, delete: true },
+    tasks: {
+      view: true,
+      create: true,
+      edit: true,           // edit / move own tasks
+      editOthers: true,     // edit / move others' tasks (Founder default)
+      delete: true,         // archive own tasks
+      deleteOthers: true,   // archive others' tasks (Founder default)
+      comment: true,
+      manage: true          // boards and columns (Founder-only, not grantable)
+    },
     chat: { view: true, create: true, edit: true, delete: true },
     suppliers: { view: true, create: true, edit: true, delete: true },
     settings: { view: true, edit: true },
@@ -2010,7 +2180,16 @@ The following business policies were not defined in Phase 0 and should be addres
     budget: { view: true, create: false, edit: false, delete: false, approve: false },
     inventory: { view: true, create: false, edit: false, delete: false }, // Exception: Lahore stock via separate permission
     sales: { view: true, create: true, edit: true, delete: false },
-    tasks: { view: true, create: true, edit: true, delete: true },
+    tasks: {
+      view: true,
+      create: true,
+      edit: true,           // edit / move own tasks
+      editOthers: false,    // grantable by Founder per role
+      delete: true,         // archive own tasks
+      deleteOthers: false,
+      comment: true,
+      manage: false         // Founder-only
+    },
     chat: { view: true, create: true, edit: true, delete: true },
     suppliers: { view: true, create: false, edit: false, delete: false },
     settings: { view: false, edit: false },
@@ -2027,7 +2206,16 @@ The following business policies were not defined in Phase 0 and should be addres
     budget: { view: true, create: false, edit: false, delete: false, approve: false },
     inventory: { view: true, create: false, edit: false, delete: false }, // Exception: Lahore stock via separate permission
     sales: { view: true, create: false, edit: false, delete: false },
-    tasks: { view: true, create: true, edit: true, delete: true },
+    tasks: {
+      view: true,
+      create: true,
+      edit: true,
+      editOthers: false,
+      delete: true,
+      deleteOthers: false,
+      comment: true,
+      manage: false
+    },
     chat: { view: true, create: true, edit: true, delete: true },
     suppliers: { view: true, create: false, edit: false, delete: false },
     settings: { view: false, edit: false },
@@ -2044,7 +2232,16 @@ The following business policies were not defined in Phase 0 and should be addres
     budget: { view: true, create: false, edit: false, delete: false, approve: false },
     inventory: { view: true, create: false, edit: false, delete: false },
     sales: { view: true, create: false, edit: false, delete: false },
-    tasks: { view: true, create: true, edit: true, delete: true },
+    tasks: {
+      view: true,
+      create: true,
+      edit: true,
+      editOthers: false,
+      delete: true,
+      deleteOthers: false,
+      comment: true,
+      manage: false
+    },
     chat: { view: true, create: true, edit: true, delete: true },
     suppliers: { view: true, create: false, edit: false, delete: false },
     settings: { view: false, edit: false },
