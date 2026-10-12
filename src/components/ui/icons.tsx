@@ -72,6 +72,11 @@ import {
   LuTrendingUp,
   LuArrowLeftRight,
   LuHandCoins,
+  LuArrowDownToLine,
+  LuArchive,
+  LuMoveLeft,
+  LuRotateCcw,
+  LuCalculator,
 } from 'react-icons/lu'
 import { MdLogout, MdPersonOutline } from 'react-icons/md'
 
@@ -139,3 +144,10 @@ export const IconProfile = MdPersonOutline
 export const IconFinanceAlt = HiOutlineCurrencyRupee
 export const IconPieChart = HiOutlineChartPie
 export const IconCopy = LuClipboard
+
+/** Phase 5 inventory and sales glyphs. */
+export const IconExport = LuArrowDownToLine
+export const IconArchive = LuArchive
+export const IconTransfer = LuMoveLeft
+export const IconReverseMovement = LuRotateCcw
+export const IconCalculation = LuCalculator

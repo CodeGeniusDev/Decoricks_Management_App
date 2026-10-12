@@ -19,6 +19,13 @@ export const messageSchema = z
 
 const locations = ['sheikhupura', 'lahore'] as const
 
+/** A selling configuration (size/colour/fabric). Free-text name only. */
+export const productVariantSchema = z.object({
+  name: z.string().trim().min(1, 'Variant name is required').max(120),
+  sku: z.string().trim().max(64).optional().or(z.literal('').transform(() => undefined)),
+  sellingPrice: z.number().int().min(0).optional(),
+})
+
 export const productSchema = z.object({
   sku: z.string().trim().min(1, 'SKU is required').max(64),
   name: z.string().trim().min(1, 'Name is required').max(200),
@@ -26,7 +33,11 @@ export const productSchema = z.object({
   category: z.string().trim().min(1, 'Category is required').max(100),
   cost: z.number().int().min(0, 'Cost cannot be negative'),
   sellingPrice: z.number().int().min(0, 'Selling price cannot be negative'),
+  reorderLevel: z.number().int().min(0, 'Reorder level cannot be negative').optional(),
+  variants: z.array(productVariantSchema).max(50, 'Too many variants').optional(),
   isActive: z.boolean().optional(),
+  /** Client-generated retry guard; unique when present. */
+  idempotencyKey: z.string().trim().min(8).max(120, 'Idempotency key is too long').optional(),
 })
 
 export const stockSchema = z.object({
@@ -41,11 +52,62 @@ export const stockTransferSchema = z
     quantity: z.number().int().positive('Transfer quantity must be positive'),
     fromLocation: z.enum(locations),
     toLocation: z.enum(locations),
+    /** Client-generated retry guard; unique when present. */
+    idempotencyKey: z.string().trim().min(8).max(120).optional(),
+    notes: z.string().trim().max(2000).optional(),
   })
   .refine((v) => v.fromLocation !== v.toLocation, {
     message: 'Source and destination must differ',
     path: ['toLocation'],
   })
+
+/* ------------------------- stock movements (Phase 5) ----------------------- */
+
+/**
+ * The only typed-in stock number the app accepts: a counted adjustment.
+ * Everything else (purchase, sale, return, transfer) arrives through its own
+ * flow and writes movements server-side; `quantity` here is the COUNTED
+ * on-hand value, converted to a signed delta against the current stock.
+ */
+export const stockAdjustmentSchema = z.object({
+  productId: objectId,
+  location: z.enum(locations, { message: 'Location must be sheikhupura or lahore' }),
+  countedQuantity: z.number().int().min(0, 'Counted quantity cannot be negative'),
+  reason: z.string().trim().min(1, 'A reason is required').max(2000),
+  idempotencyKey: z.string().trim().min(8).max(120).optional(),
+})
+
+/** Direct pool-to-pool corrections the Founder can post. */
+export const stockDamageSchema = z.object({
+  productId: objectId,
+  location: z.enum(locations),
+  quantity: z.number().int().positive('Quantity must be positive'),
+  type: z.enum(['damage', 'writeoff']).default('damage'),
+  reason: z.string().trim().min(1, 'A reason is required').max(2000),
+  idempotencyKey: z.string().trim().min(8).max(120).optional(),
+})
+
+/** Correction of a posted movement: linked reversal, never an edit. */
+export const stockMovementReverseSchema = z.object({
+  reason: z.string().trim().min(1, 'A reason is required').max(2000),
+  idempotencyKey: z.string().trim().min(8).max(120).optional(),
+})
+
+/* -------------------------------- purchases -------------------------------- */
+
+export const purchaseSchema = z.object({
+  productId: objectId,
+  location: z.enum(locations, { message: 'Location must be sheikhupura or lahore' }),
+  quantity: z.number().int().positive('Quantity must be positive'),
+  unitCost: z.number().int().min(1, 'Unit cost must be positive'),
+  supplierId: objectId.optional(),
+  /** YYYY-MM-DD; defaults to today (Karachi). */
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Date must be YYYY-MM-DD').optional(),
+  accountId: objectId.optional(),
+  paymentMethod: z.string().trim().max(60).optional(),
+  notes: z.string().trim().max(2000).optional(),
+  idempotencyKey: z.string().trim().min(8).max(120).optional(),
+})
 
 /* --------------------------------- orders --------------------------------- */
 
@@ -74,13 +136,63 @@ export const orderSchema = z.object({
   orderStatus: z.string().trim().min(1).default('pending'),
   codOutcome: z.string().trim().min(1).default('pending'),
   salesChannel: z.string().trim().min(1, 'Sales channel is required').max(60),
+  /** Where the units come from; stock authorization is checked for this location. */
+  shipFromLocation: z.enum(locations, { message: 'Choose the location to ship from' }),
+  courierCharges: z.number().int().min(0).optional(),
+  courierName: z.string().trim().max(120).optional(),
   notes: z.string().trim().max(2000).optional(),
+  idempotencyKey: z.string().trim().min(8).max(120).optional(),
 })
 
 export const orderStatusUpdateSchema = z.object({
   orderStatus: z.string().trim().min(1).optional(),
   paymentStatus: z.string().trim().min(1).optional(),
   codOutcome: z.string().trim().min(1).optional(),
+  /** Marks COD cash as received (delivered orders only). */
+  cashReceived: z.boolean().optional(),
+  /** YYYY-MM-DD of delivery/receipt; defaults to today (Karachi). */
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Date must be YYYY-MM-DD').optional(),
+  accountId: objectId.optional(),
+  idempotencyKey: z.string().trim().min(8).max(120).optional(),
+})
+
+/** Edits allowed BEFORE dispatch: customer details, lines, courier, channel. */
+export const orderEditSchema = z.object({
+  customerName: z.string().trim().min(1, 'Customer name is required').max(200).optional(),
+  customerPhone: z.string().trim().min(1, 'Customer phone is required').max(40).optional(),
+  customerCity: z.string().trim().min(1, 'City is required').max(100).optional(),
+  customerAddress: z.string().trim().min(1, 'Address is required').max(500).optional(),
+  items: z.array(orderItemSchema).min(1, 'Add at least one item').optional(),
+  shippingCost: z.number().int().min(0).optional(),
+  salesChannel: z.string().trim().min(1, 'Sales channel is required').max(60).optional(),
+  /** Changing the ship-from location re-reserves stock at the new one. */
+  shipFromLocation: z.enum(locations, { message: 'Choose the location to ship from' }).optional(),
+  courierCharges: z.number().int().min(0).optional(),
+  courierName: z.string().trim().max(120).optional(),
+  notes: z.string().trim().max(2000).optional(),
+})
+
+/* --------------------------------- returns --------------------------------- */
+
+export const returnItemSchema = z.object({
+  productId: objectId,
+  quantity: z.number().int().positive('Quantity must be positive'),
+  reason: z.string().trim().min(1, 'A reason is required').max(500),
+  outcome: z.enum(['restock', 'damaged', 'writeoff']).optional(),
+})
+
+export const returnSchema = z.object({
+  orderId: objectId,
+  items: z.array(returnItemSchema).min(1, 'Add at least one returned item'),
+  /** Default outcome for items without a per-item override. */
+  outcome: z.enum(['restock', 'damaged', 'writeoff']).default('restock'),
+  refundAmount: z.number().int().min(0, 'Refund cannot be negative'),
+  courierCost: z.number().int().min(0).optional(),
+  accountId: objectId.optional(),
+  /** YYYY-MM-DD; defaults to today (Karachi). */
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Date must be YYYY-MM-DD').optional(),
+  notes: z.string().trim().max(2000).optional(),
+  idempotencyKey: z.string().trim().min(8).max(120).optional(),
 })
 
 /* ---------------------------------- tasks --------------------------------- */

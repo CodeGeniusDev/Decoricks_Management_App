@@ -1,4 +1,4 @@
-import { ObjectId, type Db, type Filter } from 'mongodb'
+import { ObjectId, type ClientSession, type Db, type Filter } from 'mongodb'
 import { HttpError } from '@/lib/http'
 import { recordAuditEntry } from '@/lib/audit'
 import {
@@ -316,10 +316,14 @@ export interface LedgerEntryInput {
 const isDuplicateKeyError = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && (error as { code?: number }).code === 11000
 
-const assertAccountsUsable = async (db: Db, accountIds: Set<string>): Promise<void> => {
+const assertAccountsUsable = async (
+  db: Db,
+  accountIds: Set<string>,
+  session?: ClientSession
+): Promise<void> => {
   if (accountIds.size === 0) return
   const accounts = await getAccountCollection(db)
-    .find({ _id: { $in: [...accountIds].map((id) => new ObjectId(id)) } })
+    .find({ _id: { $in: [...accountIds].map((id) => new ObjectId(id)) } }, session ? { session } : {})
     .toArray()
   const found = new Map(accounts.map((account) => [account._id!.toString(), account]))
 
@@ -343,6 +347,21 @@ export interface WriteResult {
   created: boolean
 }
 
+export interface LedgerWriteOptions {
+  /**
+   * Run the write inside the caller's transaction. Required by Phase 5 flows
+   * (purchase, delivered income, refund) where the money entry and the stock
+   * movement must commit or roll back together.
+   */
+  session?: ClientSession
+  /**
+   * Audit the write. Defaults to true OUTSIDE a transaction and false inside
+   * one: an audit write without the session would be rejected by MongoDB
+   * mid-transaction, so the route audits explicitly after commit instead.
+   */
+  audit?: boolean
+}
+
 /**
  * Insert a ledger entry.
  *
@@ -356,12 +375,14 @@ export interface WriteResult {
 export const createLedgerEntry = async (
   db: Db,
   input: LedgerEntryInput,
-  actor: ActorContext
+  actor: ActorContext,
+  opts: LedgerWriteOptions = {}
 ): Promise<WriteResult> => {
   const collection = getLedgerCollection(db)
+  const sessionOpts = opts.session ? { session: opts.session } : {}
 
   if (input.idempotencyKey) {
-    const existing = await collection.findOne({ idempotencyKey: input.idempotencyKey })
+    const existing = await collection.findOne({ idempotencyKey: input.idempotencyKey }, sessionOpts)
     if (existing) return { doc: existing, created: false }
   }
 
@@ -369,7 +390,7 @@ export const createLedgerEntry = async (
   if (input.accountId) accountIds.add(input.accountId)
   if (input.fromAccountId) accountIds.add(input.fromAccountId)
   if (input.toAccountId) accountIds.add(input.toAccountId)
-  await assertAccountsUsable(db, accountIds)
+  await assertAccountsUsable(db, accountIds, opts.session)
 
   if (input.type === 'transfer' && input.fromAccountId === input.toAccountId) {
     throw new HttpError('From and to accounts must be different', 400, 'VALIDATION_ERROR', [
@@ -380,7 +401,7 @@ export const createLedgerEntry = async (
   if (input.type === 'income' || input.type === 'expense') {
     const expected = input.type
     const category = input.category
-      ? await getFinanceCategoryCollection(db).findOne({ name: input.category })
+      ? await getFinanceCategoryCollection(db).findOne({ name: input.category }, sessionOpts)
       : null
     if (!category || category.type !== expected || !category.isActive) {
       throw new HttpError('The selected category is not available', 400, 'VALIDATION_ERROR', [
@@ -417,40 +438,45 @@ export const createLedgerEntry = async (
     status: 'posted',
     idempotencyKey: input.idempotencyKey,
     createdBy: actor.id,
+    createdByName: actor.name,
     createdAt: now,
     updatedAt: now,
   }
 
   try {
-    const result = await collection.insertOne(doc)
+    const result = await collection.insertOne(doc as never, sessionOpts)
     doc._id = result.insertedId
   } catch (error) {
     if (isDuplicateKeyError(error) && input.idempotencyKey) {
-      const existing = await collection.findOne({ idempotencyKey: input.idempotencyKey })
+      const existing = await collection.findOne({ idempotencyKey: input.idempotencyKey }, sessionOpts)
       if (existing) return { doc: existing, created: false }
     }
     throw error
   }
 
-  await recordAuditEntry(db, {
-    userId: actor.id,
-    userEmail: actor.email,
-    action: `${input.type}_created`,
-    entityType: 'finance',
-    entityId: doc._id ?? null,
-    newValue: {
-      type: input.type,
-      amount: input.amount,
-      accountId: input.accountId,
-      fromAccountId: input.fromAccountId,
-      toAccountId: input.toAccountId,
-      category: input.category,
-      note: input.note,
-    },
-    details: `Created ${input.type} of ${formatPaisa(input.amount)}`,
-    ipAddress: actor.ipAddress,
-    userAgent: actor.userAgent,
-  })
+  // Inside a transaction the caller audits after commit; an unsessioned audit
+  // write would otherwise be rejected mid-transaction.
+  if (opts.audit ?? !opts.session) {
+    await recordAuditEntry(db, {
+      userId: actor.id,
+      userEmail: actor.email,
+      action: `${input.type}_created`,
+      entityType: 'finance',
+      entityId: doc._id ?? null,
+      newValue: {
+        type: input.type,
+        amount: input.amount,
+        accountId: input.accountId,
+        fromAccountId: input.fromAccountId,
+        toAccountId: input.toAccountId,
+        category: input.category,
+        note: input.note,
+      },
+      details: `Created ${input.type} of ${formatPaisa(input.amount)}`,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+    })
+  }
 
   return { doc, created: true }
 }
@@ -465,12 +491,14 @@ export const reverseLedgerEntry = async (
   id: string,
   reason: string | undefined,
   actor: ActorContext,
-  idempotencyKey?: string
+  idempotencyKey?: string,
+  opts: LedgerWriteOptions = {}
 ): Promise<WriteResult> => {
   const collection = getLedgerCollection(db)
+  const sessionOpts = opts.session ? { session: opts.session } : {}
 
   if (idempotencyKey) {
-    const existing = await collection.findOne({ idempotencyKey })
+    const existing = await collection.findOne({ idempotencyKey }, sessionOpts)
     if (existing) return { doc: existing, created: false }
   }
 
@@ -480,7 +508,7 @@ export const reverseLedgerEntry = async (
     ])
   }
 
-  const original = await collection.findOne({ _id: new ObjectId(id) })
+  const original = await collection.findOne({ _id: new ObjectId(id) }, sessionOpts)
   if (!original) throw new HttpError('Transaction not found', 404, 'NOT_FOUND')
   if (original.isReversal) {
     throw new HttpError('A reversal entry cannot itself be reversed', 409, 'ALREADY_REVERSED')
@@ -512,11 +540,11 @@ export const reverseLedgerEntry = async (
   }
 
   try {
-    const result = await collection.insertOne(reversal)
+    const result = await collection.insertOne(reversal as never, sessionOpts)
     reversal._id = result.insertedId
   } catch (error) {
     if (isDuplicateKeyError(error) && idempotencyKey) {
-      const existing = await collection.findOne({ idempotencyKey })
+      const existing = await collection.findOne({ idempotencyKey }, sessionOpts)
       if (existing) return { doc: existing, created: false }
     }
     throw error
@@ -524,21 +552,24 @@ export const reverseLedgerEntry = async (
 
   await collection.updateOne(
     { _id: original._id },
-    { $set: { status: 'reversed', reversedBy: reversal._id, updatedAt: now } }
+    { $set: { status: 'reversed', reversedBy: reversal._id, updatedAt: now } },
+    sessionOpts
   )
 
-  await recordAuditEntry(db, {
-    userId: actor.id,
-    userEmail: actor.email,
-    action: 'transaction_reversed',
-    entityType: 'finance',
-    entityId: original._id ?? null,
-    oldValue: { status: original.status },
-    newValue: { status: 'reversed', reversalId: reversal._id?.toString(), reason: reason ?? null },
-    details: `Reversed ${original.type} of ${formatPaisa(original.amount)}`,
-    ipAddress: actor.ipAddress,
-    userAgent: actor.userAgent,
-  })
+  if (opts.audit ?? !opts.session) {
+    await recordAuditEntry(db, {
+      userId: actor.id,
+      userEmail: actor.email,
+      action: 'transaction_reversed',
+      entityType: 'finance',
+      entityId: original._id ?? null,
+      oldValue: { status: original.status },
+      newValue: { status: 'reversed', reversalId: reversal._id?.toString(), reason: reason ?? null },
+      details: `Reversed ${original.type} of ${formatPaisa(original.amount)}`,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+    })
+  }
 
   return { doc: reversal, created: true }
 }

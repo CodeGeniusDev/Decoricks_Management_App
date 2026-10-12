@@ -252,9 +252,9 @@ test.describe('visual system', () => {
 
   test('dialogs close on Escape and restore focus', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await page.goto('/inventory')
+    await page.goto('/inventory/products')
 
-    const addButton = page.getByRole('button', { name: /add product/i }).first()
+    const addButton = page.getByRole('button', { name: /new product/i }).first()
     await addButton.click()
 
     const dialog = page.getByRole('dialog')
@@ -267,9 +267,9 @@ test.describe('visual system', () => {
 
   test('modal surface is opaque, not frosted', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await page.goto('/inventory')
+    await page.goto('/inventory/products')
 
-    await page.getByRole('button', { name: /add product/i }).first().click()
+    await page.getByRole('button', { name: /new product/i }).first().click()
     const dialog = page.getByRole('dialog')
 
     const style = await dialog.evaluate((el) => {

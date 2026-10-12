@@ -1,720 +1,433 @@
 'use client'
 
-import { IconPlus } from '@/components/ui/icons'
-import { useState, useEffect, useCallback, useRef } from 'react'
+/**
+ * Inventory Overview (SPEC §2.1, §5.7).
+ *
+ * Stock by location, valuation, the low-stock list and the calculation panel.
+ * Every number on this screen is DERIVED from the movement ledger — there is
+ * no editable stock figure anywhere, which is the point of Phase 5: the shelf
+ * is what the movements say it is.
+ *
+ * The action buttons (transfer, physical count, damage/write-off) open the
+ * modals that post movements; they are hidden when the signed-in role cannot
+ * write stock at ANY location (the modals themselves then restrict the
+ * location pickers, and the API remains the authority).
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PageTransition } from '@/components/PageTransition'
+import { PageHeader } from '@/components/layout/Page'
+import { SubNav } from '@/components/layout/SubNav'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
-import { Textarea } from '@/components/ui/Textarea'
 import { Table } from '@/components/ui/Table'
-import { Modal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { ExportLink } from '@/components/ui/ExportLink'
 import { Toast } from '@/components/ui/Toast'
+import { apiJson } from '@/lib/api-client'
 import { formatPaisa } from '@/lib/money'
-import { apiFetch } from '@/lib/api-client'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { canWriteStockLocation } from '@/lib/permissions-client'
+import {
+  INVENTORY_SUBNAV,
+  type StockPools,
+  type StockSummaryView,
+} from '@/modules/inventory/inventory-ui'
+import { CountModal, DamageModal, TransferModal } from '@/modules/inventory/StockActionModals'
+import { InventoryCalcPanel } from '@/modules/inventory/InventoryCalcPanel'
 
-interface Product {
-  _id: string
-  sku: string
-  name: string
-  description?: string
-  category: string
-  cost: number // paisa
-  sellingPrice: number // paisa
-  isActive: boolean
-  createdAt: string
-  updatedAt: string
-  stockByLocation?: Record<string, number>
-  totalQuantity?: number
+const LOCATION_LABELS: Record<string, string> = {
+  sheikhupura: 'Sheikhupura',
+  lahore: 'Lahore',
 }
 
-interface Stock {
-  _id: string
-  productId: string
-  productName: string
-  location: 'sheikhupura' | 'lahore'
-  quantity: number
-  lastUpdated: string
-}
+export default function InventoryOverviewPage() {
+  const { user } = useAuth()
 
-const CATEGORIES = [
-  { value: 'home_decor', label: 'Home Decor' },
-  { value: 'handmade', label: 'Handmade' },
-  { value: 'ceramic', label: 'Ceramic' },
-  { value: 'woodwork', label: 'Woodwork' },
-  { value: 'textiles', label: 'Textiles' },
-  { value: 'other', label: 'Other' },
-]
-
-const LOCATIONS: { value: string; label: string }[] = [
-  { value: 'sheikhupura', label: 'Sheikhupura' },
-  { value: 'lahore', label: 'Lahore' },
-]
-
-const STOCK_COLUMNS = [
-  { key: 'productName', label: 'Product' },
-  { key: 'sku', label: 'SKU' },
-  { key: 'location', label: 'Location' },
-  { key: 'quantity', label: 'Stock' },
-  { key: 'value', label: 'Value' },
-  { key: 'status', label: 'Status' },
-]
-
-export default function InventoryPage() {
-  const [activeTab, setActiveTab] = useState<'products' | 'stock'>('products')
-  const [products, setProducts] = useState<Product[]>([])
-  const [stocks, setStocks] = useState<Stock[]>([])
+  const [data, setData] = useState<StockSummaryView | null>(null)
   const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const isSubmittingRef = useRef(false)
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
-  const [modalMode, setModalMode] = useState<'product' | 'transfer'>('product')
-  const [toastMessage, setToastMessage] = useState<{
-    type: 'success' | 'error' | 'info' | 'warning'
-    message: string
-  } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [stockFilter, setStockFilter] = useState<'all' | 'low'>('all')
+  const [toast, setToast] = useState<string | null>(null)
 
-  // Product form state preserved across modal open/close
-  const [formSku, setFormSku] = useState('')
-  const [formName, setFormName] = useState('')
-  const [formDescription, setFormDescription] = useState('')
-  const [formCategory, setFormCategory] = useState('home_decor')
-  const [formCost, setFormCost] = useState('')
-  const [formSellingPrice, setFormSellingPrice] = useState('')
-  const [formIsActive, setFormIsActive] = useState(true)
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [transferOpen, setTransferOpen] = useState(false)
+  const [countOpen, setCountOpen] = useState(false)
+  const [damageOpen, setDamageOpen] = useState(false)
 
-  // Transfer form state
-  const [transferFrom, setTransferFrom] = useState('sheikhupura')
-  const [transferTo, setTransferTo] = useState('lahore')
-  const [transferQuantity, setTransferQuantity] = useState(1)
-  const [transferProduct, setTransferProduct] = useState('')
+  const requestSeq = useRef(0)
+  const abortRef = useRef<AbortController | null>(null)
 
-  const fetchProducts = useCallback(async () => {
+  const canWriteSheikhupura = user ? canWriteStockLocation({ role: user.role }, 'sheikhupura') : false
+  const canWriteLahore = user ? canWriteStockLocation({ role: user.role }, 'lahore') : false
+  const canWriteAnyStock = canWriteSheikhupura || canWriteLahore
+  const canWriteLocation = useCallback(
+    (location: string) => canWriteStockLocation({ role: user?.role ?? '' }, location),
+    [user?.role]
+  )
+
+  const load = useCallback(async () => {
+    const seq = ++requestSeq.current
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
-      setLoading(true)
-      setLoadError(null)
-
-      const [productsRes, stockRes] = await Promise.all([apiFetch('/api/products'), apiFetch('/api/stock')])
-      const productsBody = await productsRes.json()
-      const stockBody = await stockRes.json()
-
-      if (!productsRes.ok || !productsBody.success) {
-        throw new Error(productsBody?.error?.message || 'Failed to load products')
+      // Archived products are included on purpose: their stock is still real
+      // and still on the valuation. Rows for fully exhausted archived products
+      // are filtered out of the table below.
+      const result = await apiJson<StockSummaryView>('/api/stock/summary?includeArchived=true', {
+        signal: controller.signal,
+      })
+      if (seq === requestSeq.current) {
+        setData(result)
+        setError(null)
       }
-      if (!stockRes.ok || !stockBody.success) {
-        throw new Error(stockBody?.error?.message || 'Failed to load stock')
-      }
-
-      setProducts(productsBody.data)
-      setStocks(stockBody.data)
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'Failed to load inventory data')
+      if ((err as Error)?.name === 'AbortError') return
+      if (seq === requestSeq.current) {
+        setError(err instanceof Error ? err.message : 'Failed to load stock overview')
+      }
     } finally {
-      setLoading(false)
+      if (seq === requestSeq.current) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    fetchProducts()
-  }, [fetchProducts])
+    void load()
+    return () => abortRef.current?.abort()
+  }, [load])
 
-  const resetForm = () => {
-    setFormSku('')
-    setFormName('')
-    setFormDescription('')
-    setFormCategory('home_decor')
-    setFormCost('')
-    setFormSellingPrice('')
-    setFormIsActive(true)
-    setFormErrors({})
-    setEditingProduct(null)
-  }
-
-  const openProductModal = () => {
-    setModalMode('product')
-    resetForm()
-    setIsModalOpen(true)
-  }
-
-  const openEditProductModal = (product: Product) => {
-    setModalMode('product')
-    setEditingProduct(product)
-    setFormSku(product.sku)
-    setFormName(product.name)
-    setFormDescription(product.description || '')
-    setFormCategory(product.category)
-    setFormCost((product.cost / 100).toString())
-    setFormSellingPrice((product.sellingPrice / 100).toString())
-    setFormIsActive(product.isActive)
-    setFormErrors({})
-    setIsModalOpen(true)
-  }
-
-  const openTransferModal = () => {
-    setModalMode('transfer')
-    setTransferFrom('sheikhupura')
-    setTransferTo('lahore')
-    setTransferQuantity(1)
-    setTransferProduct('')
-    setFormErrors({})
-    setIsModalOpen(true)
-  }
-
-  const closeModal = () => {
-    setIsModalOpen(false)
-    resetForm()
-  }
-
-  const validateProductForm = (): boolean => {
-    const errors: Record<string, string> = {}
-    if (!formSku.trim()) errors.sku = 'SKU is required'
-    if (!formName.trim()) errors.name = 'Name is required'
-    if (!formCost || parseFloat(formCost) <= 0) errors.cost = 'Cost must be positive'
-    if (!formSellingPrice || parseFloat(formSellingPrice) <= 0) errors.sellingPrice = 'Selling price must be positive'
-    setFormErrors(errors)
-    return Object.keys(errors).length === 0
-  }
-
-  const handleProductSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (isSubmittingRef.current) return
-    if (!validateProductForm()) return
-
-    isSubmittingRef.current = true
-    setIsSubmitting(true)
-    try {
-      const payload = {
-        sku: formSku.trim(),
-        name: formName.trim(),
-        description: formDescription.trim() || undefined,
-        category: formCategory,
-        // Stored in paisa; the form collects PKR.
-        cost: Math.round(parseFloat(formCost) * 100),
-        sellingPrice: Math.round(parseFloat(formSellingPrice) * 100),
-        isActive: formIsActive,
-      }
-
-      const res = await apiFetch(editingProduct ? `/api/products/${editingProduct._id}` : '/api/products', {
-        method: editingProduct ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const body = await res.json()
-
-      if (!res.ok || !body.success) {
-        if (Array.isArray(body?.error?.details)) {
-          const fieldErrors: Record<string, string> = {}
-          for (const d of body.error.details) {
-            if (d?.path) fieldErrors[d.path] = d.message
-          }
-          setFormErrors(fieldErrors)
+  const pools = useMemo(() => {
+    const map: Record<string, StockPools> = {}
+    for (const item of data?.items ?? []) {
+      for (const row of item.byLocation) {
+        map[`${item._id}|${row.location}`] = {
+          available: row.available,
+          damaged: row.damaged,
+          returned: row.returned,
         }
-        throw new Error(body?.error?.message || 'Could not save product')
       }
-
-      setToastMessage({
-        type: 'success',
-        message: editingProduct ? 'Product updated successfully' : 'Product created successfully',
-      })
-      closeModal()
-      await fetchProducts()
-    } catch (err) {
-      setFormErrors((prev) => ({
-        ...prev,
-        general: err instanceof Error ? err.message : 'Could not save product',
-      }))
-    } finally {
-      isSubmittingRef.current = false
-      setIsSubmitting(false)
     }
-  }
+    return map
+  }, [data])
 
-  const handleTransferSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (isSubmittingRef.current) return
+  const pickerProducts = useMemo(
+    () =>
+      (data?.items ?? []).map((item) => ({
+        _id: item._id,
+        sku: item.sku,
+        name: item.name,
+      })),
+    [data]
+  )
 
-    const product = products.find((p) => p._id === transferProduct)
-    if (!product) {
-      setFormErrors({ general: 'Select a product to transfer' })
-      return
-    }
-
-    isSubmittingRef.current = true
-    setIsSubmitting(true)
-    try {
-      const res = await apiFetch('/api/stock/transfer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          productId: product._id,
-          quantity: transferQuantity,
-          fromLocation: transferFrom,
-          toLocation: transferTo,
-        }),
-      })
-      const body = await res.json()
-
-      if (!res.ok || !body.success) {
-        throw new Error(body?.error?.message || 'Could not transfer stock')
-      }
-
-      setToastMessage({
-        type: 'success',
-        message: `Transferred ${transferQuantity} unit(s) ${transferFrom} → ${transferTo}`,
-      })
-      closeModal()
-      await fetchProducts()
-    } catch (err) {
-      setFormErrors({ general: err instanceof Error ? err.message : 'Could not transfer stock' })
-    } finally {
-      isSubmittingRef.current = false
-      setIsSubmitting(false)
-    }
-  }
-
-  const deleteProduct = async (productId: string) => {
-    if (!confirm('Are you sure you want to delete this product?')) return
-
-    const previousProducts = products
-    const previousStocks = stocks
-    setProducts((current) => current.filter((p) => p._id !== productId))
-    setStocks((current) => current.filter((s) => s.productId !== productId))
-
-    try {
-      const res = await apiFetch(`/api/products/${productId}`, { method: 'DELETE' })
-      const body = await res.json()
-      if (!res.ok || !body.success) {
-        setProducts(previousProducts)
-        setStocks(previousStocks)
-        throw new Error(body?.error?.message || 'Could not delete product')
-      }
-      setToastMessage({ type: 'success', message: 'Product deleted' })
-      await fetchProducts()
-    } catch (err) {
-      setProducts(previousProducts)
-      setStocks(previousStocks)
-      setToastMessage({
-        type: 'error',
-        message: err instanceof Error ? err.message : 'Could not delete product',
-      })
-    }
-  }
-
-  const toggleProductStatus = async (product: Product) => {
-    const nextActive = !product.isActive
-    const previous = products
-    setProducts((current) =>
-      current.map((p) => (p._id === product._id ? { ...p, isActive: nextActive } : p))
+  const rows = useMemo(() => {
+    let items = (data?.items ?? []).filter(
+      (item) =>
+        item.isActive ||
+        item.totalAvailable > 0 ||
+        item.totalDamaged > 0 ||
+        item.totalReturned > 0
     )
+    if (stockFilter === 'low') items = items.filter((item) => item.lowStock)
+    return items
+  }, [data, stockFilter])
 
-    try {
-      const res = await apiFetch(`/api/products/${product._id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: nextActive }),
-      })
-      const body = await res.json()
-      if (!res.ok || !body.success) throw new Error(body?.error?.message || 'Could not update product')
-
-      setToastMessage({ type: 'info', message: `Product ${nextActive ? 'activated' : 'deactivated'}` })
-      await fetchProducts()
-    } catch (err) {
-      setProducts(previous)
-      setToastMessage({
-        type: 'error',
-        message: err instanceof Error ? err.message : 'Could not update product',
-      })
-    }
+  const handleDone = (message: string) => {
+    setToast(message)
+    void load()
   }
 
-  const getStockForProduct = (productId: string, location: string) => {
-    return stocks.find((s) => s.productId === productId && s.location === location)
-  }
-
-  const isLowStock = (quantity: number) => quantity < 5
-
-  const productColumns = [
-    { key: 'sku', label: 'SKU' },
-    { key: 'name', label: 'Name' },
-    { key: 'category', label: 'Category' },
-    { key: 'cost', label: 'Cost (PKR)' },
-    { key: 'sellingPrice', label: 'Price (PKR)' },
-    { key: 'stock', label: 'Total Stock' },
-    { key: 'status', label: 'Status' },
-    { key: 'actions', label: 'Actions' },
+  const columns = [
+    { key: 'name', label: 'Product' },
+    { key: 'sheikhupura', label: 'Sheikhupura' },
+    { key: 'lahore', label: 'Lahore' },
+    { key: 'damaged', label: 'Damaged' },
+    { key: 'returned', label: 'Returned' },
+    { key: 'reorder', label: 'Reorder at' },
+    { key: 'valuation', label: 'Valuation' },
   ]
 
-  const productTableData = products.map((product) => {
-    const skStock = getStockForProduct(product._id, 'sheikhupura')
-    const lhrStock = getStockForProduct(product._id, 'lahore')
-
+  const tableRows = rows.map((item) => {
+    const sheikhupura = item.byLocation.find((l) => l.location === 'sheikhupura')
+    const lahore = item.byLocation.find((l) => l.location === 'lahore')
     return {
-      sku: product.sku,
-      name: product.name,
-      category: product.category,
-      cost: formatPaisa(product.cost),
-      sellingPrice: formatPaisa(product.sellingPrice),
-      stock: (
-        <div className="flex gap-2 text-sm">
-          <span>SH: {skStock?.quantity ?? 0}</span>
-          <span>LHR: {lhrStock?.quantity ?? 0}</span>
+      _id: item._id,
+      name: (
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-decoricks-dark">{item.name}</p>
+          <p className="text-xs text-ink-muted">
+            {item.sku}
+            {!item.isActive && (
+              <Badge variant="default" size="sm" className="ml-2">
+                Archived
+              </Badge>
+            )}
+            {item.lowStock && (
+              <Badge variant="warning" size="sm" className="ml-2">
+                Low stock
+              </Badge>
+            )}
+          </p>
         </div>
       ),
-      status: (
-        <Badge variant={product.isActive ? 'success' : 'warning'}>
-          {product.isActive ? 'Active' : 'Inactive'}
-        </Badge>
-      ),
-      actions: (
-        <div className="flex gap-1">
-          <Button variant="ghost" size="sm" onClick={() => openEditProductModal(product)}>
-            Edit
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => toggleProductStatus(product)}
-          >
-            {product.isActive ? 'Deactivate' : 'Activate'}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => deleteProduct(product._id)}>
-            Del
-          </Button>
-        </div>
-      ),
-    }
-  })
-
-  const stockTableData = stocks.map((s) => {
-    const product = products.find((p) => p._id === s.productId)
-    const cost = product?.cost || 0
-    const value = s.quantity * cost
-
-    return {
-      productName: s.productName,
-      sku: product?.sku || '-',
-      location: s.location,
-      quantity: (
-        <span className={isLowStock(s.quantity) ? 'text-red-500 font-medium' : ''}>
-          {s.quantity}
+      sheikhupura: (
+        <span className={sheikhupura?.available ? '' : 'text-ink-muted'}>
+          {sheikhupura?.available ?? 0}
         </span>
       ),
-      value: formatPaisa(value),
-      status: isLowStock(s.quantity) ? (
-        <Badge variant="error">Low Stock</Badge>
-      ) : (
-        <Badge variant="success">OK</Badge>
+      lahore: <span className={lahore?.available ? '' : 'text-ink-muted'}>{lahore?.available ?? 0}</span>,
+      damaged: (
+        <span className={item.totalDamaged ? 'text-status-warning' : 'text-ink-muted'}>
+          {item.totalDamaged}
+        </span>
       ),
+      returned: (
+        <span className={item.totalReturned ? 'text-ink-secondary' : 'text-ink-muted'}>
+          {item.totalReturned}
+        </span>
+      ),
+      reorder: (
+        <span className="text-ink-muted">{item.reorderLevel === null ? '—' : item.reorderLevel}</span>
+      ),
+      valuation: <span className="font-medium text-decoricks-dark">{formatPaisa(item.valuation)}</span>,
     }
   })
-
-  if (loading) {
-    return (
-      <PageTransition>
-        <h1 className="text-2xl font-bold text-decoricks-dark mb-6">Inventory</h1>
-        <Skeleton variant="rect" className="h-96" />
-      </PageTransition>
-    )
-  }
 
   return (
     <PageTransition>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-decoricks-dark">Inventory</h1>
-        <div className="flex gap-2">
-          {activeTab === 'stock' && (
-            <Button variant="outline" size="sm" onClick={openTransferModal}>
-              Transfer Stock
-            </Button>
-          )}
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={activeTab === 'products' ? openProductModal : openProductModal}
-          >
-            <IconPlus size={16}  />
-            {activeTab === 'products' ? 'Add Product' : 'Add Product'}
-          </Button>
-        </div>
-      </div>
-
-      {/* Tab Navigation - no page reload */}
-      <div className="flex gap-2 mb-4 border-b-2 border-decoricks-dark/20">
-        <button
-          type="button"
-          onClick={() => setActiveTab('products')}
-          className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
-            activeTab === 'products'
-              ? 'bg-decoricks-brown text-decoricks-light'
-              : 'text-decoricks-dark/60 hover:text-decoricks-dark hover:bg-decoricks-dark/5'
-          }`}
-        >
-          Products
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('stock')}
-          className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
-            activeTab === 'stock'
-              ? 'bg-decoricks-brown text-decoricks-light'
-              : 'text-decoricks-dark/60 hover:text-decoricks-dark hover:bg-decoricks-dark/5'
-          }`}
-        >
-          Stock Levels
-        </button>
-      </div>
-
-      {/* Toast */}
-      {toastMessage && (
-        <div className="fixed top-20 right-4 z-50">
-          <Toast
-            message={toastMessage.message}
-            type={toastMessage.type}
-            onClose={() => setToastMessage(null)}
-          />
-        </div>
-      )}
-
-      {loadError && (
-        <Card variant="default" className="p-6 mb-6 border-red-200">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-semibold text-decoricks-dark">Could not load inventory</h2>
-              <p className="text-sm text-decoricks-dark/60">{loadError}</p>
-            </div>
-            <Button variant="outline" onClick={fetchProducts} type="button">
-              Try again
-            </Button>
-          </div>
-        </Card>
-      )}
-
-      {activeTab === 'products' ? (
-        products.length === 0 ? (
-          <EmptyState
-            title="No products yet"
-            description="Add products to manage inventory. This list only shows products you have added."
-            action={{ label: 'Add Product', onClick: openProductModal }}
-          />
-        ) : (
-          <Card className="mb-6">
-            <div className="p-4">
-              <Table
-                columns={productColumns}
-                data={productTableData}
-              />
-            </div>
-          </Card>
-        )
-      ) : (
-        <div>
-          {/* Stock summary */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <Card className="p-6">
-              <h3 className="text-lg font-semibold text-decoricks-dark mb-4">Sheikhupura</h3>
-              {(() => {
-                const shStocks = stocks.filter((s) => s.location === 'sheikhupura')
-                const totalValue = shStocks.reduce((sum, s) => {
-                  const product = products.find((p) => p._id === s.productId)
-                  return sum + s.quantity * (product?.cost || 0)
-                }, 0)
-                return (
-                  <>
-                    <p className="text-2xl font-bold text-decoricks-brown">
-                      {shStocks.reduce((sum, s) => sum + s.quantity, 0)} units
-                    </p>
-                    <p className="text-sm text-decoricks-dark/60 mt-1">
-                      Value: {formatPaisa(totalValue)}
-                    </p>
-                  </>
-                )
-              })()}
-            </Card>
-            <Card className="p-6">
-              <h3 className="text-lg font-semibold text-decoricks-dark mb-4">Lahore</h3>
-              {(() => {
-                const lhrStocks = stocks.filter((s) => s.location === 'lahore')
-                const totalValue = lhrStocks.reduce((sum, s) => {
-                  const product = products.find((p) => p._id === s.productId)
-                  return sum + s.quantity * (product?.cost || 0)
-                }, 0)
-                return (
-                  <>
-                    <p className="text-2xl font-bold text-decoricks-brown">
-                      {lhrStocks.reduce((sum, s) => sum + s.quantity, 0)} units
-                    </p>
-                    <p className="text-sm text-decoricks-dark/60 mt-1">
-                      Value: {formatPaisa(totalValue)}
-                    </p>
-                  </>
-                )
-              })()}
-            </Card>
-          </div>
-
-          {/* Low stock alerts */}
-          {stocks.some((s) => isLowStock(s.quantity) && s.quantity > 0) && (
-            <Card className="p-4 mb-6 border-yellow-200">
-              <h3 className="text-sm font-semibold text-yellow-800 mb-2">Low Stock Alerts</h3>
-              {stocks.filter((s) => isLowStock(s.quantity) && s.quantity > 0).map((s) => (
-                <p key={s._id} className="text-sm text-yellow-700">
-                  {s.productName} ({s.location}): {s.quantity} units remaining
-                </p>
-              ))}
-            </Card>
-          )}
-
-          {stocks.length === 0 ? (
-            <EmptyState
-              title="No stock records yet"
-              description="Stock levels appear here once products have stock at Sheikhupura or Lahore."
-              action={{ label: 'Add Product', onClick: openProductModal }}
-            />
-          ) : (
-            <Card className="mb-6">
-              <div className="p-4">
-                <Table columns={STOCK_COLUMNS} data={stockTableData} />
-              </div>
-            </Card>
-          )}
-        </div>
-      )}
-
-      {/* Modal for product add/edit or transfer */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={closeModal}
-        title={
-          modalMode === 'transfer'
-            ? 'Transfer Stock'
-            : editingProduct
-            ? 'Edit Product'
-            : 'Add Product'
+      <PageHeader
+        title="Inventory"
+        description="Stock by location, valued at weighted average cost. Every figure is derived from the movement ledger."
+        actions={
+          <>
+            <ExportLink href="/api/stock/export" />
+            {canWriteAnyStock && (
+              <>
+                <Button variant="outline" onClick={() => setCountOpen(true)}>
+                  Physical count
+                </Button>
+                <Button variant="outline" onClick={() => setDamageOpen(true)}>
+                  Damage / write-off
+                </Button>
+                <Button onClick={() => setTransferOpen(true)}>Transfer stock</Button>
+              </>
+            )}
+          </>
         }
-        size="lg"
-      >
-        {modalMode === 'transfer' ? (
-          <form onSubmit={handleTransferSubmit} className="space-y-4">
-            <Select
-              label="Product"
-              options={products.map((p) => ({ value: p._id, label: `${p.name} (${p.sku})` }))}
-              value={transferProduct}
-              onChange={(e) => setTransferProduct(e.target.value)}
-              error={formErrors.product}
-            />
-            <div className="grid grid-cols-2 gap-4">
-              <Select
-                label="From"
-                options={LOCATIONS}
-                value={transferFrom}
-                onChange={(e) => setTransferFrom(e.target.value)}
-                error={formErrors.from}
-              />
-              <Select
-                label="To"
-                options={LOCATIONS}
-                value={transferTo}
-                onChange={(e) => setTransferTo(e.target.value)}
-                error={formErrors.to}
-              />
-            </div>
-            <Input
-              label="Quantity"
-              type="number"
-              min={1}
-              value={transferQuantity.toString()}
-              onChange={(e) => setTransferQuantity(parseInt(e.target.value) || 1)}
-              error={formErrors.quantity}
-            />
-            {formErrors.general && <p className="text-sm text-red-500">{formErrors.general}</p>}
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={closeModal} type="button"
+      />
+
+      <SubNav items={INVENTORY_SUBNAV} />
+
+      {toast && (
+        <div className="fixed top-20 right-4 z-50 max-w-[90vw]">
+          <Toast message={toast} type="success" onClose={() => setToast(null)} />
+        </div>
+      )}
+
+      {loading ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} variant="rect" className="h-24" />
+            ))}
+          </div>
+          <Skeleton variant="rect" className="h-64" />
+        </div>
+      ) : error ? (
+        <Card className="p-4">
+          <ErrorState
+            title="Could not load inventory"
+            description={error}
+            action={{ label: 'Retry', onClick: () => void load() }}
+          />
+        </Card>
+      ) : !data ? null : (
+        <>
+          {/* Headline figures */}
+          <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Card className="p-4">
+              <p className="text-xs text-ink-muted">Inventory valuation</p>
+              <p className="mt-1 text-lg font-semibold text-decoricks-dark">
+                {formatPaisa(data.totals.totalValuation)}
+              </p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-xs text-ink-muted">Products tracked</p>
+              <p className="mt-1 text-lg font-semibold text-decoricks-dark">
+                {data.totals.productCount}
+              </p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-xs text-ink-muted">Low stock</p>
+              <p
+                className={`mt-1 text-lg font-semibold ${
+                  data.totals.lowStockCount > 0 ? 'text-status-warning' : 'text-decoricks-dark'
+                }`}
               >
-                Cancel
-              </Button>
-              <Button variant="primary" type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Transferring…' : 'Transfer Stock'}
-              </Button>
-            </div>
-          </form>
-        ) : (
-          <form onSubmit={handleProductSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                label="SKU"
-                placeholder="e.g. HD-001"
-                value={formSku}
-                onChange={(e) => setFormSku(e.target.value)}
-                error={formErrors.sku}
-              />
-              <Input
-                label="Product Name"
-                placeholder="Enter name..."
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-                error={formErrors.name}
-              />
+                {data.totals.lowStockCount}
+              </p>
+            </Card>
+            <Card className="p-4">
+              <p className="text-xs text-ink-muted">Damaged / returned units</p>
+              <p className="mt-1 text-lg font-semibold text-decoricks-dark">
+                {data.totals.totalDamaged} / {data.totals.totalReturned}
+              </p>
+            </Card>
+          </div>
+
+          {/* Stock by location */}
+          <div className="mb-4 grid gap-3 md:grid-cols-2">
+            {data.totals.byLocation.map((loc) => (
+              <Card key={loc.location} className="p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-decoricks-dark">
+                    {LOCATION_LABELS[loc.location] ?? loc.location}
+                  </p>
+                  {!canWriteLocation(loc.location) && (
+                    <Badge variant="default" size="sm">
+                      Read-only for you
+                    </Badge>
+                  )}
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
+                  <div>
+                    <dt className="text-xs text-ink-muted">Available</dt>
+                    <dd className="font-semibold text-decoricks-dark">{loc.available}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-ink-muted">Damaged</dt>
+                    <dd className={loc.damaged ? 'font-semibold text-status-warning' : 'text-ink-muted'}>
+                      {loc.damaged}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-ink-muted">Returned</dt>
+                    <dd className="text-ink-secondary">{loc.returned}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-ink-muted">Valuation</dt>
+                    <dd className="font-semibold text-decoricks-dark">{formatPaisa(loc.valuation)}</dd>
+                  </div>
+                </dl>
+              </Card>
+            ))}
+          </div>
+
+          {/* Stock table */}
+          <Card className="mb-4">
+            <div className="flex flex-col gap-3 border-b border-line-subtle p-4 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-md font-semibold text-decoricks-dark">Stock by product</h2>
               <Select
-                label="Category"
-                options={CATEGORIES}
-                value={formCategory}
-                onChange={(e) => setFormCategory(e.target.value)}
+                aria-label="Stock filter"
+                value={stockFilter}
+                onChange={(e) => setStockFilter(e.target.value as 'all' | 'low')}
+                options={[
+                  { value: 'all', label: 'All products' },
+                  { value: 'low', label: 'Low stock only' },
+                ]}
+                className="w-full sm:w-48"
               />
-              <Input
-                label="Cost (PKR)"
-                type="number"
-                step="0.01"
-                value={formCost}
-                onChange={(e) => setFormCost(e.target.value)}
-                error={formErrors.cost}
-              />
-              <Input
-                label="Selling Price (PKR)"
-                type="number"
-                step="0.01"
-                value={formSellingPrice}
-                onChange={(e) => setFormSellingPrice(e.target.value)}
-                error={formErrors.sellingPrice}
-              />
-              <div className="flex items-end">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={formIsActive}
-                    onChange={(e) => setFormIsActive(e.target.checked)}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm text-decoricks-dark">Active</span>
-                </label>
-              </div>
             </div>
-            <Textarea
-              label="Description (optional)"
-              placeholder="Enter description..."
-              value={formDescription}
-              onChange={(e) => setFormDescription(e.target.value)}
-              rows={3}
-            />
-            {formErrors.general && <p className="text-sm text-red-500">{formErrors.general}</p>}
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={closeModal} type="button"
-              >
-                Cancel
-              </Button>
-              <Button variant="primary" type="submit" disabled={isSubmitting}>
-                {isSubmitting ? 'Saving…' : editingProduct ? 'Update Product' : 'Create Product'}
-              </Button>
-            </div>
-          </form>
-        )}
-      </Modal>
+
+            {rows.length === 0 ? (
+              <EmptyState
+                title={stockFilter === 'low' ? 'Nothing is low on stock' : 'No stock yet'}
+                description={
+                  stockFilter === 'low'
+                    ? 'Every product with a reorder level is above it.'
+                    : 'Record a purchase to put the first units on the shelf.'
+                }
+                action={
+                  stockFilter === 'low'
+                    ? { label: 'Show all products', onClick: () => setStockFilter('all') }
+                    : undefined
+                }
+              />
+            ) : (
+              <>
+                <div className="hidden md:block">
+                  <Table caption="Stock by product and location" columns={columns} data={tableRows} rowKey="_id" />
+                </div>
+                <ul className="divide-y divide-line-subtle md:hidden">
+                  {rows.map((item) => (
+                    <li key={item._id} className="px-4 py-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-decoricks-dark">{item.name}</p>
+                          <p className="text-xs text-ink-muted">{item.sku}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-decoricks-dark">
+                            {formatPaisa(item.valuation)}
+                          </p>
+                          <p className="text-xs text-ink-muted">{item.totalAvailable} units available</p>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                        {item.byLocation.map((loc) => (
+                          <span
+                            key={loc.location}
+                            className="rounded-md bg-surface-sunken px-2 py-1 text-ink-secondary"
+                          >
+                            {LOCATION_LABELS[loc.location] ?? loc.location}: {loc.available} available
+                            {loc.damaged > 0 && ` · ${loc.damaged} damaged`}
+                            {loc.returned > 0 && ` · ${loc.returned} returned`}
+                          </span>
+                        ))}
+                        {item.lowStock && (
+                          <Badge variant="warning" size="sm">
+                            Low stock
+                          </Badge>
+                        )}
+                        {!item.isActive && (
+                          <Badge variant="default" size="sm">
+                            Archived
+                          </Badge>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </Card>
+
+          {/* SPEC §5.7 calculation panel */}
+          <InventoryCalcPanel />
+        </>
+      )}
+
+      <div className="mt-6" />
+
+      <TransferModal
+        isOpen={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        products={pickerProducts}
+        pools={pools}
+        canWriteLocation={canWriteLocation}
+        onDone={handleDone}
+      />
+      <CountModal
+        isOpen={countOpen}
+        onClose={() => setCountOpen(false)}
+        products={pickerProducts}
+        pools={pools}
+        canWriteLocation={canWriteLocation}
+        onDone={handleDone}
+      />
+      <DamageModal
+        isOpen={damageOpen}
+        onClose={() => setDamageOpen(false)}
+        products={pickerProducts}
+        pools={pools}
+        canWriteLocation={canWriteLocation}
+        onDone={handleDone}
+      />
     </PageTransition>
   )
 }

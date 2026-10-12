@@ -1,16 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { ObjectId } from 'mongodb'
+import { authorizeStockWrite } from '@/lib/authorization'
 
 /**
- * Regression tests for POST /api/stock/transfer.
+ * Tests for POST /api/stock/transfer.
  *
- * The original bug: the source row was decremented first and the destination
- * row incremented afterwards, so a failed second write silently destroyed the
- * transferred units. Both legs must now run in one transaction, and a failed
- * leg must not leave a partial transfer behind.
+ * Phase 5 turned a transfer into a `transfer` MOVEMENT on the append-only
+ * ledger instead of a raw pair of `$inc`s. The invariants that matter:
+ *   • the movement and the projection legs still share ONE transaction, so a
+ *     failed leg can never destroy or duplicate units;
+ *   • a transfer needs authority over BOTH locations (SPEC §4.2);
+ *   • a replayed idempotency key must not move stock twice;
+ *   • a transfer is neither a purchase nor a sale — it touches no money.
+ * The guarded-decrement / rollback behaviour of the movement itself is pinned
+ * in stock-service.test.ts against the real writer.
  */
 
 const PRODUCT_ID = '507f1f77bcf86cd799439011'
+const MOVEMENT_ID = '507f1f77bcf86cd799439022'
 
 const stockCollection = {
   find: vi.fn(),
@@ -20,34 +27,51 @@ const stockCollection = {
   createIndex: vi.fn(),
 }
 
-/** Records every updateOne call so we can assert ordering and session usage. */
-const updateCalls: Array<{ filter: unknown; update: unknown; options: unknown }> = []
-
-/** When set, the Nth updateOne (1-based) rejects to simulate a write failure. */
-let failUpdateAt: number | null = null
-
-const withTransaction = vi.fn(async (fn: (session: unknown) => Promise<void>) => {
-  await fn({ id: 'session' })
-})
-
-const startSession = vi.fn(() => ({
-  withTransaction,
-  endSession: vi.fn(async () => undefined),
-}))
-
 vi.mock('@/lib/mongodb', () => ({
   getDatabase: vi.fn(async () => ({ collection: () => stockCollection })),
-  getMongoClient: vi.fn(async () => ({ startSession })),
+  getMongoClient: vi.fn(async () => ({
+    startSession: vi.fn(() => ({
+      withTransaction: vi.fn(async (fn: (s: unknown) => Promise<void>) => fn({ id: 'session' })),
+      endSession: vi.fn(async () => undefined),
+    })),
+  })),
 }))
 
 vi.mock('@/lib/models/Product', async () => {
   const actual = await vi.importActual<typeof import('@/lib/models/Product')>(
     '@/lib/models/Product'
   )
-  return {
-    ...actual,
-    getStockCollection: vi.fn(() => stockCollection),
-  }
+  return { ...actual, getStockCollection: vi.fn(() => stockCollection) }
+})
+
+vi.mock('@/lib/models/Inventory', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/models/Inventory')>(
+    '@/lib/models/Inventory'
+  )
+  return { ...actual, ensureInventoryIndexes: vi.fn(async () => undefined) }
+})
+
+// Captures what the route asked the stock service to write.
+const runInTransaction = vi.fn(async (fn: (session: unknown) => Promise<unknown>) =>
+  fn({ id: 'tx-session' })
+)
+const postMovement = vi.fn(
+  async (
+    _db: unknown,
+    _input: Record<string, unknown>,
+    _session?: unknown
+  ): Promise<{ movement: { _id: ObjectId }; created: boolean }> => ({
+    movement: { _id: new ObjectId(MOVEMENT_ID) },
+    created: true,
+  })
+)
+const getAllowNegativeStock = vi.fn(async () => false)
+
+vi.mock('@/lib/stock-service', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/stock-service')>(
+    '@/lib/stock-service'
+  )
+  return { ...actual, runInTransaction, postMovement, getAllowNegativeStock }
 })
 
 const makeRequest = (body: unknown) =>
@@ -62,123 +86,103 @@ const validBody = {
   quantity: 3,
   fromLocation: 'sheikhupura',
   toLocation: 'lahore',
+  idempotencyKey: 'transfer-abc',
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  updateCalls.length = 0
-  failUpdateAt = null
 
-  stockCollection.findOne.mockResolvedValue({
-    _id: new ObjectId(),
-    productId: new ObjectId(PRODUCT_ID),
-    location: 'sheikhupura',
-    quantity: 10,
-  })
   stockCollection.find.mockReturnValue({
     toArray: async () => [
       { _id: new ObjectId(), productId: new ObjectId(PRODUCT_ID), location: 'sheikhupura', quantity: 7 },
       { _id: new ObjectId(), productId: new ObjectId(PRODUCT_ID), location: 'lahore', quantity: 3 },
     ],
   })
+  stockCollection.findOne.mockResolvedValue(null)
+  stockCollection.updateOne.mockResolvedValue({ acknowledged: true })
+  stockCollection.insertOne.mockResolvedValue({ insertedId: new ObjectId() })
 
-  stockCollection.updateOne.mockImplementation(
-    async (filter: unknown, update: unknown, options: unknown) => {
-      updateCalls.push({ filter, update, options })
-      if (failUpdateAt !== null && updateCalls.length === failUpdateAt) {
-        throw new Error('simulated write failure')
-      }
-      return { matchedCount: 1, modifiedCount: 1, upsertedId: null }
-    }
+  runInTransaction.mockImplementation(async (fn: (session: unknown) => Promise<unknown>) =>
+    fn({ id: 'tx-session' })
   )
-
-  withTransaction.mockImplementation(async (fn: (session: unknown) => Promise<void>) => {
-    await fn({ id: 'session' })
-  })
+  postMovement.mockImplementation(
+    async (_db: unknown, _input: Record<string, unknown>, _session?: unknown) => ({
+      movement: { _id: new ObjectId(MOVEMENT_ID) },
+      created: true,
+    })
+  )
+  getAllowNegativeStock.mockResolvedValue(false)
+  vi.mocked(authorizeStockWrite).mockResolvedValue(undefined as never)
 })
 
 describe('POST /api/stock/transfer', () => {
-  it('applies both legs inside one transaction', async () => {
+  it('writes one transfer movement covering both locations, inside the transaction', async () => {
     const { POST } = await import('@/app/api/stock/transfer/route')
     const res = await POST(makeRequest(validBody))
     const body = await res.json()
 
     expect(res.status).toBe(200)
     expect(body.success).toBe(true)
-    expect(startSession).toHaveBeenCalledTimes(1)
-    expect(withTransaction).toHaveBeenCalledTimes(1)
-    expect(updateCalls).toHaveLength(2)
+    expect(body.data.replay).toBe(false)
 
-    // Both writes must carry the transaction session, or they escape it.
-    for (const call of updateCalls) {
-      expect((call.options as { session?: unknown }).session).toBeDefined()
-    }
+    expect(runInTransaction).toHaveBeenCalledTimes(1)
+    expect(postMovement).toHaveBeenCalledTimes(1)
 
-    // Source is decremented, destination incremented.
-    expect((updateCalls[0].update as { $inc: { quantity: number } }).$inc.quantity).toBe(-3)
-    expect((updateCalls[1].update as { $inc: { quantity: number } }).$inc.quantity).toBe(3)
+    const input = postMovement.mock.calls[0][1]
+    expect(input.movementType).toBe('transfer')
+    expect(input.quantity).toBe(3)
+    expect(input.fromLocation).toBe('sheikhupura')
+    expect(input.toLocation).toBe('lahore')
+    expect(String(input.productId)).toBe(PRODUCT_ID)
+    expect(input.idempotencyKey).toBe('transfer-abc')
+    // The caller's session must be threaded through, or the movement escapes
+    // the transaction and a failure would leave the projection moved anyway.
+    expect(postMovement.mock.calls[0][2]).toEqual({ id: 'tx-session' })
   })
 
-  it('decrements the source with a quantity guard so stock cannot go negative', async () => {
+  it('needs authority over both the source and the destination location', async () => {
     const { POST } = await import('@/app/api/stock/transfer/route')
     await POST(makeRequest(validBody))
 
-    const filter = updateCalls[0].filter as {
-      productId: ObjectId
-      location: string
-      quantity: { $gte: number }
-    }
-    expect(filter.productId.toString()).toBe(PRODUCT_ID)
-    expect(filter.location).toBe('sheikhupura')
-    expect(filter.quantity.$gte).toBe(3)
+    expect(authorizeStockWrite).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(authorizeStockWrite).mock.calls[0][0]).toEqual(['sheikhupura', 'lahore'])
   })
 
-  it('aborts the transfer when the source was concurrently modified', async () => {
+  it('never touches the money ledger — a transfer is neither a purchase nor a sale', async () => {
     const { POST } = await import('@/app/api/stock/transfer/route')
-    // Guard matches nothing because someone else already moved the stock.
-    stockCollection.updateOne.mockImplementationOnce(
-      async (filter: unknown, update: unknown, options: unknown) => {
-        updateCalls.push({ filter, update, options })
-        return { matchedCount: 0, modifiedCount: 0, upsertedId: null }
-      }
+    await POST(makeRequest(validBody))
+
+    const input = postMovement.mock.calls[0][1]
+    expect(input.unitCost).toBeUndefined()
+    // The only writes performed are the movement plus the projection reads.
+    expect(stockCollection.updateOne).not.toHaveBeenCalled()
+  })
+
+  it('reports a replay without a second audit entry when the key already exists', async () => {
+    postMovement.mockImplementation(
+      async (_db: unknown, _input: Record<string, unknown>, _session?: unknown) => ({
+        movement: { _id: new ObjectId(MOVEMENT_ID) },
+        created: false,
+      })
     )
 
-    const res = await POST(makeRequest(validBody))
-    const body = await res.json()
-
-    expect(res.status).toBe(400)
-    expect(body.success).toBe(false)
-    expect(body.error.message).toMatch(/changed/i)
-    // The destination must not have been written at all.
-    expect(updateCalls).toHaveLength(1)
-  })
-
-  it('does not apply the destination leg when the source write fails', async () => {
     const { POST } = await import('@/app/api/stock/transfer/route')
-    failUpdateAt = 1
-
     const res = await POST(makeRequest(validBody))
 
-    expect(res.status).toBe(500)
-    expect(updateCalls).toHaveLength(1)
-    expect(stockCollection.find).not.toHaveBeenCalled()
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.replay).toBe(true)
+    // No movement was newly created, so nothing is audited a second time.
+    expect(stockCollection.insertOne).not.toHaveBeenCalled()
   })
 
-  it('rejects a transfer larger than the available stock before writing', async () => {
+  it('carries the Founder negative-stock gate into the movement', async () => {
+    getAllowNegativeStock.mockResolvedValue(true)
+
     const { POST } = await import('@/app/api/stock/transfer/route')
-    stockCollection.findOne.mockResolvedValue({
-      productId: new ObjectId(PRODUCT_ID),
-      location: 'sheikhupura',
-      quantity: 2,
-    })
+    await POST(makeRequest(validBody))
 
-    const res = await POST(makeRequest({ ...validBody, quantity: 5 }))
-    const body = await res.json()
-
-    expect(res.status).toBe(400)
-    expect(body.error.message).toMatch(/not enough stock/i)
-    expect(updateCalls).toHaveLength(0)
-    expect(startSession).not.toHaveBeenCalled()
+    expect(getAllowNegativeStock).toHaveBeenCalledTimes(1)
+    expect(postMovement.mock.calls[0][1].allowNegative).toBe(true)
   })
 
   it('validates the payload before any database access', async () => {
@@ -186,7 +190,17 @@ describe('POST /api/stock/transfer', () => {
     const res = await POST(makeRequest({ ...validBody, quantity: -1 }))
 
     expect(res.status).toBe(400)
-    expect(stockCollection.findOne).not.toHaveBeenCalled()
-    expect(startSession).not.toHaveBeenCalled()
+    expect(postMovement).not.toHaveBeenCalled()
+    expect(runInTransaction).not.toHaveBeenCalled()
+  })
+
+  it('refuses to move the same product to itself', async () => {
+    const { POST } = await import('@/app/api/stock/transfer/route')
+    const res = await POST(
+      makeRequest({ ...validBody, fromLocation: 'lahore', toLocation: 'lahore' })
+    )
+
+    expect(res.status).toBe(400)
+    expect(postMovement).not.toHaveBeenCalled()
   })
 })

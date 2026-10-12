@@ -25,6 +25,7 @@ interface MockCursor {
   skip: (n: number) => MockCursor;
   limit: (n: number) => MockCursor;
   project: () => MockCursor;
+  next: () => Promise<Record<string, unknown> | null>;
   toArray: () => Promise<Record<string, unknown>[]>;
 }
 
@@ -46,6 +47,7 @@ const mockCursor = (docs: Record<string, unknown>[]): MockCursor => {
     skip: (n) => mockCursor(docs.slice(n)),
     limit: (n) => mockCursor(docs.slice(0, n)),
     project: () => mockCursor(docs),
+    next: async () => docs[0] ?? null,
     toArray: async () => toDocs(docs),
   };
   return api;
@@ -69,6 +71,12 @@ const businessSettingsCollection = makeCollection();
 const auditCollection = makeCollection();
 const budgetsCollection = makeCollection();
 const distributionsCollection = makeCollection();
+// Phase 5: the P&L and distribution engines now read the inventory movement
+// ledger for real weighted-average COGS. Empty here, so they keep the
+// explicitly provisional stand-in.
+const stockMovementsCollection = makeCollection();
+const productsCollection = makeCollection();
+const stockCollection = makeCollection();
 
 const collections: Record<string, unknown> = {
   transactions: transactionsCollection,
@@ -78,6 +86,9 @@ const collections: Record<string, unknown> = {
   auditLog: auditCollection,
   budgets: budgetsCollection,
   profitDistributions: distributionsCollection,
+  stockMovements: stockMovementsCollection,
+  products: productsCollection,
+  stock: stockCollection,
 };
 
 vi.mock('@/lib/mongodb', () => ({
@@ -242,6 +253,9 @@ beforeEach(() => {
     ])
   );
   categoriesCollection.find.mockImplementation(() => mockCursor([]));
+  stockMovementsCollection.find.mockImplementation(() => mockCursor([]));
+  productsCollection.find.mockImplementation(() => mockCursor([]));
+  stockCollection.find.mockImplementation(() => mockCursor([]));
   businessSettingsCollection.findOne.mockImplementation(
     async (query: Record<string, unknown> = {}) =>
       settingsDoc && (!query.key || settingsDoc.key === query.key) ? settingsDoc : null

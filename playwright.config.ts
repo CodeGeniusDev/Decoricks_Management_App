@@ -71,6 +71,10 @@ export default defineConfig({
         // so the suite can never write into the application database.
         command: `npx tsx scripts/seed-e2e.ts && npx next build && npx next start -p ${PORT}`,
         env: {
+          // Playwright exports NODE_ENV=test to spawned processes; a
+          // production-mode build is what the suite must ship and start. The
+          // test database stays protected by E2E_TEST_MODE (see src/lib/mongodb.ts).
+          NODE_ENV: 'production',
           E2E_TEST_MODE: '1',
           MONGODB_TEST_DB: process.env.MONGODB_TEST_DB ?? 'decoricks_test',
         },

@@ -5,6 +5,7 @@ import { getDatabase } from '@/lib/mongodb'
 import { successResponse, validationError } from '@/lib/api-response'
 import { karachiCivil, karachiMidnight, type DateRange } from '@/lib/finance'
 import { computeProfitLoss, monthlyProfitSeries } from '@/lib/profit-loss'
+import { periodCogsInput, cogsInputsForRanges } from '@/lib/cogs-service'
 import { resolveReportRange } from '@/lib/cash-flow'
 import { fetchLedgerRange } from '@/lib/distribution-service'
 
@@ -14,9 +15,10 @@ import { fetchLedgerRange } from '@/lib/distribution-service'
  *
  * The SPEC §5 profit-and-loss chain, computed live from the unified ledger
  * over inclusive Asia/Karachi ranges. Reversals cancel their originals, so
- * every figure traces back to transaction records. COGS is PROVISIONAL until
- * the Phase 5 inventory module supplies weighted-average cost — the response
- * says so explicitly rather than pretending to a number it does not have.
+ * every figure traces back to transaction records. COGS comes from the Phase 5
+ * movement ledger (weighted average cost); only before the first movement
+ * exists does the response fall back to the explicitly PROVISIONAL ledger
+ * purchasing stand-in — it never pretends to a number it does not have.
  */
 async function __GET(request: NextRequest) {
   try {
@@ -49,7 +51,8 @@ async function __GET(request: NextRequest) {
       (entry) => new Date(entry.date).getTime() >= range.start.getTime() && new Date(entry.date).getTime() <= range.end.getTime()
     )
 
-    const profitLoss = computeProfitLoss(inRange)
+    const suppliedCogs = await periodCogsInput(db, range)
+    const profitLoss = computeProfitLoss(inRange, { cogs: suppliedCogs })
 
     const monthRanges: { month: string; label: string; range: DateRange }[] = []
     let cursor = seriesStart
@@ -70,7 +73,7 @@ async function __GET(request: NextRequest) {
       })
       cursor = new Date(karachiMidnight(nextCivilMonth.year, nextCivilMonth.month, 1).getTime())
     }
-    const monthly = monthlyProfitSeries(all, monthRanges)
+    const monthly = monthlyProfitSeries(all, monthRanges, await cogsInputsForRanges(db, monthRanges.map((m) => m.range)))
 
     return successResponse({
       period,
@@ -83,7 +86,7 @@ async function __GET(request: NextRequest) {
         grossProfit: 'Net Sales − COGS',
         netProfit: 'Gross Profit − Operating Expenses',
         cogs: profitLoss.cogsProvisional
-          ? 'PROVISIONAL: ledger product_purchasing total (inventory COGS arrives in Phase 5)'
+          ? 'PROVISIONAL: ledger product_purchasing total (no inventory movements recorded yet)'
           : profitLoss.cogsSource,
       },
     })

@@ -1,43 +1,45 @@
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
-import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
-import { ObjectId } from 'mongodb'
+import { ObjectId, type ClientSession, type Db } from 'mongodb'
+import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { authorize, authorizeStockWrite } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
-import { getOrderCollection, ensureOrdersIndexes, orderToJSON, type Order } from '@/lib/models/Sales'
+import {
+  getOrderCollection,
+  ensureOrdersIndexes,
+  orderToJSON,
+  type Order,
+  type OrderItem,
+} from '@/lib/models/Sales'
+import { ensureInventoryIndexes } from '@/lib/models/Inventory'
+import { getProductCollection } from '@/lib/models/Product'
 import { orderSchema } from '@/lib/schemas/operations'
 import { priceOrderItems } from '@/lib/order-pricing'
 import { getKarachiDate } from '@/lib/date'
-import { getActor } from '@/lib/current-user'
+import { allocateSerial, monthPrefix } from '@/lib/serial'
+import { karachiDateInputRange } from '@/lib/finance'
 import { recordAuditEntry } from '@/lib/audit'
-import { errorResponse, successResponse, validationError } from '@/lib/api-response'
+import { successResponse, validationError } from '@/lib/api-response'
+import { ActorContext } from '@/lib/finance-ledger'
+import { getAllowNegativeStock, postMovement, runInTransaction } from '@/lib/stock-service'
 
 const isDuplicateKeyError = (e: unknown) => (e as { code?: number })?.code === 11000
 
-/** Builds `SO-YYYYMM-NNNN` from the highest existing number in the month. */
-async function nextOrderNumber(col: ReturnType<typeof getOrderCollection>): Promise<string> {
-  const now = getKarachiDate()
-  const prefix = `SO-${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`
-
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const highest = await col
-      .find({ orderNumber: { $regex: `^${prefix}-` } })
-      .sort({ orderNumber: -1 })
-      .limit(1)
-      .toArray()
-    const last = highest[0]?.orderNumber
-    const seq = last ? parseInt(last.slice(prefix.length + 1), 10) + 1 : 1
-    const candidate = `${prefix}-${String(seq).padStart(4, '0')}`
-    if (!(await col.findOne({ orderNumber: candidate }))) return candidate
-  }
-
-  throw new Error('Could not allocate a unique order number')
+/** Builds `SO-YYYYMM-NNNN` from an atomic per-month counter (see lib/serial). */
+async function nextOrderNumber(db: Db, session?: ClientSession): Promise<string> {
+  return allocateSerial(db, {
+    collection: 'orders',
+    field: 'orderNumber',
+    prefix: monthPrefix('SO'),
+    session,
+  })
 }
 
 /**
  * GET /api/orders
  *
  * Query params: search (order number or customer), status, paymentStatus,
- * channel, page, limit. Every figure is derived from stored documents.
+ * channel, location (ship-from), from/to (YYYY-MM-DD Karachi day boundaries
+ * on createdAt), page, limit. Every figure is derived from stored documents.
  */
 async function __GET(request: NextRequest) {
   try {
@@ -48,23 +50,44 @@ async function __GET(request: NextRequest) {
     const status = searchParams.get('status')?.trim()
     const paymentStatus = searchParams.get('paymentStatus')?.trim()
     const channel = searchParams.get('channel')?.trim()
+    const location = searchParams.get('location')?.trim()
+    const from = searchParams.get('from')?.trim()
+    const to = searchParams.get('to')?.trim()
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50))
 
     const db = await getDatabase()
+    await ensureOrdersIndexes(db)
     const col = getOrderCollection(db)
 
-    const filter: Record<string, unknown> = {}
+    const and: Record<string, unknown>[] = []
     if (search) {
       const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      filter.$or = [
-        { orderNumber: { $regex: safe, $options: 'i' } },
-        { customerName: { $regex: safe, $options: 'i' } },
-      ]
+      and.push({
+        $or: [
+          { orderNumber: { $regex: safe, $options: 'i' } },
+          { customerName: { $regex: safe, $options: 'i' } },
+          { customerPhone: { $regex: safe, $options: 'i' } },
+        ],
+      })
     }
-    if (status) filter.orderStatus = status
-    if (paymentStatus) filter.paymentStatus = paymentStatus
-    if (channel) filter.salesChannel = channel
+    if (status) and.push({ orderStatus: status })
+    if (paymentStatus) and.push({ paymentStatus })
+    if (channel) and.push({ salesChannel: channel })
+    if (location) and.push({ shipFromLocation: location })
+
+    const dateFilter: Record<string, Date> = {}
+    if (from) {
+      const range = karachiDateInputRange(from)
+      if (range) dateFilter.$gte = range.start
+    }
+    if (to) {
+      const range = karachiDateInputRange(to)
+      if (range) dateFilter.$lte = range.end
+    }
+    if (Object.keys(dateFilter).length > 0) and.push({ createdAt: dateFilter })
+
+    const filter = and.length === 0 ? {} : and.length === 1 ? and[0] : { $and: and }
 
     const [docs, total] = await Promise.all([
       col.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).toArray(),
@@ -73,7 +96,7 @@ async function __GET(request: NextRequest) {
 
     return successResponse({
       orders: docs.map(orderToJSON),
-      pagination: { page, limit, total },
+      pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
     })
   } catch (error) {
     console.error('GET /api/orders failed:', error)
@@ -82,17 +105,29 @@ async function __GET(request: NextRequest) {
 }
 
 /**
- * POST /api/orders
+ * POST /api/orders — create and reserve stock in one atomic event.
  *
- * Subtotal and total are always recomputed from the submitted items — the
- * client cannot set monetary totals.
+ * Creating an order writes a `sale_out` movement per line at the shipped-from
+ * location. That is the reservation: available stock drops immediately, and
+ * the decrement is an atomic guarded `$inc` inside a transaction, so two
+ * simultaneous sales of the last unit cannot both succeed — the loser gets a
+ * 409 and the whole order rolls back. Each movement snapshots the product's
+ * weighted-average cost at that moment, which is exactly what COGS is derived
+ * from later.
+ *
+ * The `product_purchasing`-style money leg is deliberately absent: revenue is
+ * recognized only when a delivered order's COD cash is confirmed received
+ * (PATCH), so nothing can be double counted between order and ledger.
+ *
+ * STRICT authorization: an order writes stock at one location, so
+ * `authorizeStockWrite([shipFromLocation])` runs next to the `sales.create`
+ * grant (SPEC §4.2 — Hasnat may write Lahore stock only).
  */
 async function __POST(request: NextRequest) {
   try {
     const auth = await authorize('sales', 'create')
 
-    const body = await request.json()
-    const parsed = orderSchema.safeParse(body)
+    const parsed = orderSchema.safeParse(await request.json())
     if (!parsed.success) {
       return validationError(
         'Validation failed',
@@ -100,69 +135,146 @@ async function __POST(request: NextRequest) {
       )
     }
 
+    const { shipFromLocation, idempotencyKey } = parsed.data
+    await authorizeStockWrite([shipFromLocation])
+
+    const actor: ActorContext = {
+      id: auth.user._id as ObjectId,
+      name: auth.user.name,
+      email: auth.user.email,
+    }
+
     const db = await getDatabase()
     const col = getOrderCollection(db)
     await ensureOrdersIndexes(db)
+    await ensureInventoryIndexes(db)
 
-    const now = getKarachiDate()
-    const shippingCost = parsed.data.shippingCost ?? 0
+    if (idempotencyKey) {
+      const replay = await col.findOne({ idempotencyKey } as never)
+      if (replay) return successResponse({ order: orderToJSON(replay), replay: true })
+    }
 
-    // Product name and unit price are resolved from the database, never taken
-    // from the request body — otherwise a stale or tampered client could record
-    // an order at an invented name and price.
+    // Product names and unit prices are resolved from the database, never
+    // taken from the request body — a stale or tampered client cannot record
+    // an order at an invented name or price.
     const priced = await priceOrderItems(parsed.data.items, db)
     if (!priced.ok) return priced.response
     const items = priced.items
     const subtotal = items.reduce((sum, i) => sum + i.total, 0)
+    const shippingCost = parsed.data.shippingCost ?? 0
+    const courierCharges = parsed.data.courierCharges ?? 0
 
-    const actor = await getActor()
-    const base = {
-      customerName: parsed.data.customerName,
-      customerPhone: parsed.data.customerPhone,
-      customerCity: parsed.data.customerCity,
-      customerAddress: parsed.data.customerAddress,
-      items,
-      subtotal,
-      shippingCost,
-      total: subtotal + shippingCost,
-      paymentMethod: parsed.data.paymentMethod,
-      paymentStatus: parsed.data.paymentStatus,
-      orderStatus: parsed.data.orderStatus,
-      codOutcome: parsed.data.codOutcome,
-      salesChannel: parsed.data.salesChannel,
-      notes: parsed.data.notes || undefined,
-      createdAt: now,
-      updatedAt: now,
-      createdBy: actor.id,
-    }
+    const now = getKarachiDate()
+    const allowNegative = await getAllowNegativeStock(db)
 
-    // Two attempts: a unique-index race can lose the number allocation.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const orderNumber = await nextOrderNumber(col)
+    const result = await runInTransaction(async (session) => {
+      const orderNumber = await nextOrderNumber(db, session)
+
+      const base: Order = {
+        orderNumber,
+        customerName: parsed.data.customerName,
+        customerPhone: parsed.data.customerPhone,
+        customerCity: parsed.data.customerCity,
+        customerAddress: parsed.data.customerAddress,
+        items,
+        subtotal,
+        shippingCost,
+        total: subtotal + shippingCost,
+        paymentMethod: parsed.data.paymentMethod,
+        paymentStatus: parsed.data.paymentStatus,
+        orderStatus: parsed.data.orderStatus,
+        codOutcome: parsed.data.codOutcome,
+        courierCharges,
+        courierName: parsed.data.courierName || undefined,
+        salesChannel: parsed.data.salesChannel,
+        notes: parsed.data.notes || undefined,
+        shipFromLocation,
+        idempotencyKey,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: actor.id,
+      }
+
+      let orderId: ObjectId
       try {
-        const result = await col.insertOne({ ...base, orderNumber } as never)
-        const created = { ...(base as unknown as Order), _id: result.insertedId, orderNumber }
-
-        const meta = await getRequestMeta()
-        await recordAuditEntry(db, {
-          userId: auth.user._id as ObjectId,
-          userEmail: auth.user.email,
-          action: 'order_created',
-          entityType: 'order',
-          entityId: result.insertedId,
-          newValue: orderToJSON(created),
-          details: `Order ${orderNumber} for ${parsed.data.customerName}`,
-          ipAddress: meta.ipAddress,
-          userAgent: meta.userAgent,
-        })
-        return successResponse(orderToJSON(created), 201)
+        const inserted = await col.insertOne(base as never, { session })
+        orderId = inserted.insertedId
       } catch (error) {
-        if (isDuplicateKeyError(error) && attempt === 0) continue
+        if (isDuplicateKeyError(error) && idempotencyKey) {
+          const existing = await col.findOne({ idempotencyKey } as never, { session })
+          if (existing) return { replayOrder: existing, order: null as Order | null }
+        }
+        if (isDuplicateKeyError(error)) throw error
         throw error
       }
+      base._id = orderId
+
+      // WAC snapshots for the reservation movements are read in-transaction,
+      // so the COGS basis matches the stock state the sale was made against.
+      const productIds = [...new Set(items.map((i) => i.productId.toString()))]
+      const products = await getProductCollection(db)
+        .find({ _id: { $in: productIds.map((p) => new ObjectId(p)) } } as never, { session })
+        .toArray()
+      const costById = new Map(products.map((p) => [p._id!.toString(), p.cost]))
+
+      const lineItems: OrderItem[] = items.map((item) => ({
+        ...item,
+        unitCost: costById.get(item.productId.toString()) ?? 0,
+      }))
+
+      const movementIds: ObjectId[] = []
+      for (let i = 0; i < lineItems.length; i++) {
+        const item = lineItems[i]
+        const { movement } = await postMovement(
+          db,
+          {
+            productId: item.productId,
+            movementType: 'sale_out',
+            quantity: item.quantity,
+            fromLocation: shipFromLocation,
+            unitCost: item.unitCost,
+            referenceId: orderId,
+            referenceType: 'order',
+            idempotencyKey: `order:${orderId.toString()}:out:${i}`,
+            notes: `Order ${orderNumber}`,
+            date: now,
+            createdBy: actor.id,
+            allowNegative,
+          },
+          session
+        )
+        if (movement._id) movementIds.push(movement._id)
+      }
+
+      await col.updateOne(
+        { _id: orderId } as never,
+        { $set: { items: lineItems, stockMovementIds: movementIds } } as never,
+        { session }
+      )
+      base.items = lineItems
+      base.stockMovementIds = movementIds
+
+      return { replayOrder: null as Order | null, order: base }
+    })
+
+    if (result.replayOrder) {
+      return successResponse({ order: orderToJSON(result.replayOrder), replay: true })
     }
 
-    throw new Error('Order creation failed after retry')
+    const created = result.order!
+    const meta = await getRequestMeta()
+    await recordAuditEntry(db, {
+      userId: actor.id,
+      userEmail: actor.email,
+      action: 'order_created',
+      entityType: 'order',
+      entityId: created._id ?? null,
+      newValue: orderToJSON(created),
+      details: `Order ${created.orderNumber} for ${created.customerName}; reserved stock at ${shipFromLocation}`,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
+    return successResponse({ order: orderToJSON(created), replay: false }, 201)
   } catch (error) {
     console.error('POST /api/orders failed:', error)
     return handleRouteError(error)

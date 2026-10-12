@@ -56,12 +56,13 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     /*
      * 36px for compact controls, 44px for anything that is a primary touch
      * target on a phone. Sizes are fixed heights so a row of mixed buttons
-     * stays on one baseline.
+     * stays on one baseline. Below the `md` breakpoint — where tables turn into
+     * cards and every action is finger-sized — the same buttons grow to 44px.
      */
     const sizeStyles = {
-      sm: 'h-9 px-3 text-xs',
-      md: 'h-10 px-3.5 text-sm',
-      lg: 'h-11 px-5 text-base',
+      sm: 'h-11 min-h-[44px] px-3 text-xs md:h-9',
+      md: 'h-11 min-h-[44px] px-3.5 text-sm md:h-10',
+      lg: 'h-11 min-h-[44px] px-5 text-base',
     }
 
     const classes = `${baseStyles} ${variantStyles[variant]} ${sizeStyles[size]} ${className}`

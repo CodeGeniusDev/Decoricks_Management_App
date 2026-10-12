@@ -148,17 +148,21 @@ export interface MonthlyPlPoint {
 /**
  * One P&L point per Karachi month over the trailing `months` window ending at
  * `until`. Powers the monthly profit-trend chart and any multi-month review.
+ * `cogsPerMonth`, when supplied, must align index-for-index with
+ * `monthRanges` — the Phase 5 movement-derived COGS for each month (null
+ * entries keep the provisional purchasing stand-in for that month).
  */
 export function monthlyProfitSeries(
   entries: LedgerEntryLike[],
-  monthRanges: { month: string; label: string; range: DateRange }[]
+  monthRanges: { month: string; label: string; range: DateRange }[],
+  cogsPerMonth?: (CogsInput | null)[]
 ): MonthlyPlPoint[] {
-  return monthRanges.map(({ month, label, range }) => {
+  return monthRanges.map(({ month, label, range }, index) => {
     const inRange = entries.filter((entry) => {
       const time = new Date(entry.date).getTime()
       return time >= range.start.getTime() && time <= range.end.getTime()
     })
-    const pl = computeProfitLoss(inRange)
+    const pl = computeProfitLoss(inRange, { cogs: cogsPerMonth?.[index] ?? null })
     return {
       month,
       label,

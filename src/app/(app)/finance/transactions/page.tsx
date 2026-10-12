@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { ExportLink } from '@/components/ui/ExportLink';
 import { Toast } from '@/components/ui/Toast';
 import { apiJson } from '@/lib/api-client';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -299,12 +300,7 @@ export default function FinanceTransactionsPage() {
         description="The full ledger — every entry is permanent; mistakes are corrected with linked reversals."
         actions={
           <>
-            <a
-              href={exportHref}
-              className="h-10 inline-flex items-center rounded-md border border-line bg-surface-raised px-3.5 text-sm font-medium text-ink-secondary transition-colors hover:bg-surface-sunken"
-            >
-              Export CSV
-            </a>
+            <ExportLink href={exportHref} />
             {canCreate && <Button onClick={() => setFormOpen(true)}>New transaction</Button>}
           </>
         }

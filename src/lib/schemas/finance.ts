@@ -235,6 +235,20 @@ export const businessSettingsUpdateSchema = z.object({
   withdrawalLockedUntil: z.union([ledgerDate, z.literal(''), z.null()]),
   profitSharing: profitSharingSchema.optional(),
   budgetThresholds: budgetThresholdsSchema.optional(),
+  /*
+   * Phase 5. `allowNegativeStock` is the Founder's explicit permission to let a
+   * stock write drive a location below zero; absent/false both mean "block".
+   * The two account ids pick where purchase expenses and COD income land when a
+   * flow does not name an account itself — an empty string or null clears the
+   * choice and falls back to the resolution order in `ledger-accounts.ts`.
+   */
+  allowNegativeStock: z.boolean().optional(),
+  purchasingAccountId: z
+    .union([z.string().regex(/^[0-9a-fA-F]{24}$/, 'Must be a valid account id'), z.literal(''), z.null()])
+    .optional(),
+  salesIncomeAccountId: z
+    .union([z.string().regex(/^[0-9a-fA-F]{24}$/, 'Must be a valid account id'), z.literal(''), z.null()])
+    .optional(),
 });
 
 export const transactionQuerySchema = z.object({

@@ -3,11 +3,12 @@ import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
-import { getProductCollection, getStockCollection, productToJSON } from '@/lib/models/Product'
+import { getProductCollection, getStockCollection, productToJSON, ensureProductIndexes } from '@/lib/models/Product'
 import { productSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
 import { recordAuditEntry } from '@/lib/audit'
 import { errorResponse, successResponse, validationError } from '@/lib/api-response'
+import { buildProductFilter, productParamsFromUrl } from '@/lib/inventory-sales-filters'
 
 /**
  * GET /api/products
@@ -26,22 +27,15 @@ async function __GET(request: NextRequest) {
     await authorize('inventory', 'view')
 
     const { searchParams } = new URL(request.url)
-    const search = searchParams.get('search')?.trim()
-    const category = searchParams.get('category')?.trim()
-    const activeRaw = searchParams.get('active')
 
     const db = await getDatabase()
+    await ensureProductIndexes(db)
     const products = getProductCollection(db)
     const stock = getStockCollection(db)
 
-    const filter: Record<string, unknown> = {}
-    if (search) {
-      const safe = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      filter.$or = [{ name: { $regex: safe, $options: 'i' } }, { sku: { $regex: safe, $options: 'i' } }]
-    }
-    if (category) filter.category = category
-    if (activeRaw === 'true') filter.isActive = true
-    if (activeRaw === 'false') filter.isActive = false
+    // The same builder backs `/api/products/export`, so the CSV always contains
+    // the rows the screen is showing.
+    const filter = buildProductFilter(productParamsFromUrl(new URL(request.url)))
 
     const [docs, stockRows] = await Promise.all([
       products.find(filter).sort({ createdAt: -1 }).toArray(),
@@ -74,7 +68,14 @@ async function __GET(request: NextRequest) {
   }
 }
 
-/** POST /api/products — creates a product. */
+/**
+ * POST /api/products — creates a product.
+ *
+ * Phase 5 rules: SKU uniqueness is enforced by the unique index (a
+ * read-then-write check alone loses under concurrency), and the endpoint
+ * accepts an idempotency key so a retried create returns the original instead
+ * of failing on a duplicate SKU.
+ */
 async function __POST(request: NextRequest) {
   try {
     const auth = await authorize('inventory', 'create')
@@ -89,23 +90,47 @@ async function __POST(request: NextRequest) {
     }
 
     const db = await getDatabase()
+    await ensureProductIndexes(db)
     const col = getProductCollection(db)
     const now = getKarachiDate()
+
+    if (parsed.data.idempotencyKey) {
+      const replay = await col.findOne({ idempotencyKey: parsed.data.idempotencyKey } as never)
+      if (replay) return successResponse(productToJSON(replay))
+    }
 
     const duplicate = await col.findOne({ sku: parsed.data.sku })
     if (duplicate) {
       return validationError('SKU already exists', [{ path: 'sku', message: 'This SKU is already in use' }])
     }
 
+    const { idempotencyKey, ...fields } = parsed.data
     const doc = {
-      ...parsed.data,
+      ...fields,
       description: parsed.data.description || undefined,
       isActive: parsed.data.isActive ?? true,
+      idempotencyKey,
       createdAt: now,
       updatedAt: now,
     }
 
-    const result = await col.insertOne(doc)
+    let result
+    try {
+      result = await col.insertOne(doc as never)
+    } catch (error) {
+      const code = (error as { code?: number })?.code
+      if (code === 11000) {
+        // Concurrent duplicate: SKU clash or a replayed idempotency key.
+        if (idempotencyKey) {
+          const existing = await col.findOne({ idempotencyKey } as never)
+          if (existing) return successResponse(productToJSON(existing))
+        }
+        return validationError('SKU already exists', [
+          { path: 'sku', message: 'This SKU is already in use' },
+        ])
+      }
+      throw error
+    }
     const created = { ...doc, _id: result.insertedId }
 
     const meta = await getRequestMeta()

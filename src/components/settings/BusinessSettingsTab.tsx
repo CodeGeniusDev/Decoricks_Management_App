@@ -5,6 +5,8 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Checkbox } from '@/components/ui/Checkbox';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Toast } from '@/components/ui/Toast';
@@ -50,6 +52,11 @@ interface SettingsView {
   profitSharing: { partners: ApiPartner[]; charityPercentage: number };
   budgetThresholds: { warning: number; critical: number };
   policyConfigured: boolean;
+  /** Phase 5: the Founder-only guard that lets a stock write go below zero. */
+  inventory: { allowNegativeStock: boolean };
+  /** Where purchase expenses and COD income land unless a flow names an account. */
+  postingAccounts: { purchasingAccountId: string | null; salesIncomeAccountId: string | null };
+  accountOptions: Array<{ id: string; name: string; kind: string }>;
 }
 
 const toRow = (p: ApiPartner): PartnerRow => ({
@@ -81,6 +88,9 @@ export function BusinessSettingsTab() {
   const [warning, setWarning] = useState('80');
   const [critical, setCritical] = useState('100');
   const [lockDate, setLockDate] = useState('');
+  const [allowNegative, setAllowNegative] = useState(false);
+  const [purchasingAccount, setPurchasingAccount] = useState('');
+  const [incomeAccount, setIncomeAccount] = useState('');
   const [issues, setIssues] = useState<Record<string, string>>({});
 
   const seed = useCallback((next: SettingsView) => {
@@ -89,6 +99,9 @@ export function BusinessSettingsTab() {
     setWarning(String(next.budgetThresholds.warning));
     setCritical(String(next.budgetThresholds.critical));
     setLockDate(next.withdrawalLockedUntil ?? '');
+    setAllowNegative(next.inventory?.allowNegativeStock ?? false);
+    setPurchasingAccount(next.postingAccounts?.purchasingAccountId ?? '');
+    setIncomeAccount(next.postingAccounts?.salesIncomeAccountId ?? '');
     setIssues({});
   }, []);
 
@@ -115,6 +128,21 @@ export function BusinessSettingsTab() {
     [partners]
   );
   const charityValue = Number.parseInt(charity, 10) || 0;
+
+  /*
+   * One empty option meaning "not configured": the flows then fall back to the
+   * oldest active account, which is exactly what the resolve order documents.
+   */
+  const accountSelectOptions = useMemo(
+    () => [
+      { value: '', label: 'Automatic (oldest active account)' },
+      ...(view?.accountOptions ?? []).map((account) => ({
+        value: account.id,
+        label: `${account.name} · ${account.kind}`,
+      })),
+    ],
+    [view]
+  );
 
   const validate = (): Record<string, string> => {
     const errors: Record<string, string> = {};
@@ -185,6 +213,10 @@ export function BusinessSettingsTab() {
             charityPercentage: charityValue,
           },
           budgetThresholds: { warning: Number(warning), critical: Number(critical) },
+          // Phase 5: inventory guard and the accounts the sales flows post to.
+          allowNegativeStock: allowNegative,
+          purchasingAccountId: purchasingAccount || null,
+          salesIncomeAccountId: incomeAccount || null,
         }),
       });
       setView(updated);
@@ -422,6 +454,54 @@ export function BusinessSettingsTab() {
               <Badge variant="success">Withdrawals unlocked</Badge>
             )}
           </div>
+        </div>
+      </Card>
+
+      <Card className="p-4 sm:p-6">
+        <h2 className="mb-1 text-lg font-semibold text-decoricks-dark">Inventory and sales</h2>
+        <p className="mb-4 text-sm text-ink-secondary">
+          Stock is written through the movement ledger. By default a sale, transfer or adjustment that
+          would take a location below zero is refused — that is what keeps the ledger and the physical
+          count honest. Enable the override only when the business genuinely ships before the count is
+          entered.
+        </p>
+
+        <div className="space-y-4">
+          <Checkbox
+            id="allow-negative-stock"
+            checked={allowNegative}
+            disabled={!canWrite}
+            onChange={(e) => setAllowNegative(e.target.checked)}
+            label="Allow stock to go negative"
+          />
+          <p className="text-xs text-ink-muted">
+            {allowNegative
+              ? 'Stock writes may drive a location below zero. The inventory screen will show negative figures.'
+              : 'Stock writes that would go below zero are rejected with a clear message.'}
+          </p>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Select
+              label="Purchase expense account"
+              value={purchasingAccount}
+              disabled={!canWrite}
+              onChange={(e) => setPurchasingAccount(e.target.value)}
+              error={issues.purchasingAccountId}
+              options={accountSelectOptions}
+            />
+            <Select
+              label="Sales income account"
+              value={incomeAccount}
+              disabled={!canWrite}
+              onChange={(e) => setIncomeAccount(e.target.value)}
+              error={issues.salesIncomeAccountId}
+              options={accountSelectOptions}
+            />
+          </div>
+          <p className="text-xs text-ink-muted">
+            Purchase costs and delivered-order COD income are posted to these accounts unless a specific
+            entry names another one. Nothing here changes what the ledger already recorded.
+          </p>
         </div>
       </Card>
 

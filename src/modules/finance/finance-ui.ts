@@ -1,8 +1,6 @@
 'use client';
 
 import type { LedgerAverages, LedgerEntryType, LedgerSummary } from '@/lib/finance';
-import { isValidPkr, paisaToPkr, pkrToPaisa } from '@/lib/money';
-import { karachiCivil } from '@/lib/finance';
 
 /**
  * Client-side types and helpers for the Phase 3 finance screens.
@@ -119,64 +117,20 @@ export interface SettingsView {
 /* Helpers                                                                     */
 /* -------------------------------------------------------------------------- */
 
-/** Today as `YYYY-MM-DD` on the Karachi civil calendar. */
-export const karachiToday = (): string => {
-  const { year, month, day } = karachiCivil(new Date());
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-};
-
-/** ISO instant -> `YYYY-MM-DD` on the Karachi civil calendar (for date inputs). */
-export const toKarachiInputDate = (iso: string): string => {
-  const { year, month, day } = karachiCivil(new Date(iso));
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-};
-
-/**
- * A fresh idempotency key per form session. `crypto.randomUUID` exists in every
- * browser we target; the fallback keeps the form usable if it ever doesn't.
+/*
+ * The generic form helpers moved to `@/lib/form-helpers` when Phase 5 gave the
+ * inventory and sales screens the same money/date/idempotency needs. They are
+ * re-exported here so every existing Finance import keeps working — one
+ * implementation, so a paisa parser cannot drift between modules.
  */
-export const newIdempotencyKey = (): string => {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
-};
-
-/**
- * Parse a PKR amount typed by a human into integer paisa. Rejects anything
- * with more than two decimals so a float never sneaks into the ledger.
- */
-export const parsePkrAmount = (
-  raw: string
-): { ok: true; paisa: number } | { ok: false; error: string } => {
-  const trimmed = raw.trim().replace(/,/g, '');
-  if (!trimmed) return { ok: false, error: 'Amount is required' };
-  if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) {
-    return { ok: false, error: 'Enter a positive amount with at most 2 decimals' };
-  }
-  const pkr = Number(trimmed);
-  if (!Number.isFinite(pkr) || !isValidPkr(pkr)) {
-    return { ok: false, error: 'Enter a valid amount' };
-  }
-  return { ok: true, paisa: pkrToPaisa(pkr) };
-};
-
-/** Paisa rendered into a text input the user can edit (no locale noise). */
-export const paisaToInputValue = (paisa: number): string => paisaToPkr(paisa).toFixed(2);
-
-/** Flatten the server's `details` array into `field -> message` for inputs. */
-export const fieldIssues = (details: unknown): Record<string, string> => {
-  const out: Record<string, string> = {};
-  if (Array.isArray(details)) {
-    for (const item of details) {
-      if (item && typeof item === 'object' && 'path' in item && 'message' in item) {
-        const entry = item as { path: string; message: string };
-        if (typeof entry.path === 'string' && typeof entry.message === 'string') {
-          out[entry.path] = entry.message;
-        }
-      }
-    }
-  }
-  return out;
-};
+export {
+  karachiToday,
+  toKarachiInputDate,
+  newIdempotencyKey,
+  parsePkrAmount,
+  paisaToInputValue,
+  fieldIssues,
+} from '@/lib/form-helpers';
 
 export const TYPE_BADGE_VARIANT: Record<
   LedgerEntryType,

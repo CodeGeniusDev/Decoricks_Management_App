@@ -223,31 +223,23 @@ export default function SuppliersPage() {
   }
 
   const deleteSupplier = async (supplierId: string) => {
-    if (!confirm('Are you sure you want to delete this supplier?')) return
-
-    const previous = suppliers
-    setSuppliers((current) => current.filter((s) => s._id !== supplierId))
+    if (!confirm('Archive this supplier? It will stop appearing in new purchases.')) return
 
     try {
       const res = await apiFetch(`/api/suppliers/${supplierId}`, { method: 'DELETE' })
       const body = await res.json()
       if (!res.ok || !body.success) {
-        setSuppliers(previous)
-        throw new Error(body?.error?.message || 'Could not delete supplier')
+        throw new Error(body?.error?.message || 'Could not archive supplier')
       }
 
-      // A referenced supplier is deactivated by the API rather than removed.
-      if (body.data?.deactivated) {
-        setToastMessage({ type: 'warning', message: body.data.message })
-      } else {
-        setToastMessage({ type: 'success', message: 'Supplier deleted' })
-      }
+      // Suppliers are archived, never removed: the row survives so purchases
+      // and expenses keep resolving their supplier reference.
+      setToastMessage({ type: 'success', message: 'Supplier archived' })
       await fetchSuppliers()
     } catch (err) {
-      setSuppliers(previous)
       setToastMessage({
         type: 'error',
-        message: err instanceof Error ? err.message : 'Could not delete supplier',
+        message: err instanceof Error ? err.message : 'Could not archive supplier',
       })
     }
   }

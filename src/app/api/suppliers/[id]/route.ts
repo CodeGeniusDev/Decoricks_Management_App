@@ -95,10 +95,12 @@ async function __PUT(request: NextRequest, context: RouteContext) {
 }
 
 /**
- * DELETE /api/suppliers/[id]
+ * DELETE /api/suppliers/[id] — archive, never remove (Phase 5 BUILD #2).
  *
- * Suppliers referenced by expense records are deactivated instead of removed so
- * historical data keeps a valid reference.
+ * A supplier row is a reference target for purchases and expenses, so the row
+ * is kept and only flipped to `isActive: false`. Re-activating is a normal PUT
+ * with `isActive: true`. The number of referencing purchases is reported so
+ * the operator knows why the row survives.
  */
 async function __DELETE(_request: NextRequest, context: RouteContext) {
   try {
@@ -115,47 +117,42 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
     if (!existing) return notFoundError('Supplier not found')
     const meta = await getRequestMeta()
 
-    const expenseRef = await db
+    // Purchases are the Phase 5 flow that references suppliers; an old
+    // `expenses` collection is checked too so legacy rows are counted as well.
+    const purchaseRefs = await db
+      .collection('purchases')
+      .countDocuments({ supplierId: _id } as never)
+      .catch(() => 0)
+    const expenseRefs = await db
       .collection('expenses')
       .countDocuments({ vendorId: id } as never)
       .catch(() => 0)
+    const referencedBy = purchaseRefs + expenseRefs
 
-    if (expenseRef > 0) {
-      await col.updateOne({ _id } as never, { $set: { isActive: false, updatedAt: getKarachiDate() } } as never)
-      const updated = await col.findOne({ _id } as never)
-      await recordAuditEntry(db, {
-        userId: auth.user._id as ObjectId,
-        userEmail: auth.user.email,
-        action: 'supplier_deactivated',
-        entityType: 'supplier',
-        entityId: _id,
-        oldValue: { isActive: existing.isActive },
-        newValue: { isActive: false },
-        details: `Referenced by ${expenseRef} expense record(s), deactivated instead of deleted.`,
-        ipAddress: meta.ipAddress,
-        userAgent: meta.userAgent,
-      })
-      return successResponse({
-        ...supplierToJSON(updated!),
-        deactivated: true,
-        message: `Referenced by ${expenseRef} expense record(s), so it was deactivated instead of deleted.`,
-      })
-    }
+    await col.updateOne(
+      { _id } as never,
+      { $set: { isActive: false, updatedAt: getKarachiDate() } } as never
+    )
+    const updated = await col.findOne({ _id } as never)
 
-    await col.deleteOne({ _id } as never)
     await recordAuditEntry(db, {
       userId: auth.user._id as ObjectId,
       userEmail: auth.user.email,
-      action: 'supplier_deleted',
+      action: 'supplier_archived',
       entityType: 'supplier',
       entityId: _id,
-      oldValue: supplierToJSON(existing),
+      oldValue: { isActive: existing.isActive },
+      newValue: { isActive: false },
+      details:
+        referencedBy > 0
+          ? `Supplier ${existing.name} archived; still referenced by ${referencedBy} record(s).`
+          : `Supplier ${existing.name} archived.`,
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     })
-    return successResponse({ _id: id })
+    return successResponse({ ...supplierToJSON(updated!), archived: true })
   } catch (error) {
-    console.error('DELETE /api/suppliers/[id] failed:', error)
+    console.error('DELETE /api/suppliers/[id] (archive) failed:', error)
     return handleRouteError(error)
   }
 }

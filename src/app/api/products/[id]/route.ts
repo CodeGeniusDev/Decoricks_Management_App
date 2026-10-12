@@ -3,11 +3,11 @@ import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
-import { getProductCollection, getStockCollection, productToJSON } from '@/lib/models/Product'
+import { getProductCollection, productToJSON } from '@/lib/models/Product'
 import { productSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
 import { recordAuditEntry } from '@/lib/audit'
-import { errorResponse, notFoundError, successResponse, validationError } from '@/lib/api-response'
+import { notFoundError, successResponse, validationError } from '@/lib/api-response'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -51,6 +51,10 @@ async function __PUT(request: NextRequest, context: RouteContext) {
       )
     }
 
+    // The idempotency key belongs to the create that made this row; editing
+    // a product must never rewrite it.
+    const { idempotencyKey: _stripped, ...updates } = parsed.data
+
     const db = await getDatabase()
     const col = getProductCollection(db)
     const _id = new ObjectId(id)
@@ -65,10 +69,20 @@ async function __PUT(request: NextRequest, context: RouteContext) {
       }
     }
 
-    const result = await col.updateOne(
-      { _id } as never,
-      { $set: { ...parsed.data, updatedAt: getKarachiDate() } } as never
-    )
+    let result
+    try {
+      result = await col.updateOne(
+        { _id } as never,
+        { $set: { ...updates, updatedAt: getKarachiDate() } } as never
+      )
+    } catch (error) {
+      if ((error as { code?: number })?.code === 11000) {
+        return validationError('SKU already exists', [
+          { path: 'sku', message: 'This SKU is already in use' },
+        ])
+      }
+      throw error
+    }
     if (result.matchedCount === 0) return notFoundError('Product not found')
 
     const updated = await col.findOne({ _id } as never)
@@ -94,8 +108,9 @@ async function __PUT(request: NextRequest, context: RouteContext) {
 /**
  * DELETE /api/products/[id]
  *
- * Refuses while stock remains, so deleting a product can never orphan or
- * silently discard real stock records.
+ * Phase 5: no hard deletes. Products are ARCHIVED (`isActive = false`) so the
+ * movement ledger, orders and purchases keep resolving every product they
+ * reference. Re-activating is a normal PUT with `isActive: true`.
  */
 async function __DELETE(_request: NextRequest, context: RouteContext) {
   try {
@@ -106,40 +121,31 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
 
     const db = await getDatabase()
     const _id = new ObjectId(id)
+    const col = getProductCollection(db)
 
-    const productCol = getProductCollection(db)
-    const before = await productCol.findOne({ _id } as never)
+    const before = await col.findOne({ _id } as never)
     if (!before) return notFoundError('Product not found')
 
-    const stockCol = getStockCollection(db)
-    const stockRows = await stockCol.find({ productId: _id } as never).toArray()
-    const total = stockRows.reduce((sum, s) => sum + s.quantity, 0)
-
-    if (total > 0) {
-      return validationError('Product still has stock', [
-        { path: 'stock', message: `Remove the remaining ${total} unit(s) before deleting this product` },
-      ])
-    }
-
-    if (stockRows.length > 0) await stockCol.deleteMany({ productId: _id } as never)
-
-    const result = await productCol.deleteOne({ _id } as never)
-    if (result.deletedCount === 0) return notFoundError('Product not found')
+    await col.updateOne(
+      { _id } as never,
+      { $set: { isActive: false, updatedAt: getKarachiDate() } } as never
+    )
 
     const meta = await getRequestMeta()
     await recordAuditEntry(db, {
       userId: auth.user._id as ObjectId,
       userEmail: auth.user.email,
-      action: 'product_deleted',
+      action: 'product_archived',
       entityType: 'product',
       entityId: _id,
-      oldValue: productToJSON(before),
+      oldValue: { isActive: before.isActive },
+      newValue: { isActive: false },
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     })
-    return successResponse({ _id: id })
+    return successResponse({ _id: id, archived: true })
   } catch (error) {
-    console.error('DELETE /api/products/[id] failed:', error)
+    console.error('DELETE /api/products/[id] (archive) failed:', error)
     return handleRouteError(error)
   }
 }

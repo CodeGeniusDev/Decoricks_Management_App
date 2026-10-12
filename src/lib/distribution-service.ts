@@ -8,6 +8,7 @@ import {
 import { normalizeEntry } from '@/lib/finance-ledger'
 import { karachiCivil, karachiMidnight, type DateRange, type LedgerEntryLike } from '@/lib/finance'
 import { computeProfitLoss } from '@/lib/profit-loss'
+import { periodCogsInput } from '@/lib/cogs-service'
 import { computeDistribution, partnerKey } from '@/lib/distribution-math'
 import { resolveBusinessPolicy } from '@/lib/business-policy'
 
@@ -70,12 +71,13 @@ export async function buildDistribution(db: Db, month: string): Promise<FreshDis
   const range = karachiMonthRangeForMonth(month)
   if (!range) return null
 
-  const [entries, settings] = await Promise.all([
+  const [entries, settings, suppliedCogs] = await Promise.all([
     fetchLedgerRange(db, range),
     getBusinessSettingsCollection(db).findOne({ key: 'business' }),
+    periodCogsInput(db, range),
   ])
 
-  const pl = computeProfitLoss(entries)
+  const pl = computeProfitLoss(entries, { cogs: suppliedCogs })
   const policy = resolveBusinessPolicy(settings)
   const result = computeDistribution({
     netProfit: pl.netProfit,

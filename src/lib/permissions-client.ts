@@ -112,7 +112,11 @@ export const ROUTE_PERMISSIONS: Record<string, { module: PermissionModule; actio
   '/cash-flow': [{ module: 'finance', action: 'view' }],
   '/distributions': [{ module: 'finance', action: 'view' }],
   '/inventory': [{ module: 'inventory', action: 'view' }],
+  '/inventory/products': [{ module: 'inventory', action: 'view' }],
+  '/inventory/movements': [{ module: 'inventory', action: 'view' }],
+  '/inventory/purchases': [{ module: 'inventory', action: 'view' }],
   '/sales': [{ module: 'sales', action: 'view' }],
+  '/sales/returns': [{ module: 'sales', action: 'view' }],
   '/tasks': [{ module: 'tasks', action: 'view' }],
   '/chat': [{ module: 'chat', action: 'view' }],
   '/suppliers': [{ module: 'suppliers', action: 'view' }],
@@ -144,6 +148,40 @@ const normaliseRoute = (pathname: string): string => {
 };
 
 export const isFounder = (role?: string): boolean => isFounderRole(role);
+
+/**
+ * Display-only mirror of the server's `authorizeStockWrite`
+ * (`src/lib/authorization.ts`), which is the authority on this question.
+ *
+ * SPEC §4.2 marks Hasnat and Ali "❌ (except Lahore stock)" on inventory. Full
+ * `inventory.create` covers every location; the scoped `inventory.lahore_stock`
+ * grant covers Lahore *alone*, so a transfer with a Sheikhupura leg is hidden
+ * from a Lahore-only Partner exactly as it is refused by the API.
+ */
+export const canWriteStockLocation = (
+  source: NavPermissionSource,
+  location: string
+): boolean => {
+  if (isFounderRole(source.role)) return true;
+  if (can(source, 'inventory', 'create')) return true;
+  if (location.toLowerCase() !== 'lahore') return false;
+
+  const scoped = source.permissions?.[SCOPED_LAHORE_STOCK_PERMISSION];
+  if (scoped && typeof scoped.create === 'boolean') return scoped.create;
+  return LAHORE_STOCK_ROLES[source.role] === true;
+};
+
+/**
+ * Display-only mirror of the `sales.full_edit` grant that guards editing an
+ * order's contents before dispatch. `sales.edit` alone only moves lifecycle /
+ * COD state, so the order form is opened by a different button.
+ */
+export const canFullEditOrder = (source: NavPermissionSource): boolean => {
+  if (isFounderRole(source.role)) return true;
+  const scoped = source.permissions?.[SCOPED_SALES_FULL_EDIT];
+  if (scoped && typeof scoped.create === 'boolean') return scoped.create;
+  return SALES_FULL_EDIT_ROLES[source.role] === true;
+};
 
 /** Re-exported so the settings screens show the same scoped grants the API checks. */
 export {

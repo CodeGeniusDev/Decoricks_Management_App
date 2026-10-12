@@ -112,6 +112,16 @@ export interface BusinessSettings {
     charityPercentage: number
   }
   budgetThresholds?: BudgetThresholds
+  /**
+   * Phase 5 (SPEC Appendix A + brief): stock writes normally refuse to drive
+   * a location negative. The Founder can explicitly lift that guard; every
+   * other reader of stock math treats `false`/absent as "block".
+   */
+  allowNegativeStock?: boolean
+  /** Account purchase expenses land in unless the request names another. */
+  purchasingAccountId?: ObjectId
+  /** Account COD income lands in unless the request names another. */
+  salesIncomeAccountId?: ObjectId
   createdAt: Date
   updatedAt: Date
   updatedBy?: ObjectId
