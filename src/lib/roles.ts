@@ -58,11 +58,40 @@ const SALES_FULL_NO_DELETE = {
   delete: false,
 }
 
-const TASKS_CHAT_FULL = {
+/**
+ * Phase 6 splits `tasks` from `chat`. Chat stays as before: view/create/edit/
+ * delete open to every member. Tasks gain the board-specific actions from
+ * SPEC §4.2 (editOthers, deleteOthers, comment, manage).
+ */
+const CHAT_OPEN = {
   view: true,
   create: true,
   edit: true,
   delete: true,
+}
+
+/** Partners by default: full control of their own cards, not others'. */
+const TASKS_PARTNER = {
+  view: true,
+  create: true,
+  edit: true,          // edit / move own
+  editOthers: false,   // grantable by Founder per role
+  delete: true,        // archive own
+  deleteOthers: false,
+  comment: true,
+  manage: false,       // Founder-only, not grantable
+}
+
+/** Founder: everything open, sole owner of board and column management. */
+const TASKS_FOUNDER = {
+  view: true,
+  create: true,
+  edit: true,
+  editOthers: true,
+  delete: true,
+  deleteOthers: true,
+  comment: true,
+  manage: true,
 }
 
 const SUPPLIERS_VIEW_ONLY = {
@@ -93,8 +122,8 @@ export const SPEC_ROLES: Role[] = [
       budget: { ...FULL },
       inventory: { view: true, create: true, edit: true, delete: true },
       sales: { view: true, create: true, edit: true, delete: true },
-      tasks: { ...TASKS_CHAT_FULL },
-      chat: { ...TASKS_CHAT_FULL },
+      tasks: { ...TASKS_FOUNDER },
+      chat: { ...CHAT_OPEN },
       suppliers: { view: true, create: true, edit: true, delete: true },
       settings: { view: true, edit: true },
       users: { view: true, create: true, edit: true, delete: true },
@@ -112,8 +141,8 @@ export const SPEC_ROLES: Role[] = [
       // below rather than by widening the generic inventory permission.
       inventory: { ...INVENTORY_VIEW_ONLY },
       sales: { ...SALES_CREATE_EDIT },
-      tasks: { ...TASKS_CHAT_FULL },
-      chat: { ...TASKS_CHAT_FULL },
+      tasks: { ...TASKS_PARTNER },
+      chat: { ...CHAT_OPEN },
       suppliers: { ...SUPPLIERS_VIEW_ONLY },
       settings: { ...DENIED },
       users: { ...DENIED },
@@ -129,8 +158,8 @@ export const SPEC_ROLES: Role[] = [
       budget: { ...VIEW_ONLY_WITH_APPROVE_FALSE },
       inventory: { ...INVENTORY_VIEW_ONLY },
       sales: { ...SALES_VIEW_ONLY },
-      tasks: { ...TASKS_CHAT_FULL },
-      chat: { ...TASKS_CHAT_FULL },
+      tasks: { ...TASKS_PARTNER },
+      chat: { ...CHAT_OPEN },
       suppliers: { ...SUPPLIERS_VIEW_ONLY },
       settings: { ...DENIED },
       users: { ...DENIED },
@@ -146,8 +175,8 @@ export const SPEC_ROLES: Role[] = [
       budget: { ...VIEW_ONLY_WITH_APPROVE_FALSE },
       inventory: { ...INVENTORY_VIEW_ONLY },
       sales: { ...SALES_VIEW_ONLY },
-      tasks: { ...TASKS_CHAT_FULL },
-      chat: { ...TASKS_CHAT_FULL },
+      tasks: { ...TASKS_PARTNER },
+      chat: { ...CHAT_OPEN },
       suppliers: { ...SUPPLIERS_VIEW_ONLY },
       settings: { ...DENIED },
       users: { ...DENIED },

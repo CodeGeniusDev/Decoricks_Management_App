@@ -122,6 +122,13 @@ export interface BusinessSettings {
   purchasingAccountId?: ObjectId
   /** Account COD income lands in unless the request names another. */
   salesIncomeAccountId?: ObjectId
+  /**
+   * Phase 6: window (in minutes) after posting during which a task comment's
+   * author may still edit or soft-delete it. `undefined`/absent falls back to
+   * `DEFAULT_COMMENT_EDIT_WINDOW_MINUTES` (15) via `business-policy.ts`.
+   * Founder-editable under Settings → Business.
+   */
+  commentEditWindowMinutes?: number
   createdAt: Date
   updatedAt: Date
   updatedBy?: ObjectId

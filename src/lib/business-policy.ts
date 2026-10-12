@@ -107,3 +107,34 @@ export function validateProfitSharing(input: {
 
   return issues
 }
+
+/**
+ * Phase 6: how long after posting a comment's author may still edit or
+ * soft-delete it. Founder-editable; unconfigured falls back to 15 minutes
+ * (brief default). The API layer reads the resolved value, never the raw
+ * settings document, so a partial write cannot leave a comment un-editable
+ * forever or open forever.
+ */
+export const DEFAULT_COMMENT_EDIT_WINDOW_MINUTES = 15
+
+export function resolveCommentEditWindow(settings: BusinessSettings | null | undefined): number {
+  const raw = settings?.commentEditWindowMinutes
+  if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 0) {
+    return DEFAULT_COMMENT_EDIT_WINDOW_MINUTES
+  }
+  return raw
+}
+
+/** Convenience: is `attemptedAt` still within the edit window of `createdAt`? */
+export function commentWithinEditWindow(
+  createdAt: Date,
+  attemptedAt: Date,
+  windowMinutes: number
+): boolean {
+  // windowMinutes === 0 means the author can *never* edit/delete after the
+  // initial POST; anything positive is a normal window. Negative numbers are
+  // rejected above so `attemptedAt - createdAt <= 0` only fires on clocks
+  // going backwards within the same request, which is not an edit window.
+  const ms = attemptedAt.getTime() - createdAt.getTime()
+  return ms <= windowMinutes * 60_000
+}

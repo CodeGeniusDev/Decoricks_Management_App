@@ -21,7 +21,17 @@ export type PermissionModule =
   | 'settings'
   | 'users'
 
-export type PermissionAction = 'view' | 'create' | 'edit' | 'delete' | 'approve'
+export type PermissionAction =
+  | 'view'
+  | 'create'
+  | 'edit'
+  | 'delete'
+  | 'approve'
+  // Phase 6: task-board specific actions. Present on `tasks` only.
+  | 'editOthers'
+  | 'deleteOthers'
+  | 'comment'
+  | 'manage'
 
 export type PermissionSet = Record<string, Record<string, boolean>>
 

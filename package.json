@@ -9,6 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seed.ts",
+    "migrate:task-assignees": "tsx scripts/migrate-tasks-assignees.ts",
+    "migrate:task-assignees:apply": "DRY_RUN=false tsx scripts/migrate-tasks-assignees.ts",
     "seed:e2e": "tsx scripts/seed-e2e.ts",
     "cleanup:e2e": "tsx scripts/cleanup-e2e-data.ts",
     "cleanup:e2e:apply": "tsx scripts/cleanup-e2e-data.ts --apply",
