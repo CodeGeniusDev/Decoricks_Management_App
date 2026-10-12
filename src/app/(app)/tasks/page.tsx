@@ -1,6 +1,18 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core'
 import { PageTransition } from '@/components/PageTransition'
 import { PageHeader } from '@/components/layout/Page'
 import { Button } from '@/components/ui/Button'
@@ -16,18 +28,28 @@ import { IconPlus } from '@/components/ui/icons'
 import { apiFetch } from '@/lib/api-client'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { isFounder } from '@/lib/permissions-client'
+import { usePolling } from '@/hooks/usePolling'
 
 /**
  * Phase 6 board.
  *
- * This first cut ships the read path (columns + cards), create/edit modal,
- * explicit "Move to…" dropdown and Founder-only column add. Drag-and-drop,
- * keyboard sensor and the polling/focus refresh arrive in Phase 6d and reuse
- * the same endpoints.
+ * 6c shipped read path + create/edit + explicit "Move to…" dropdown.
+ * 6d adds:
+ *   - dnd-kit drag-and-drop between columns (PointerSensor with a 4px
+ *     activation distance so a click on the card body still opens the edit
+ *     modal, plus a KeyboardSensor for accessibility — Tab to the card's
+ *     drag handle, Space to lift, arrows to move, Space to drop, Escape to
+ *     cancel).
+ *   - Optimistic cross-column move with 409 rollback. On any conflict or
+ *     network error we reload the board so the card returns to its server
+ *     position with a fresh version token.
+ *   - Focus / visibility / online refresh through `usePolling`. Pauses while
+ *     a modal is open or a drag is in flight so an idle refresh cannot steal
+ *     the user's cursor or re-sort cards mid-gesture.
  *
- * Everything is optimistic where it can be: a version mismatch on PATCH or
- * move is surfaced as a toast plus a refetch of the board rather than a
- * silent overwrite, per SPEC §6.6.
+ * The "Move to…" dropdown stays as the primary fallback for anyone who
+ * prefers clicking over dragging, and both paths hit the same
+ * POST /api/tasks/[id]/move endpoint with the same version guard.
  */
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent'
@@ -100,6 +122,9 @@ const emptyDraft = () => ({
   dueDate: '',
 })
 
+/** Droppable ids are namespaced so we can tell a column drop from a card drop. */
+const columnDropId = (columnId: string) => `col:${columnId}`
+
 export default function TasksBoardPage() {
   const { user } = useAuth()
   const founder = isFounder(user?.role)
@@ -110,7 +135,10 @@ export default function TasksBoardPage() {
   const [loadingBoards, setLoadingBoards] = useState(true)
   const [loadingBoard, setLoadingBoard] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [toast, setToast] = useState<{ kind: 'success' | 'error' | 'info'; message: string } | null>(null)
+  const [toast, setToast] = useState<{
+    kind: 'success' | 'error' | 'info' | 'warning'
+    message: string
+  } | null>(null)
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<TaskDto | null>(null)
@@ -123,10 +151,16 @@ export default function TasksBoardPage() {
   const [columnModalOpen, setColumnModalOpen] = useState(false)
   const [newColumnName, setNewColumnName] = useState('')
 
-  const showToast = (kind: 'success' | 'error' | 'info', message: string) => {
-    setToast({ kind, message })
-    window.setTimeout(() => setToast(null), 3500)
-  }
+  // Drag state — the id of the card currently being dragged, or null. Also
+  // used to render the dashed placeholder inside the source column so the
+  // user can see where the card will return if they drop outside any target.
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
+  const activeTaskRef = useRef<TaskDto | null>(null)
+
+  const showToast = (
+    kind: 'success' | 'error' | 'info' | 'warning',
+    message: string
+  ) => setToast({ kind, message })
 
   const loadBoards = useCallback(async () => {
     setLoadingBoards(true)
@@ -166,6 +200,14 @@ export default function TasksBoardPage() {
   useEffect(() => {
     if (boardId) loadBoard(boardId)
   }, [boardId, loadBoard])
+
+  // Refresh the board when the tab regains focus, becomes visible again, or
+  // the network comes back — but never while a modal is open or a drag is in
+  // progress. That's what preserves "open drawer + in-flight drag" state.
+  usePolling(
+    () => (boardId ? loadBoard(boardId) : Promise.resolve()),
+    { paused: modalOpen || columnModalOpen || activeTaskId !== null }
+  )
 
   const openCreate = (column: ColumnDto) => {
     setEditing(null)
@@ -248,40 +290,95 @@ export default function TasksBoardPage() {
     }
   }
 
-  const moveTask = async (task: TaskDto, toColumnId: string) => {
-    if (toColumnId === task.columnId) return
-    try {
-      const res = await apiFetch(`/api/tasks/${task._id}/move`, {
-        method: 'POST',
-        body: JSON.stringify({ toColumnId, version: task.version }),
+  /**
+   * Move a task. Called by both the "Move to…" dropdown and the drag layer.
+   *
+   * Optimistic: we mutate the local `detail` first so the card is already in
+   * place when the request round-trips. On any error — including 409 — we
+   * reload the whole board rather than trying to undo the mutation, because
+   * a 409 means our version token is stale and the correct card is now
+   * whatever the server says, not what we last rendered.
+   */
+  const moveTask = useCallback(
+    async (task: TaskDto, toColumnId: string, afterTaskId: string | null = null) => {
+      if (!boardId) return
+      if (toColumnId === task.columnId && afterTaskId === null) return
+      if (toColumnId === task.columnId && afterTaskId === task._id) return
+
+      // Snapshot so we can restore on network failure before falling back to
+      // a full reload — this keeps the optimistic UI honest.
+      const previous = detail
+      const moved: TaskDto = { ...task, columnId: toColumnId }
+      setDetail((current) => {
+        if (!current) return current
+        const fromList = (current.tasksByColumn[task.columnId] ?? []).filter((t) => t._id !== task._id)
+        const toList = [...(current.tasksByColumn[toColumnId] ?? [])]
+        // Filter out the task if it was already in the destination column
+        // (in-column reorder case) before inserting at the target index.
+        const filtered = toList.filter((t) => t._id !== task._id)
+        if (afterTaskId) {
+          const idx = filtered.findIndex((t) => t._id === afterTaskId)
+          if (idx >= 0) {
+            filtered.splice(idx + 1, 0, moved)
+          } else {
+            filtered.push(moved)
+          }
+        } else {
+          filtered.unshift(moved)
+        }
+        return {
+          ...current,
+          tasksByColumn: {
+            ...current.tasksByColumn,
+            [task.columnId]: fromList,
+            [toColumnId]: filtered,
+          },
+        }
       })
-      const json = await res.json()
-      if (res.status === 409) {
-        showToast('error', json?.error?.message ?? 'Someone moved this card. Refreshed.')
-        if (boardId) await loadBoard(boardId)
-        return
+
+      try {
+        const res = await apiFetch(`/api/tasks/${task._id}/move`, {
+          method: 'POST',
+          body: JSON.stringify({
+            toColumnId,
+            afterTaskId,
+            version: task.version,
+          }),
+        })
+        const json = await res.json()
+        if (res.status === 409) {
+          showToast('warning', json?.error?.message ?? 'Someone moved this card. Board refreshed.')
+          await loadBoard(boardId)
+          return
+        }
+        if (!res.ok || !json.success) throw new Error(json?.error?.message ?? 'Move failed')
+        showToast('success', 'Moved')
+        // Server is source of truth for `position` and bumped `version`.
+        // Reload quietly so the next edit/move starts from the fresh token.
+        await loadBoard(boardId)
+      } catch (err) {
+        if (previous) setDetail(previous)
+        showToast('error', err instanceof Error ? err.message : 'Move failed')
       }
-      if (!res.ok || !json.success) throw new Error(json?.error?.message ?? 'Move failed')
-      showToast('success', 'Moved')
-      if (boardId) await loadBoard(boardId)
-    } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Move failed')
-    }
-  }
+    },
+    [boardId, detail, loadBoard]
+  )
 
   const archiveTask = async (task: TaskDto) => {
-    if (!window.confirm(`Archive "${task.title}"? It will disappear from the board but stay in history.`)) return
+    if (!boardId) return
+    if (!window.confirm(`Archive "${task.title}"? It will disappear from the board but stay in history.`))
+      return
     try {
       const res = await apiFetch(`/api/tasks/${task._id}`, { method: 'DELETE' })
       const json = await res.json()
       if (res.status === 409) {
         showToast('error', 'Someone edited this card. Refreshed.')
-        if (boardId) await loadBoard(boardId)
+        await loadBoard(boardId)
         return
       }
       if (!res.ok || !json.success) throw new Error(json?.error?.message ?? 'Archive failed')
       showToast('success', 'Archived')
-      if (boardId) await loadBoard(boardId)
+      await loadBoard(boardId)
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Archive failed')
     }
@@ -315,55 +412,78 @@ export default function TasksBoardPage() {
     [boards]
   )
 
-  const renderCard = (task: TaskDto, columns: ColumnDto[]) => (
-    <div
-      key={task._id}
-      className={`group rounded-lg border border-line-subtle bg-surface-raised p-3 shadow-sm transition-shadow hover:shadow ${priorityAccent[task.priority]}`}
-    >
-      <button
-        type="button"
-        className="block w-full text-left"
-        onClick={() => openEdit(task)}
-      >
-        <p className="text-sm font-medium text-decoricks-dark">{task.title}</p>
-        {task.taskNumber && (
-          <p className="mt-0.5 text-xs text-ink-muted tabular-nums">{task.taskNumber}</p>
-        )}
-      </button>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <Badge size="sm" variant={task.priority === 'urgent' ? 'error' : task.priority === 'high' ? 'warning' : 'default'}>
-          {PRIORITY_LABEL[task.priority]}
-        </Badge>
-        {task.dueDate && (
-          <span className="text-xs text-ink-muted tabular-nums">{task.dueDate.slice(0, 10)}</span>
-        )}
-        {task.checklist?.length > 0 && (
-          <span className="text-xs text-ink-muted">
-            {task.checklist.filter((c) => c.isDone).length}/{task.checklist.length}
-          </span>
-        )}
-      </div>
-      <div className="mt-2 flex items-center justify-end gap-1">
-        <Select
-          value={task.columnId}
-          onChange={(e) => moveTask(task, e.target.value)}
-          options={columns.map((c) => ({ value: c._id, label: `Move to ${c.name}` }))}
-          aria-label="Move task to another column"
-        />
-        {founder && (
-          <Button variant="ghost" size="sm" onClick={() => archiveTask(task)} aria-label="Archive task">
-            Archive
-          </Button>
-        )}
-      </div>
-    </div>
+  // DnD sensors. PointerSensor with a 4px activation distance means a plain
+  // click (no movement) still fires onClick on the card body and opens the
+  // edit modal — the drag only starts once the pointer actually moves.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor)
   )
+
+  const findTask = useCallback(
+    (taskId: string): { task: TaskDto; columnId: string; index: number } | null => {
+      if (!detail) return null
+      for (const col of detail.columns) {
+        const list = detail.tasksByColumn[col._id] ?? []
+        const index = list.findIndex((t) => t._id === taskId)
+        if (index >= 0) return { task: list[index], columnId: col._id, index }
+      }
+      return null
+    },
+    [detail]
+  )
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const id = String(event.active.id)
+    setActiveTaskId(id)
+    const found = findTask(id)
+    activeTaskRef.current = found?.task ?? null
+  }
+
+  const handleDragOver = (_event: DragOverEvent) => {
+    // We intentionally do not mutate the list mid-drag. The placeholder
+    // highlight inside ColumnDropZone is enough feedback, and mutating the
+    // list mid-flight would fight with dnd-kit's own transform calculation.
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const dragged = activeTaskRef.current
+    setActiveTaskId(null)
+    activeTaskRef.current = null
+    if (!dragged || !event.over) return
+
+    const overId = String(event.over.id)
+    let toColumnId: string | null = null
+    let afterTaskId: string | null = null
+
+    if (overId.startsWith('col:')) {
+      toColumnId = overId.slice('col:'.length)
+      // Drop on empty column body → append at end.
+      const list = detail?.tasksByColumn[toColumnId] ?? []
+      afterTaskId = list.length > 0 ? list[list.length - 1]._id : null
+    } else {
+      // Dropped on a specific card — insert after it in that card's column.
+      const found = findTask(overId)
+      if (!found) return
+      toColumnId = found.columnId
+      afterTaskId = found.task._id
+    }
+
+    if (!toColumnId) return
+    if (toColumnId === dragged.columnId && afterTaskId === dragged._id) return
+    void moveTask(dragged, toColumnId, afterTaskId)
+  }
+
+  const handleDragCancel = () => {
+    setActiveTaskId(null)
+    activeTaskRef.current = null
+  }
 
   return (
     <PageTransition>
       <PageHeader
         title="Task board"
-        description="Team board — cards, columns and owners. Dragging and comments arrive in the next phase."
+        description="Team board — drag cards between columns, or use the Move-to dropdown. Keyboard: Tab to a card handle, press Space to lift, arrows to move, Space to drop."
         actions={
           founder && boardId ? (
             <Button variant="secondary" size="sm" onClick={() => setColumnModalOpen(true)}>
@@ -402,42 +522,43 @@ export default function TasksBoardPage() {
           <Skeleton className="h-64" />
         </div>
       ) : detail.columns.length === 0 ? (
-        <EmptyState
-          title="No columns"
-          description="The Founder can add the first column to this board."
-        />
+        <EmptyState title="No columns" description="The Founder can add the first column to this board." />
       ) : (
-        <div className="flex gap-3 overflow-x-auto pb-2">
-          {detail.columns.map((col) => {
-            const tasks = detail.tasksByColumn[col._id] ?? []
-            return (
-              <section
+        <DndContext
+          sensors={sensors}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
+        >
+          <div className="flex gap-3 overflow-x-auto pb-2">
+            {detail.columns.map((col) => (
+              <ColumnList
                 key={col._id}
-                className="flex w-72 shrink-0 flex-col rounded-lg border border-line-subtle bg-surface-sunken"
-              >
-                <header className="flex items-center justify-between border-b border-line-subtle px-3 py-2">
-                  <div>
-                    <h3 className="text-sm font-semibold text-decoricks-dark">{col.name}</h3>
-                    <p className="text-xs text-ink-muted">
-                      {tasks.length} card{tasks.length === 1 ? '' : 's'}
-                      {col.isDoneColumn && ' · done column'}
-                    </p>
-                  </div>
-                  <Button variant="ghost" size="sm" onClick={() => openCreate(col)} aria-label="Add card">
-                    <IconPlus size={16} />
-                  </Button>
-                </header>
-                <div className="flex flex-col gap-2 p-2">
-                  {tasks.length === 0 ? (
-                    <p className="px-1 py-3 text-center text-xs text-ink-muted">Empty</p>
-                  ) : (
-                    tasks.map((t) => renderCard(t, detail.columns))
-                  )}
-                </div>
-              </section>
-            )
-          })}
-        </div>
+                column={col}
+                tasks={detail.tasksByColumn[col._id] ?? []}
+                columns={detail.columns}
+                activeTaskId={activeTaskId}
+                canArchive={founder}
+                onEdit={openEdit}
+                onAdd={() => openCreate(col)}
+                onMove={(task, toColumnId) => moveTask(task, toColumnId, null)}
+                onArchive={archiveTask}
+              />
+            ))}
+          </div>
+          {/* Rendered once at the board level so the dragged card floats above
+              every column. dnd-kit measures it as the drag overlay. */}
+          <BoardDragOverlay
+            task={
+              activeTaskId
+                ? detail.tasksByColumn[
+                    findTask(activeTaskId)?.columnId ?? ''
+                  ]?.find((t) => t._id === activeTaskId) ?? null
+                : null
+            }
+          />
+        </DndContext>
       )}
 
       <Modal
@@ -514,7 +635,199 @@ export default function TasksBoardPage() {
         />
       </Modal>
 
-      {toast && <Toast type={toast.kind} message={toast.message} onClose={() => setToast(null)} />}
+      {toast && (
+        <div className="fixed top-20 right-4 z-50 max-w-[90vw]">
+          <Toast message={toast.message} type={toast.kind} onClose={() => setToast(null)} />
+        </div>
+      )}
     </PageTransition>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/* Column + card components — split out so they can each own a dnd-kit hook.  */
+/* -------------------------------------------------------------------------- */
+
+interface ColumnListProps {
+  column: ColumnDto
+  tasks: TaskDto[]
+  columns: ColumnDto[]
+  activeTaskId: string | null
+  canArchive: boolean
+  onEdit: (task: TaskDto) => void
+  onAdd: () => void
+  onMove: (task: TaskDto, toColumnId: string) => void
+  onArchive: (task: TaskDto) => void
+}
+
+function ColumnList(props: ColumnListProps) {
+  const { column, tasks, columns, activeTaskId, canArchive } = props
+  const { setNodeRef, isOver } = useDroppable({
+    id: columnDropId(column._id),
+    data: { columnId: column._id },
+  })
+
+  return (
+    <section
+      className={`flex w-72 shrink-0 flex-col rounded-lg border bg-surface-sunken transition-colors ${
+        isOver ? 'border-decoricks-brown' : 'border-line-subtle'
+      }`}
+    >
+      <header className="flex items-center justify-between border-b border-line-subtle px-3 py-2">
+        <div>
+          <h3 className="text-sm font-semibold text-decoricks-dark">{column.name}</h3>
+          <p className="text-xs text-ink-muted">
+            {tasks.length} card{tasks.length === 1 ? '' : 's'}
+            {column.isDoneColumn && ' · done column'}
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={props.onAdd} aria-label="Add card">
+          <IconPlus size={16} />
+        </Button>
+      </header>
+      <div ref={setNodeRef} className="flex min-h-[8rem] flex-col gap-2 p-2">
+        {tasks.length === 0 ? (
+          <p
+            className={`px-1 py-3 text-center text-xs ${
+              isOver ? 'text-decoricks-brown' : 'text-ink-muted'
+            }`}
+          >
+            {isOver ? 'Drop here' : 'Empty'}
+          </p>
+        ) : (
+          tasks.map((t) => (
+            <TaskCard
+              key={t._id}
+              task={t}
+              columns={columns}
+              isDragging={activeTaskId === t._id}
+              onEdit={props.onEdit}
+              onMove={props.onMove}
+              canArchive={canArchive}
+              onArchive={props.onArchive}
+            />
+          ))
+        )}
+      </div>
+    </section>
+  )
+}
+
+interface TaskCardProps {
+  task: TaskDto
+  columns: ColumnDto[]
+  isDragging: boolean
+  onEdit: (task: TaskDto) => void
+  onMove: (task: TaskDto, toColumnId: string) => void
+  canArchive: boolean
+  onArchive: (task: TaskDto) => void
+}
+
+function TaskCard(props: TaskCardProps) {
+  const { task, columns, isDragging, canArchive } = props
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef } = useDraggable({
+    id: task._id,
+    data: { task },
+  })
+
+  // The card body is clickable (opens edit modal). Only the small grip
+  // button on the left is the drag activator — that way the Select and
+  // Archive button inside the card keep working normally.
+  return (
+    <div
+      ref={setNodeRef}
+      className={`group rounded-lg border border-line-subtle bg-surface-raised p-3 shadow-sm transition-shadow hover:shadow ${
+        priorityAccent[task.priority]
+      } ${isDragging ? 'opacity-40' : ''}`}
+    >
+      <div className="flex items-start gap-2">
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          aria-label={`Drag ${task.title} to another column`}
+          className="mt-0.5 flex h-6 w-4 shrink-0 cursor-grab items-center justify-center rounded text-ink-muted hover:bg-surface-sunken hover:text-decoricks-dark focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-decoricks-brown active:cursor-grabbing"
+        >
+          <DragGrip />
+        </button>
+        <button
+          type="button"
+          className="block flex-1 text-left"
+          onClick={() => props.onEdit(task)}
+        >
+          <p className="text-sm font-medium text-decoricks-dark">{task.title}</p>
+          {task.taskNumber && (
+            <p className="mt-0.5 text-xs text-ink-muted tabular-nums">{task.taskNumber}</p>
+          )}
+        </button>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <Badge
+          size="sm"
+          variant={
+            task.priority === 'urgent'
+              ? 'error'
+              : task.priority === 'high'
+                ? 'warning'
+                : 'default'
+          }
+        >
+          {PRIORITY_LABEL[task.priority]}
+        </Badge>
+        {task.dueDate && (
+          <span className="text-xs text-ink-muted tabular-nums">{task.dueDate.slice(0, 10)}</span>
+        )}
+        {task.checklist?.length > 0 && (
+          <span className="text-xs text-ink-muted">
+            {task.checklist.filter((c) => c.isDone).length}/{task.checklist.length}
+          </span>
+        )}
+      </div>
+      <div className="mt-2 flex items-center justify-end gap-1">
+        <Select
+          value={task.columnId}
+          onChange={(e) => props.onMove(task, e.target.value)}
+          options={columns.map((c) => ({ value: c._id, label: `Move to ${c.name}` }))}
+          aria-label="Move task to another column"
+        />
+        {canArchive && (
+          <Button variant="ghost" size="sm" onClick={() => props.onArchive(task)} aria-label="Archive task">
+            Archive
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function BoardDragOverlay({ task }: { task: TaskDto | null }) {
+  // Using DndContext.Overlay-style rendering: we translate the dragged card
+  // with a slight tilt so it visually lifts off the board. dnd-kit does not
+  // provide a built-in overlay component, so we render a fixed card that
+  // mirrors the source while the drag is active.
+  if (!task) return null
+  return (
+    <div
+      className={`pointer-events-none fixed left-0 top-0 z-50 w-64 rounded-lg border border-line-subtle bg-surface-raised p-3 shadow-lg ${priorityAccent[task.priority]}`}
+      style={{ transform: 'rotate(2deg)' }}
+      aria-hidden="true"
+    >
+      <p className="text-sm font-medium text-decoricks-dark">{task.title}</p>
+      {task.taskNumber && <p className="mt-0.5 text-xs text-ink-muted tabular-nums">{task.taskNumber}</p>}
+    </div>
+  )
+}
+
+function DragGrip() {
+  return (
+    <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden="true">
+      <circle cx="2" cy="2" r="1.4" />
+      <circle cx="8" cy="2" r="1.4" />
+      <circle cx="2" cy="7" r="1.4" />
+      <circle cx="8" cy="7" r="1.4" />
+      <circle cx="2" cy="12" r="1.4" />
+      <circle cx="8" cy="12" r="1.4" />
+    </svg>
   )
 }
