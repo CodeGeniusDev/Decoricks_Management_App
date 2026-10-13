@@ -61,6 +61,9 @@ interface WeeklySummaryData {
     count: number
     byAssignee: Array<{ name: string; count: number }>
   }
+  /** Phase 6: per-member counts of cards past their due date and not in a
+   *  done column. Informational — penalties stay a manual Founder action. */
+  overdueByMember: Array<{ name: string; count: number }>
 }
 
 const SALES_COLUMNS = [
@@ -323,6 +326,26 @@ export default function WeeklySummaryPage() {
                 ),
               }))}
             />
+            )}
+
+            <h4 className="mt-6 mb-2 text-base font-semibold text-decoricks-dark">Overdue now</h4>
+            <p className="mb-2 text-xs text-decoricks-dark/60">
+              Cards past their due date that are not in a done column. Informational; penalties remain
+              a manual Founder action.
+            </p>
+            {(data.overdueByMember ?? []).length === 0 ? (
+              <p className="text-sm text-decoricks-dark/60">Nothing is overdue right now.</p>
+            ) : (
+              <Table
+                columns={[
+                  { key: 'member', label: 'Member' },
+                  { key: 'overdue', label: 'Overdue tasks' },
+                ]}
+                data={(data.overdueByMember ?? []).map((item) => ({
+                  member: item.name,
+                  overdue: <Badge variant="error">{item.count} overdue</Badge>,
+                }))}
+              />
             )}
           </Card>
         </>

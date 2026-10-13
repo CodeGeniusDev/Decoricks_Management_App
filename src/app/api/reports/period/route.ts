@@ -19,6 +19,8 @@ import { computeProfitLoss } from '@/lib/profit-loss'
 import { periodCogsInput } from '@/lib/cogs-service'
 import { fetchLedgerRange } from '@/lib/distribution-service'
 import { getStockCollection, getProductCollection } from '@/lib/models/Product'
+import { getColumnCollection, getTaskDocCollection } from '@/lib/models/Tasks'
+import { getUserCollection } from '@/lib/models/User'
 
 const LOW_STOCK_FALLBACK = 5
 
@@ -56,38 +58,103 @@ async function __GET(request: NextRequest) {
 
     const inRange = { $gte: rangeStart, $lte: rangeEnd }
 
-    const [ledgerEntries, suppliedCogs, orderAgg, codAgg, orderRows, tasksDone, tasksByAssignee] =
-      await withMongoRetry(async () => {
-        const db = await getDatabase()
-        const [entries, cogs] = await Promise.all([
-          fetchLedgerRange(db, { start: rangeStart, end: rangeEnd }),
-          periodCogsInput(db, { start: rangeStart, end: rangeEnd }),
-        ])
-        const [ordersA, codA, orderRowsA, tasksDoneA, tasksAssigneeA] = await Promise.all([
-          db
-            .collection('orders')
-            .aggregate([
-              { $match: { createdAt: inRange, orderStatus: { $ne: 'cancelled' } } },
-              { $group: { _id: null, orders: { $sum: 1 }, revenue: { $sum: '$total' } } },
-            ])
-            .toArray(),
-          db
-            .collection('orders')
-            .aggregate([{ $match: { createdAt: inRange } }, { $group: { _id: '$codOutcome', count: { $sum: 1 } } }])
-            .toArray(),
-          db.collection('orders').find({ createdAt: inRange }).sort({ createdAt: -1 }).limit(50).toArray(),
-          db.collection('tasks').countDocuments({ status: 'done', updatedAt: inRange }),
-          db
-            .collection('tasks')
-            .aggregate([
-              { $match: { status: 'done', updatedAt: inRange } },
-              { $group: { _id: '$assigneeName', count: { $sum: 1 } } },
-              { $sort: { count: -1 } },
-            ])
-            .toArray(),
-        ])
-        return [entries, cogs, ordersA, codA, orderRowsA, tasksDoneA, tasksAssigneeA] as const
-      })
+    const agg = await withMongoRetry(async () => {
+      const db = await getDatabase()
+      const [ledgerEntries, suppliedCogs] = await Promise.all([
+        fetchLedgerRange(db, { start: rangeStart, end: rangeEnd }),
+        periodCogsInput(db, { start: rangeStart, end: rangeEnd }),
+      ])
+      const [orderAgg, codAgg, orderRows] = await Promise.all([
+        db
+          .collection('orders')
+          .aggregate([
+            { $match: { createdAt: inRange, orderStatus: { $ne: 'cancelled' } } },
+            { $group: { _id: null, orders: { $sum: 1 }, revenue: { $sum: '$total' } } },
+          ])
+          .toArray(),
+        db
+          .collection('orders')
+          .aggregate([{ $match: { createdAt: inRange } }, { $group: { _id: '$codOutcome', count: { $sum: 1 } } }])
+          .toArray(),
+        db.collection('orders').find({ createdAt: inRange }).sort({ createdAt: -1 }).limit(50).toArray(),
+      ])
+
+      // Phase 6 board model: a task is "completed in the period" when its
+      // `completedAt` (set when the card entered its board's done column)
+      // falls inside the range, and "overdue" when `dueDate` has passed and
+      // the card is NOT sitting in a done column. The old `status`/single
+      // `assigneeName` fields are gone, so we unwind `assigneeIds` and
+      // resolve names below. A task with no assignee is counted as Unassigned.
+      const doneColumns = await getColumnCollection(db)
+        .find({ isDoneColumn: true } as never)
+        .project<{ _id: ObjectId }>({ _id: 1 })
+        .toArray()
+      const doneColumnIds = doneColumns.map((c) => c._id)
+      const tasksCol = getTaskDocCollection(db)
+
+      const [tasksDone, tasksCompletedRows, overdueRows] = await Promise.all([
+        tasksCol.countDocuments({ completedAt: inRange, isArchived: false } as never),
+        tasksCol
+          .aggregate([
+            { $match: { completedAt: inRange, isArchived: false } },
+            { $unwind: { path: '$assigneeIds', preserveNullAndEmptyArrays: true } },
+            { $group: { _id: '$assigneeIds', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+          ])
+          .toArray(),
+        tasksCol
+          .aggregate([
+            {
+              $match: {
+                isArchived: false,
+                dueDate: { $lt: new Date(), $ne: null },
+                columnId: { $nin: doneColumnIds },
+              },
+            },
+            { $unwind: { path: '$assigneeIds', preserveNullAndEmptyArrays: true } },
+            { $group: { _id: '$assigneeIds', count: { $sum: 1 } } },
+            { $sort: { count: -1 } },
+          ])
+          .toArray(),
+      ])
+
+      const rows = [
+        ...(tasksCompletedRows as Array<{ _id: unknown; count: number }>),
+        ...(overdueRows as Array<{ _id: unknown; count: number }>),
+      ]
+        .map((r) => r._id)
+        .filter((id): id is ObjectId => id instanceof ObjectId)
+      const uniq = [...new Map(rows.map((id) => [id.toString(), id])).values()]
+      const nameById = new Map<string, string>()
+      if (uniq.length > 0) {
+        const users = await getUserCollection(db)
+          .find({ _id: { $in: uniq } } as never)
+          .project<{ _id: ObjectId; name: string }>({ _id: 1, name: 1 })
+          .toArray()
+        for (const u of users) nameById.set(String(u._id), u.name)
+      }
+
+      const describe = (list: unknown) =>
+        (list as Array<{ _id: unknown; count: number }>).map((r) => ({
+          name:
+            r._id instanceof ObjectId
+              ? nameById.get(r._id.toString()) ?? 'Unknown member'
+              : 'Unassigned',
+          count: r.count,
+        }))
+
+      return {
+        ledgerEntries,
+        suppliedCogs,
+        orderAgg,
+        codAgg,
+        orderRows,
+        tasksDone,
+        completedByAssignee: describe(tasksCompletedRows),
+        overdueByAssignee: describe(overdueRows),
+      }
+    })
+    const { ledgerEntries, suppliedCogs, orderAgg, codAgg, orderRows } = agg
 
     // The full SPEC §5 chain over the period; COGS is the real movement-based
     // figure, with the explicitly provisional purchasing stand-in only while
@@ -217,12 +284,10 @@ async function __GET(request: NextRequest) {
         lowStockItems,
       },
       tasksCompleted: {
-        count: tasksDone,
-        byAssignee: (tasksByAssignee as unknown as Array<{ _id: string | null; count: number }>).map((r) => ({
-          name: r._id ?? 'Unassigned',
-          count: r.count,
-        })),
+        count: agg.tasksDone,
+        byAssignee: agg.completedByAssignee,
       },
+      overdueByMember: agg.overdueByAssignee,
       recentOrders: (orderRows as Array<Record<string, unknown>>).map((o) => ({
         date: (o.createdAt as Date).toISOString(),
         orderNumber: o.orderNumber as string,

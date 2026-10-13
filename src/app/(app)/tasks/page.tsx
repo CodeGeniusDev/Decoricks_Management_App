@@ -35,6 +35,7 @@ import {
   type ActivityDto,
   type CommentDto,
 } from '@/components/tasks/TaskDetailPanel'
+import { TaskListView } from '@/components/tasks/TaskListView'
 
 /**
  * Phase 6 board.
@@ -165,6 +166,19 @@ export default function TasksBoardPage() {
   const [columnModalOpen, setColumnModalOpen] = useState(false)
   const [newColumnName, setNewColumnName] = useState('')
 
+  // Phase 6f: views + filters. `board` is the dnd-kit pipeline; `mine` and
+  // `overdue` are flat filtered sets fetched from /api/tasks. The filter bar
+  // only applies to the flat views — the board shows everything in its columns.
+  const [view, setView] = useState<'board' | 'mine' | 'overdue'>('board')
+  const [filterPriority, setFilterPriority] = useState<'' | Priority>('')
+  const [filterLabelId, setFilterLabelId] = useState('')
+  const [filterAssigneeId, setFilterAssigneeId] = useState('')
+  const [filterSearch, setFilterSearch] = useState('')
+  const [listTasks, setListTasks] = useState<TaskDto[]>([])
+  const [listLoading, setListLoading] = useState(false)
+  const [labels, setLabels] = useState<{ _id: string; name: string }[]>([])
+  const [users, setUsers] = useState<{ _id: string; name: string }[]>([])
+
   // Drag state — the id of the card currently being dragged, or null. Also
   // used to render the dashed placeholder inside the source column so the
   // user can see where the card will return if they drop outside any target.
@@ -207,19 +221,99 @@ export default function TasksBoardPage() {
     }
   }, [])
 
+  // Labels are visible to anyone with tasks.view. The users list needs
+  // users.view, which a Partner does not have — so we try and silently drop
+  // it on failure; the assignee filter simply renders empty for them (they
+  // still get the "Me" pseudo-option via the My-tasks view).
+  const loadOptions = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/task-labels')
+      const body = await res.json()
+      if (res.ok && body.success) setLabels(body.data.labels ?? [])
+    } catch {
+      /* labels are a nicety; the board works without them */
+    }
+    try {
+      const res = await apiFetch('/api/users')
+      const body = await res.json()
+      if (res.ok && body.success) {
+        setUsers(
+          (body.data.users ?? [])
+            .filter((u: { isActive?: boolean }) => u.isActive !== false)
+            .map((u: { _id: string; name: string }) => ({ _id: u._id, name: u.name }))
+        )
+      }
+    } catch {
+      /* no users.view — assignee filter stays empty */
+    }
+  }, [])
+
+  /**
+   * Fetch the flat list for the My-tasks / Overdue views. The filters map
+   * straight onto /api/tasks query params so the list, the board and any
+   * future CSV export agree on what "overdue" and "mine" mean.
+   */
+  const loadList = useCallback(async () => {
+    setListLoading(true)
+    try {
+      const params = new URLSearchParams()
+      if (view === 'mine') params.set('assignee', 'me')
+      if (view === 'overdue') params.set('overdue', 'true')
+      if (filterPriority) params.set('priority', filterPriority)
+      if (filterLabelId) params.set('labelId', filterLabelId)
+      if (filterAssigneeId) params.set('assigneeId', filterAssigneeId)
+      if (filterSearch.trim()) params.set('search', filterSearch.trim())
+      params.set('limit', '200')
+      const res = await apiFetch(`/api/tasks?${params.toString()}`)
+      const body = await res.json()
+      if (!res.ok || !body.success) throw new Error(body?.error?.message ?? 'Failed to load tasks')
+      setListTasks((body.data.tasks ?? []) as TaskDto[])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load tasks')
+      setListTasks([])
+    } finally {
+      setListLoading(false)
+    }
+  }, [view, filterPriority, filterLabelId, filterAssigneeId, filterSearch])
+
+  /** Reload whatever the active view shows after a save, so a card edited from
+   *  the My-tasks list updates the list, not an invisible board. */
+  const refreshCurrentView = useCallback(async () => {
+    if (view === 'board') {
+      if (boardId) await loadBoard(boardId)
+    } else {
+      await loadList()
+    }
+  }, [view, boardId, loadBoard, loadList])
+
   useEffect(() => {
     loadBoards()
-  }, [loadBoards])
+    loadOptions()
+  }, [loadBoards, loadOptions])
 
   useEffect(() => {
     if (boardId) loadBoard(boardId)
   }, [boardId, loadBoard])
 
+  // Fetch the flat list whenever the view or a filter changes. Debounced by
+  // the search box's own onChange cadence; a short timer keeps keystrokes
+  // from firing a request each one.
+  useEffect(() => {
+    if (view === 'board') return
+    const t = setTimeout(() => void loadList(), 250)
+    return () => clearTimeout(t)
+  }, [view, loadList])
+
   // Refresh the board when the tab regains focus, becomes visible again, or
   // the network comes back — but never while a modal is open or a drag is in
   // progress. That's what preserves "open drawer + in-flight drag" state.
   usePolling(
-    () => (boardId ? loadBoard(boardId) : Promise.resolve()),
+    () =>
+      view === 'board'
+        ? boardId
+          ? loadBoard(boardId)
+          : Promise.resolve()
+        : loadList(),
     { paused: modalOpen || columnModalOpen || activeTaskId !== null }
   )
 
@@ -317,7 +411,7 @@ export default function TasksBoardPage() {
         showToast('success', 'Task created')
       }
       setModalOpen(false)
-      if (boardId) await loadBoard(boardId)
+      await refreshCurrentView()
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -535,66 +629,143 @@ export default function TasksBoardPage() {
         </div>
       )}
 
-      {loadingBoards ? (
-        <Skeleton className="h-6 w-48" />
-      ) : boards.length > 0 ? (
-        <div className="mb-4 flex items-center gap-3">
-          <span className="text-sm text-ink-muted">Board</span>
-          <Select
-            value={boardId ?? ''}
-            onChange={(e) => setBoardId(e.target.value)}
-            options={boardOptions}
-            aria-label="Select board"
-            className="max-w-xs"
-          />
-        </div>
-      ) : null}
+      {/* View switcher — board pipeline vs the two filtered flat views. */}
+      <div className="mb-4 inline-flex rounded-lg border border-line-subtle bg-surface-sunken p-0.5">
+        {(
+          [
+            { id: 'board', label: 'Board' },
+            { id: 'mine', label: 'My tasks' },
+            { id: 'overdue', label: 'Overdue' },
+          ] as const
+        ).map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            onClick={() => setView(v.id)}
+            aria-pressed={view === v.id}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              view === v.id
+                ? 'bg-surface-raised text-decoricks-dark shadow-sm'
+                : 'text-ink-muted hover:text-decoricks-dark'
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
 
-      {loadingBoard || !detail ? (
-        <div className="grid gap-3 md:grid-cols-4">
-          <Skeleton className="h-64" />
-          <Skeleton className="h-64" />
-          <Skeleton className="h-64" />
-          <Skeleton className="h-64" />
-        </div>
-      ) : detail.columns.length === 0 ? (
-        <EmptyState title="No columns" description="The Founder can add the first column to this board." />
-      ) : (
-        <DndContext
-          sensors={sensors}
-          onDragStart={handleDragStart}
-          onDragOver={handleDragOver}
-          onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
-        >
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {detail.columns.map((col) => (
-              <ColumnList
-                key={col._id}
-                column={col}
-                tasks={detail.tasksByColumn[col._id] ?? []}
-                columns={detail.columns}
-                activeTaskId={activeTaskId}
-                canArchive={founder}
-                onEdit={openEdit}
-                onAdd={() => openCreate(col)}
-                onMove={(task, toColumnId) => moveTask(task, toColumnId, null)}
-                onArchive={archiveTask}
-              />
-            ))}
+      {/* Board selector: only meaningful in the pipeline view. */}
+      {view === 'board' &&
+        (loadingBoards ? (
+          <Skeleton className="mb-4 h-6 w-48" />
+        ) : boards.length > 0 ? (
+          <div className="mb-4 flex items-center gap-3">
+            <span className="text-sm text-ink-muted">Board</span>
+            <Select
+              value={boardId ?? ''}
+              onChange={(e) => setBoardId(e.target.value)}
+              options={boardOptions}
+              aria-label="Select board"
+              className="max-w-xs"
+            />
           </div>
-          {/* Rendered once at the board level so the dragged card floats above
-              every column. dnd-kit measures it as the drag overlay. */}
-          <BoardDragOverlay
-            task={
-              activeTaskId
-                ? detail.tasksByColumn[
-                    findTask(activeTaskId)?.columnId ?? ''
-                  ]?.find((t) => t._id === activeTaskId) ?? null
-                : null
-            }
+        ) : null)}
+
+      {/* Filter bar: only the flat views consume it. */}
+      {view !== 'board' && (
+        <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+          <Input
+            placeholder="Search title or #…"
+            value={filterSearch}
+            onChange={(e) => setFilterSearch(e.target.value)}
+            aria-label="Search tasks"
           />
-        </DndContext>
+          <Select
+            value={filterPriority}
+            onChange={(e) => setFilterPriority(e.target.value as '' | Priority)}
+            options={[{ value: '', label: 'All priorities' }, ...PRIORITY_OPTIONS]}
+            aria-label="Filter by priority"
+          />
+          <Select
+            value={filterLabelId}
+            onChange={(e) => setFilterLabelId(e.target.value)}
+            options={[{ value: '', label: 'All labels' }, ...labels.map((l) => ({ value: l._id, label: l.name }))]}
+            aria-label="Filter by label"
+          />
+          <Select
+            value={filterAssigneeId}
+            onChange={(e) => setFilterAssigneeId(e.target.value)}
+            options={[{ value: '', label: 'All members' }, ...users.map((u) => ({ value: u._id, label: u.name }))]}
+            aria-label="Filter by assignee"
+            disabled={users.length === 0}
+          />
+        </div>
+      )}
+
+      {view === 'board' ? (
+        loadingBoard || !detail ? (
+          <div className="grid gap-3 md:grid-cols-4">
+            <Skeleton className="h-64" />
+            <Skeleton className="h-64" />
+            <Skeleton className="h-64" />
+            <Skeleton className="h-64" />
+          </div>
+        ) : detail.columns.length === 0 ? (
+          <EmptyState title="No columns" description="The Founder can add the first column to this board." />
+        ) : (
+          <DndContext
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {detail.columns.map((col) => (
+                <ColumnList
+                  key={col._id}
+                  column={col}
+                  tasks={detail.tasksByColumn[col._id] ?? []}
+                  columns={detail.columns}
+                  activeTaskId={activeTaskId}
+                  canArchive={founder}
+                  onEdit={openEdit}
+                  onAdd={() => openCreate(col)}
+                  onMove={(task, toColumnId) => moveTask(task, toColumnId, null)}
+                  onArchive={archiveTask}
+                />
+              ))}
+            </div>
+            {/* Rendered once at the board level so the dragged card floats above
+                every column. dnd-kit measures it as the drag overlay. */}
+            <BoardDragOverlay
+              task={
+                activeTaskId
+                  ? detail.tasksByColumn[
+                      findTask(activeTaskId)?.columnId ?? ''
+                    ]?.find((t) => t._id === activeTaskId) ?? null
+                  : null
+              }
+            />
+          </DndContext>
+        )
+      ) : (
+        <TaskListView
+          tasks={listTasks}
+          loading={listLoading}
+          userNames={new Map(users.map((u) => [u._id, u.name]))}
+          labelNames={new Map(labels.map((l) => [l._id, l.name]))}
+          emptyTitle={view === 'mine' ? 'Nothing assigned to you' : 'Nothing is overdue'}
+          emptyDescription={
+            view === 'mine'
+              ? 'No open cards list you as an assignee for the current filters.'
+              : 'No cards are past their due date outside a done column right now.'
+          }
+          onOpen={(t) => {
+            const full = listTasks.find((x) => x._id === t._id)
+            if (full) openEdit(full)
+          }}
+        />
       )}
 
       <Modal
