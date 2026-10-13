@@ -212,7 +212,9 @@ export default function WeeklySummaryPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-decoricks-dark/60">COD Delivered</span>
-                  <span className="font-medium text-green-600">{data.salesSummary.codDelivered}</span>
+                  <span className="font-medium text-green-600">
+                    {data.salesSummary.codDelivered}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-decoricks-dark/60">COD Returned</span>
@@ -220,7 +222,9 @@ export default function WeeklySummaryPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-decoricks-dark/60">COD Refused</span>
-                  <span className="font-medium text-yellow-600">{data.salesSummary.codRefused}</span>
+                  <span className="font-medium text-yellow-600">
+                    {data.salesSummary.codRefused}
+                  </span>
                 </div>
               </div>
             </Card>
@@ -229,18 +233,22 @@ export default function WeeklySummaryPage() {
             <Card className="p-6">
               <h3 className="text-lg font-semibold text-decoricks-dark mb-4">Expenses Summary</h3>
               {data.expensesSummary.byCategory.length === 0 ? (
-                <p className="text-sm text-decoricks-dark/60">No expenses recorded in this period.</p>
+                <p className="text-sm text-decoricks-dark/60">
+                  No expenses recorded in this period.
+                </p>
               ) : (
-              <Table
-                columns={[
-                  { key: 'category', label: 'Category' },
-                  { key: 'amount', label: 'Amount' },
-                ]}
-                data={data.expensesSummary.byCategory.map((item) => ({
-                  category: <span className="capitalize">{item.category.replace(/_/g, ' ')}</span>,
-                  amount: <span className="font-medium">{item.amountDisplay}</span>,
-                }))}
-              />
+                <Table
+                  columns={[
+                    { key: 'category', label: 'Category' },
+                    { key: 'amount', label: 'Amount' },
+                  ]}
+                  data={data.expensesSummary.byCategory.map((item) => ({
+                    category: (
+                      <span className="capitalize">{item.category.replace(/_/g, ' ')}</span>
+                    ),
+                    amount: <span className="font-medium">{item.amountDisplay}</span>,
+                  }))}
+                />
               )}
             </Card>
           </div>
@@ -310,28 +318,30 @@ export default function WeeklySummaryPage() {
 
           {/* Tasks Completed */}
           <Card className="p-6 mb-6">
-            <h3 className="text-lg font-semibold text-decoricks-dark mb-4">Tasks Completed: {data.tasksCompleted.count}</h3>
+            <h3 className="text-lg font-semibold text-decoricks-dark mb-4">
+              Tasks Completed: {data.tasksCompleted.count}
+            </h3>
             {data.tasksCompleted.byAssignee.length === 0 ? (
-              <p className="text-sm text-decoricks-dark/60">No tasks were completed in this period.</p>
+              <p className="text-sm text-decoricks-dark/60">
+                No tasks were completed in this period.
+              </p>
             ) : (
-            <Table
-              columns={[
-                { key: 'assignee', label: 'Assignee' },
-                { key: 'count', label: 'Tasks Completed' },
-              ]}
-              data={data.tasksCompleted.byAssignee.map((item) => ({
-                assignee: item.name,
-                count: (
-                  <Badge variant="success">{item.count} tasks</Badge>
-                ),
-              }))}
-            />
+              <Table
+                columns={[
+                  { key: 'assignee', label: 'Assignee' },
+                  { key: 'count', label: 'Tasks Completed' },
+                ]}
+                data={data.tasksCompleted.byAssignee.map((item) => ({
+                  assignee: item.name,
+                  count: <Badge variant="success">{item.count} tasks</Badge>,
+                }))}
+              />
             )}
 
             <h4 className="mt-6 mb-2 text-base font-semibold text-decoricks-dark">Overdue now</h4>
             <p className="mb-2 text-xs text-decoricks-dark/60">
-              Cards past their due date that are not in a done column. Informational; penalties remain
-              a manual Founder action.
+              Cards past their due date that are not in a done column. Informational; penalties
+              remain a manual Founder action.
             </p>
             {(data.overdueByMember ?? []).length === 0 ? (
               <p className="text-sm text-decoricks-dark/60">Nothing is overdue right now.</p>

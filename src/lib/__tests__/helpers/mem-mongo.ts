@@ -129,7 +129,12 @@ export const matches = (doc: Doc, filter: Doc): boolean =>
     }
     const actual = getPath(doc, key)
 
-    if (condition && typeof condition === 'object' && !(condition instanceof ObjectId) && !(condition instanceof Date)) {
+    if (
+      condition &&
+      typeof condition === 'object' &&
+      !(condition instanceof ObjectId) &&
+      !(condition instanceof Date)
+    ) {
       const ops = condition as Doc
       for (const [op, expected] of Object.entries(ops)) {
         switch (op) {
@@ -295,7 +300,10 @@ export class MemCollection {
     return { acknowledged: true, insertedId: _id }
   }
 
-  async deleteOne(filter: Doc, opts?: unknown): Promise<{ acknowledged: true; deletedCount: number }> {
+  async deleteOne(
+    filter: Doc,
+    opts?: unknown
+  ): Promise<{ acknowledged: true; deletedCount: number }> {
     const index = this.docs.findIndex((doc) => matches(doc, filter))
     if (index === -1) return { acknowledged: true, deletedCount: 0 }
     const [removed] = this.docs.splice(index, 1)
@@ -335,7 +343,8 @@ export class MemCollection {
         created[key] = value
       }
       for (const [key, value] of Object.entries(update.$set ?? {})) setPath(created, key, value)
-      for (const [key, value] of Object.entries(update.$setOnInsert ?? {})) setPath(created, key, value)
+      for (const [key, value] of Object.entries(update.$setOnInsert ?? {}))
+        setPath(created, key, value)
       for (const [key, value] of Object.entries(update.$inc ?? {})) {
         setPath(created, key, Number(getPath(created, key) ?? 0) + Number(value))
       }
@@ -376,7 +385,12 @@ export class MemCollection {
     filter: Doc,
     update: { $inc?: Doc; $set?: Doc; $setOnInsert?: Doc },
     opts: { upsert?: boolean; session?: unknown } = {}
-  ): Promise<{ acknowledged: true; matchedCount: number; modifiedCount: number; upsertedId: ObjectId | null }> {
+  ): Promise<{
+    acknowledged: true
+    matchedCount: number
+    modifiedCount: number
+    upsertedId: ObjectId | null
+  }> {
     await Promise.resolve()
     const result = this.applyOne(filter, update, opts, sessionOf(opts.session ?? opts))
     return {
@@ -402,7 +416,8 @@ export class MemCollection {
   ): Promise<Doc | null> {
     await Promise.resolve()
     const result = this.applyOne(filter, update, opts, sessionOf(opts.session ?? opts))
-    if (result.matchedCount === 0 && result.upsertedId === null && result.after === null) return null
+    if (result.matchedCount === 0 && result.upsertedId === null && result.after === null)
+      return null
     const doc = opts.returnDocument === 'before' ? result.before : result.after
     return doc ? { ...doc } : null
   }
@@ -425,7 +440,8 @@ class MemBulk {
   constructor(private readonly col: MemCollection) {}
 
   find(filter: Doc): MemBulk {
-    if (this.tail?.update) this.ops.push(this.tail as { filter: Doc; update: { $set?: Doc; $inc?: Doc } })
+    if (this.tail?.update)
+      this.ops.push(this.tail as { filter: Doc; update: { $set?: Doc; $inc?: Doc } })
     this.tail = { filter }
     return this
   }
@@ -437,7 +453,8 @@ class MemBulk {
   }
 
   async execute(): Promise<{ acknowledged: true }> {
-    if (this.tail?.update) this.ops.push(this.tail as { filter: Doc; update: { $set?: Doc; $inc?: Doc } })
+    if (this.tail?.update)
+      this.ops.push(this.tail as { filter: Doc; update: { $set?: Doc; $inc?: Doc } })
     for (const op of this.ops) await this.col.updateOne(op.filter, op.update)
     this.ops.length = 0
     this.tail = null
@@ -487,10 +504,10 @@ export const createMemDb = (
     }
     return col
   }
-  const named = new Proxy(
-    {},
-    { get: (_target, name: string) => collection(name) }
-  ) as Record<string, MemCollection>
+  const named = new Proxy({}, { get: (_target, name: string) => collection(name) }) as Record<
+    string,
+    MemCollection
+  >
 
   const shared = new MemSession()
 

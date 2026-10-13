@@ -37,7 +37,10 @@ interface BoardColumn {
   isDoneColumn: boolean
 }
 
-const fetchBoard = async (): Promise<{ columns: BoardColumn[]; tasks: Record<string, BoardTask[]> }> => {
+const fetchBoard = async (): Promise<{
+  columns: BoardColumn[]
+  tasks: Record<string, BoardTask[]>
+}> => {
   const res = await founder.get(`/api/boards/${boardId}`)
   expect(res.ok()).toBeTruthy()
   const body = (await res.json()) as {
@@ -50,12 +53,16 @@ test.describe('phase 6 board journey', () => {
   test.use({ storageState: FOUNDER_STATE })
 
   test.beforeAll(async ({ playwright }) => {
-    founder = await playwright.request.newContext({ baseURL: BASE_URL, storageState: FOUNDER_STATE })
+    founder = await playwright.request.newContext({
+      baseURL: BASE_URL,
+      storageState: FOUNDER_STATE,
+    })
     csrf = csrfFromState(FOUNDER_STATE)
 
     // Ensure at least one board exists; the create route seeds default columns.
     const list = await founder.get('/api/boards')
-    const boards = ((await list.json()) as { data: { boards: Array<{ _id: string }> } }).data.boards ?? []
+    const boards =
+      ((await list.json()) as { data: { boards: Array<{ _id: string }> } }).data.boards ?? []
     if (boards.length === 0) {
       const created = await founder.post('/api/boards', {
         headers: { [CSRF_HEADER]: csrf },
@@ -64,7 +71,8 @@ test.describe('phase 6 board journey', () => {
       expect(created.status()).toBe(200)
     }
     const after = await founder.get('/api/boards')
-    const first = ((await after.json()) as { data: { boards: Array<{ _id: string }> } }).data.boards[0]
+    const first = ((await after.json()) as { data: { boards: Array<{ _id: string }> } }).data
+      .boards[0]
     boardId = first._id
 
     // Remember the board's Done column so we can assert `completedAt` after a move.
@@ -91,8 +99,12 @@ test.describe('phase 6 board journey', () => {
     await page.goto('/tasks')
     await expect(page.getByRole('button', { name: 'Board' })).toBeVisible({ timeout: 15_000 })
     // Wait for the default columns to render before interacting.
-    await expect(page.getByRole('heading', { name: 'To Do', exact: true })).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByRole('heading', { name: 'Done', exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole('heading', { name: 'To Do', exact: true })).toBeVisible({
+      timeout: 15_000,
+    })
+    await expect(page.getByRole('heading', { name: 'Done', exact: true })).toBeVisible({
+      timeout: 15_000,
+    })
   }
 
   /** Creates a uniquely-titled card in the To Do column through the UI modal. */
@@ -109,9 +121,9 @@ test.describe('phase 6 board journey', () => {
     await expect(modal).toBeHidden({ timeout: 15_000 })
 
     // The card now lives in the To Do column.
-    await expect(
-      todoColumn.getByRole('button', { name: title, exact: true })
-    ).toBeVisible({ timeout: 15_000 })
+    await expect(todoColumn.getByRole('button', { name: title, exact: true })).toBeVisible({
+      timeout: 15_000,
+    })
   }
 
   test('create a card, move it to Done, and the server stamps completedAt', async ({ page }) => {
@@ -121,24 +133,33 @@ test.describe('phase 6 board journey', () => {
 
     // Move the card into Done via the per-card "Move to…" dropdown — the
     // deterministic board mutation that calls the same guarded /move endpoint.
-    const card = page.locator('div.group').filter({ has: page.getByRole('button', { name: title, exact: true }) })
+    const card = page
+      .locator('div.group')
+      .filter({ has: page.getByRole('button', { name: title, exact: true }) })
     await card.getByLabel('Move task to another column').selectOption({ label: 'Move to Done' })
 
     // Optimistically the card re-appears under the Done column.
     const doneColumn = page
       .locator('section')
       .filter({ has: page.getByRole('heading', { name: 'Done', exact: true }) })
-    await expect(doneColumn.getByRole('button', { name: title, exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(doneColumn.getByRole('button', { name: title, exact: true })).toBeVisible({
+      timeout: 15_000,
+    })
 
     // And authoritatively the server recorded the completion.
-    await expect.poll(async () => {
-      const { tasks } = await fetchBoard()
-      const flat = Object.entries(tasks).flatMap(([col, list]) =>
-        list.filter((t) => t.title === title).map((t) => ({ col, completedAt: t.completedAt }))
+    await expect
+      .poll(
+        async () => {
+          const { tasks } = await fetchBoard()
+          const flat = Object.entries(tasks).flatMap(([col, list]) =>
+            list.filter((t) => t.title === title).map((t) => ({ col, completedAt: t.completedAt }))
+          )
+          const inDone = flat.find((t) => t.col === doneColumnId)
+          return inDone && inDone.completedAt ? 'completed' : `${flat.length} / done?${!!inDone}`
+        },
+        { timeout: 15_000, message: 'card should be in the Done column with completedAt set' }
       )
-      const inDone = flat.find((t) => t.col === doneColumnId)
-      return inDone && inDone.completedAt ? 'completed' : `${flat.length} / done?${!!inDone}`
-    }, { timeout: 15_000, message: 'card should be in the Done column with completedAt set' }).toBe('completed')
+      .toBe('completed')
   })
 
   test('a pointer drag of the grip moves the card to the Done column', async ({ page }) => {
@@ -167,11 +188,18 @@ test.describe('phase 6 board journey', () => {
     await page.mouse.up()
 
     // The drag posts the same guarded /move; verify the completion server-side.
-    await expect.poll(async () => {
-      const { tasks } = await fetchBoard()
-      const flat = Object.values(tasks).flat()
-      const moved = flat.find((t) => t.title === title)
-      return moved && moved.columnId === doneColumnId && moved.completedAt ? 'completed' : 'pending'
-    }, { timeout: 15_000, message: 'drag should move the card to Done' }).toBe('completed')
+    await expect
+      .poll(
+        async () => {
+          const { tasks } = await fetchBoard()
+          const flat = Object.values(tasks).flat()
+          const moved = flat.find((t) => t.title === title)
+          return moved && moved.columnId === doneColumnId && moved.completedAt
+            ? 'completed'
+            : 'pending'
+        },
+        { timeout: 15_000, message: 'drag should move the card to Done' }
+      )
+      .toBe('completed')
   })
 })

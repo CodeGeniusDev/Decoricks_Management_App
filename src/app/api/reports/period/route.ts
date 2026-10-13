@@ -74,9 +74,17 @@ async function __GET(request: NextRequest) {
           .toArray(),
         db
           .collection('orders')
-          .aggregate([{ $match: { createdAt: inRange } }, { $group: { _id: '$codOutcome', count: { $sum: 1 } } }])
+          .aggregate([
+            { $match: { createdAt: inRange } },
+            { $group: { _id: '$codOutcome', count: { $sum: 1 } } },
+          ])
           .toArray(),
-        db.collection('orders').find({ createdAt: inRange }).sort({ createdAt: -1 }).limit(50).toArray(),
+        db
+          .collection('orders')
+          .find({ createdAt: inRange })
+          .sort({ createdAt: -1 })
+          .limit(50)
+          .toArray(),
       ])
 
       // Phase 6 board model: a task is "completed in the period" when its
@@ -138,7 +146,7 @@ async function __GET(request: NextRequest) {
         (list as Array<{ _id: unknown; count: number }>).map((r) => ({
           name:
             r._id instanceof ObjectId
-              ? nameById.get(r._id.toString()) ?? 'Unknown member'
+              ? (nameById.get(r._id.toString()) ?? 'Unknown member')
               : 'Unassigned',
           count: r.count,
         }))
@@ -182,7 +190,9 @@ async function __GET(request: NextRequest) {
       ? await withMongoRetry(async () => {
           const db = await getDatabase()
           return getLedgerCollection(db)
-            .find({ _id: { $in: recentExpenseIds.map((e) => new ObjectId(String(e._id))) } } as never)
+            .find({
+              _id: { $in: recentExpenseIds.map((e) => new ObjectId(String(e._id))) },
+            } as never)
             .toArray()
         })
       : []
@@ -206,7 +216,9 @@ async function __GET(request: NextRequest) {
       const db = await getDatabase()
       const [stockRows, productRows] = await Promise.all([
         getStockCollection(db).find({}).toArray(),
-        getProductCollection(db).find({ isActive: true } as never).toArray(),
+        getProductCollection(db)
+          .find({ isActive: true } as never)
+          .toArray(),
       ])
       const productById = new Map(productRows.map((p) => [p._id!.toString(), p]))
 

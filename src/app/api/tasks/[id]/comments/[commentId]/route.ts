@@ -4,16 +4,9 @@ import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { getBusinessSettingsCollection } from '@/lib/models/Ledger'
-import {
-  getTaskCommentCollection,
-  taskCommentToJSON,
-  type TaskComment,
-} from '@/lib/models/Tasks'
+import { getTaskCommentCollection, taskCommentToJSON, type TaskComment } from '@/lib/models/Tasks'
 import { taskCommentUpdateSchema } from '@/lib/schemas/tasks'
-import {
-  commentWithinEditWindow,
-  resolveCommentEditWindow,
-} from '@/lib/business-policy'
+import { commentWithinEditWindow, resolveCommentEditWindow } from '@/lib/business-policy'
 import { recordAuditEntry } from '@/lib/audit'
 import { errorResponse, notFoundError, successResponse, validationError } from '@/lib/api-response'
 
@@ -119,12 +112,7 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
     const settings = await getBusinessSettingsCollection(db).findOne({ key: 'business' })
     const window = resolveCommentEditWindow(settings)
     const canModerate = auth.permissions?.tasks?.editOthers === true
-    const gate = await guardComment(
-      canModerate,
-      auth.user._id as ObjectId,
-      comment,
-      window
-    )
+    const gate = await guardComment(canModerate, auth.user._id as ObjectId, comment, window)
     if (!gate.ok) return gate.response
 
     const now = new Date()
@@ -199,12 +187,7 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
     const settings = await getBusinessSettingsCollection(db).findOne({ key: 'business' })
     const window = resolveCommentEditWindow(settings)
     const canModerate = auth.permissions?.tasks?.editOthers === true
-    const gate = await guardComment(
-      canModerate,
-      auth.user._id as ObjectId,
-      comment,
-      window
-    )
+    const gate = await guardComment(canModerate, auth.user._id as ObjectId, comment, window)
     if (!gate.ok) return gate.response
 
     const now = new Date()
@@ -244,4 +227,3 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
 
 export const PATCH = withAuth(__PATCH)
 export const DELETE = withAuth(__DELETE)
-

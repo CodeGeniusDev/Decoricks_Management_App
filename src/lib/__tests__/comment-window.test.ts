@@ -16,7 +16,7 @@ import {
 import type { BusinessSettings } from '@/lib/models/Ledger'
 
 const settings = (over: Partial<BusinessSettings> = {}): BusinessSettings =>
-  ({ key: 'business', ...over } as BusinessSettings)
+  ({ key: 'business', ...over }) as BusinessSettings
 
 describe('resolveCommentEditWindow', () => {
   it('falls back to the 15-minute default when unconfigured', () => {
@@ -27,9 +27,9 @@ describe('resolveCommentEditWindow', () => {
   it('honours a valid Founder-configured window, including zero', () => {
     expect(resolveCommentEditWindow(settings({ commentEditWindowMinutes: 30 } as never))).toBe(30)
     expect(resolveCommentEditWindow(settings({ commentEditWindowMinutes: 0 } as never))).toBe(0)
-    expect(
-      resolveCommentEditWindow(settings({ commentEditWindowMinutes: 1440 } as never))
-    ).toBe(1440)
+    expect(resolveCommentEditWindow(settings({ commentEditWindowMinutes: 1440 } as never))).toBe(
+      1440
+    )
   })
   it('rejects a non-integer or negative value back to the default', () => {
     expect(resolveCommentEditWindow(settings({ commentEditWindowMinutes: -5 } as never))).toBe(
@@ -38,9 +38,9 @@ describe('resolveCommentEditWindow', () => {
     expect(resolveCommentEditWindow(settings({ commentEditWindowMinutes: 1.5 } as never))).toBe(
       DEFAULT_COMMENT_EDIT_WINDOW_MINUTES
     )
-    expect(
-      resolveCommentEditWindow(settings({ commentEditWindowMinutes: '30' } as never))
-    ).toBe(DEFAULT_COMMENT_EDIT_WINDOW_MINUTES)
+    expect(resolveCommentEditWindow(settings({ commentEditWindowMinutes: '30' } as never))).toBe(
+      DEFAULT_COMMENT_EDIT_WINDOW_MINUTES
+    )
   })
 })
 

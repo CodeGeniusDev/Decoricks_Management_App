@@ -31,7 +31,9 @@ export interface ResolvedPolicy {
   configured: boolean
 }
 
-export function resolveBusinessPolicy(settings: BusinessSettings | null | undefined): ResolvedPolicy {
+export function resolveBusinessPolicy(
+  settings: BusinessSettings | null | undefined
+): ResolvedPolicy {
   const sharing = settings?.profitSharing
   if (!sharing || sharing.partners.length === 0) {
     return {
@@ -76,7 +78,11 @@ export function validateProfitSharing(input: {
     const key = partner.name?.trim().toLowerCase()
     if (names.has(key)) issues.push(`${where}: duplicate partner "${partner.name}"`)
     names.add(key)
-    if (!Number.isInteger(partner.percentage) || partner.percentage < 0 || partner.percentage > 100) {
+    if (
+      !Number.isInteger(partner.percentage) ||
+      partner.percentage < 0 ||
+      partner.percentage > 100
+    ) {
       issues.push(`${where}: profit percentage must be a whole number between 0 and 100`)
     }
     if (

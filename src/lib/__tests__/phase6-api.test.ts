@@ -45,10 +45,7 @@ const COL_DONE = new ObjectId('507f1f77bcf86cd799439202')
 
 /* ------------------------------ auth helpers ----------------------------- */
 
-const ctxFor = (
-  userId: ObjectId,
-  opts: { editOthers?: boolean } = {}
-) => ({
+const ctxFor = (userId: ObjectId, opts: { editOthers?: boolean } = {}) => ({
   user: {
     _id: userId,
     email: `${userId.toString()}@decoricks.com`,
@@ -59,8 +56,16 @@ const ctxFor = (
     sessionVersion: 1,
   },
   session: { tokenHash: 'h', sessionVersion: 1, csrfToken: 'c', role: 'role' },
-  role: { name: 'role', displayName: 'Role', permissions: {}, createdAt: new Date(0), updatedAt: new Date(0) },
-  permissions: { tasks: { view: true, edit: true, comment: true, editOthers: opts.editOthers === true } },
+  role: {
+    name: 'role',
+    displayName: 'Role',
+    permissions: {},
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  },
+  permissions: {
+    tasks: { view: true, edit: true, comment: true, editOthers: opts.editOthers === true },
+  },
 })
 
 /** Sets the identity + moderation flag the mocked `authorize` hands back. */
@@ -72,10 +77,32 @@ const asActor = (userId: ObjectId, editOthers = false) => {
 /* ------------------------------- seeding --------------------------------- */
 
 const seedColumns = () => {
-  mem.collection('columns').push(
-    { _id: COL_TODO, boardId: BOARD_ID, name: 'To Do', position: 1, isDoneColumn: false, isArchived: false, createdBy: FOUNDER, createdAt: new Date(), updatedAt: new Date() },
-    { _id: COL_DONE, boardId: BOARD_ID, name: 'Done', position: 2, isDoneColumn: true, isArchived: false, createdBy: FOUNDER, createdAt: new Date(), updatedAt: new Date() }
-  )
+  mem
+    .collection('columns')
+    .push(
+      {
+        _id: COL_TODO,
+        boardId: BOARD_ID,
+        name: 'To Do',
+        position: 1,
+        isDoneColumn: false,
+        isArchived: false,
+        createdBy: FOUNDER,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        _id: COL_DONE,
+        boardId: BOARD_ID,
+        name: 'Done',
+        position: 2,
+        isDoneColumn: true,
+        isArchived: false,
+        createdBy: FOUNDER,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+    )
 }
 
 const seedTask = (over: Record<string, unknown> = {}): ObjectId => {
@@ -141,11 +168,15 @@ const ctxTask = (id: string) => ({ params: Promise.resolve({ id }) }) as never
 const ctxComment = (id: string, commentId: string) =>
   ({ params: Promise.resolve({ id, commentId }) }) as never
 
-const taskDoc = (id: ObjectId) => mem.collection('tasks').docs.find((d) => String(d._id) === String(id))!
+const taskDoc = (id: ObjectId) =>
+  mem.collection('tasks').docs.find((d) => String(d._id) === String(id))!
 const commentDoc = (id: ObjectId) =>
   mem.collection('taskComments').docs.find((d) => String(d._id) === String(id))!
 const activityKinds = (taskId: ObjectId) =>
-  mem.collection('taskActivity').docs.filter((d) => String(d.taskId) === String(taskId)).map((d) => d.kind)
+  mem
+    .collection('taskActivity')
+    .docs.filter((d) => String(d.taskId) === String(taskId))
+    .map((d) => d.kind)
 
 beforeEach(() => {
   asActor(FOUNDER, true)
@@ -163,7 +194,10 @@ describe('POST /api/tasks/[id]/move', () => {
     asActor(FOUNDER, true)
 
     const res = await moveRoute.POST(
-      makeRequest('http://localhost/api/tasks/x/move', json({ toColumnId: COL_DONE.toString(), version: 99 })),
+      makeRequest(
+        'http://localhost/api/tasks/x/move',
+        json({ toColumnId: COL_DONE.toString(), version: 99 })
+      ),
       ctxTask(taskId.toString())
     )
 
@@ -182,7 +216,10 @@ describe('POST /api/tasks/[id]/move', () => {
     asActor(FOUNDER, true)
 
     const res = await moveRoute.POST(
-      makeRequest('http://localhost/api/tasks/x/move', json({ toColumnId: COL_DONE.toString(), version: 3 })),
+      makeRequest(
+        'http://localhost/api/tasks/x/move',
+        json({ toColumnId: COL_DONE.toString(), version: 3 })
+      ),
       ctxTask(taskId.toString())
     )
 
@@ -202,7 +239,10 @@ describe('POST /api/tasks/[id]/move', () => {
     asActor(MEMBER, false)
 
     const res = await moveRoute.POST(
-      makeRequest('http://localhost/api/tasks/x/move', json({ toColumnId: COL_DONE.toString(), version: 1 })),
+      makeRequest(
+        'http://localhost/api/tasks/x/move',
+        json({ toColumnId: COL_DONE.toString(), version: 1 })
+      ),
       ctxTask(taskId.toString())
     )
 
@@ -320,4 +360,3 @@ describe('DELETE /api/tasks/[id]/comments/[commentId] — soft delete', () => {
     expect(againBody.error.code).toBe('COMMENT_DELETED')
   })
 })
-

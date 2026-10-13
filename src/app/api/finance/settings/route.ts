@@ -1,20 +1,28 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { ObjectId, type Db } from 'mongodb';
-import { authorize } from '@/lib/authorization';
-import { getDatabase } from '@/lib/mongodb';
-import { getRequestMeta, handleRouteError, withAuth } from '@/lib/http';
-import { recordAuditEntry } from '@/lib/audit';
-import { successResponse, validationError } from '@/lib/api-response';
-import { formatKarachiDate } from '@/lib/date';
-import { businessSettingsUpdateSchema } from '@/lib/schemas/finance';
-import { parseLedgerDate } from '@/lib/finance-ledger';
-import { getBusinessSettingsCollection, getAccountCollection, type BusinessSettings } from '@/lib/models/Ledger';
-import { resolveBusinessPolicy, validateProfitSharing, resolveCommentEditWindow } from '@/lib/business-policy';
+import { NextRequest, NextResponse } from 'next/server'
+import { ObjectId, type Db } from 'mongodb'
+import { authorize } from '@/lib/authorization'
+import { getDatabase } from '@/lib/mongodb'
+import { getRequestMeta, handleRouteError, withAuth } from '@/lib/http'
+import { recordAuditEntry } from '@/lib/audit'
+import { successResponse, validationError } from '@/lib/api-response'
+import { formatKarachiDate } from '@/lib/date'
+import { businessSettingsUpdateSchema } from '@/lib/schemas/finance'
+import { parseLedgerDate } from '@/lib/finance-ledger'
+import {
+  getBusinessSettingsCollection,
+  getAccountCollection,
+  type BusinessSettings,
+} from '@/lib/models/Ledger'
+import {
+  resolveBusinessPolicy,
+  validateProfitSharing,
+  resolveCommentEditWindow,
+} from '@/lib/business-policy'
 
 /** The Phase 4 slice of the settings document the UI and engines read. */
 function settingsPayload(settings: BusinessSettings | null) {
-  const policy = resolveBusinessPolicy(settings);
-  const lock = settings?.withdrawalLockedUntil ?? null;
+  const policy = resolveBusinessPolicy(settings)
+  const lock = settings?.withdrawalLockedUntil ?? null
   return {
     withdrawalLockedUntil: lock ? lock.toISOString() : null,
     withdrawalLockedUntilDisplay: lock ? formatKarachiDate(lock, 'date') : null,
@@ -36,8 +44,12 @@ function settingsPayload(settings: BusinessSettings | null) {
       allowNegativeStock: settings?.allowNegativeStock === true,
     },
     postingAccounts: {
-      purchasingAccountId: settings?.purchasingAccountId ? String(settings.purchasingAccountId) : null,
-      salesIncomeAccountId: settings?.salesIncomeAccountId ? String(settings.salesIncomeAccountId) : null,
+      purchasingAccountId: settings?.purchasingAccountId
+        ? String(settings.purchasingAccountId)
+        : null,
+      salesIncomeAccountId: settings?.salesIncomeAccountId
+        ? String(settings.salesIncomeAccountId)
+        : null,
     },
     /*
      * Phase 6: surfaced as the resolved integer, not the raw field, so the UI
@@ -52,7 +64,7 @@ function settingsPayload(settings: BusinessSettings | null) {
         Number.isInteger(settings.commentEditWindowMinutes) &&
         settings.commentEditWindowMinutes >= 0,
     },
-  };
+  }
 }
 
 /** Active accounts the Founder can bind to a Phase 5 flow. */
@@ -60,12 +72,12 @@ async function postingAccountOptions(db: Db) {
   const accounts = await getAccountCollection(db)
     .find({ isActive: true })
     .sort({ createdAt: 1 })
-    .toArray();
+    .toArray()
   return accounts.map((account) => ({
     id: String(account._id),
     name: account.name,
     kind: account.kind,
-  }));
+  }))
 }
 
 /**
@@ -74,13 +86,13 @@ async function postingAccountOptions(db: Db) {
  * a purchase failing three days later.
  */
 async function isUsableAccount(db: Db, id: string): Promise<boolean> {
-  const account = await getAccountCollection(db).findOne({ _id: new ObjectId(id), isActive: true });
-  return Boolean(account);
+  const account = await getAccountCollection(db).findOne({ _id: new ObjectId(id), isActive: true })
+  return Boolean(account)
 }
 
 /** The settings view plus the account list the Founder can pick from. */
 async function settingsView(db: Db, settings: BusinessSettings | null) {
-  return { ...settingsPayload(settings), accountOptions: await postingAccountOptions(db) };
+  return { ...settingsPayload(settings), accountOptions: await postingAccountOptions(db) }
 }
 
 /**
@@ -94,12 +106,12 @@ async function settingsView(db: Db, settings: BusinessSettings | null) {
  */
 async function __GET() {
   try {
-    await authorize('finance', 'view');
-    const db = await getDatabase();
-    const settings = await getBusinessSettingsCollection(db).findOne({ key: 'business' });
-    return successResponse(await settingsView(db, settings));
+    await authorize('finance', 'view')
+    const db = await getDatabase()
+    const settings = await getBusinessSettingsCollection(db).findOne({ key: 'business' })
+    return successResponse(await settingsView(db, settings))
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error)
   }
 }
 
@@ -119,9 +131,9 @@ async function __GET() {
  */
 async function __PATCH(request: NextRequest) {
   try {
-    const auth = await authorize('finance', 'approve');
+    const auth = await authorize('finance', 'approve')
 
-    const parsed = businessSettingsUpdateSchema.safeParse(await request.json().catch(() => null));
+    const parsed = businessSettingsUpdateSchema.safeParse(await request.json().catch(() => null))
     if (!parsed.success) {
       return validationError(
         'Validation failed',
@@ -129,40 +141,40 @@ async function __PATCH(request: NextRequest) {
           path: issue.path.join('.'),
           message: issue.message,
         }))
-      );
+      )
     }
 
-    const raw = parsed.data.withdrawalLockedUntil;
-    const next = raw === null || raw === '' ? null : parseLedgerDate(raw);
+    const raw = parsed.data.withdrawalLockedUntil
+    const next = raw === null || raw === '' ? null : parseLedgerDate(raw)
     if (next && Number.isNaN(next.getTime())) {
       return validationError('Invalid date', [
         { path: 'withdrawalLockedUntil', message: 'Date could not be parsed' },
-      ]);
+      ])
     }
 
     if (parsed.data.profitSharing) {
-      const issues = validateProfitSharing(parsed.data.profitSharing);
+      const issues = validateProfitSharing(parsed.data.profitSharing)
       if (issues.length > 0) {
         return validationError(
           'Invalid profit-sharing policy',
           issues.map((message) => ({ path: 'profitSharing', message }))
-        );
+        )
       }
     }
 
     if (parsed.data.budgetThresholds) {
-      const { warning, critical } = parsed.data.budgetThresholds;
+      const { warning, critical } = parsed.data.budgetThresholds
       if (warning > critical) {
         return validationError('Invalid budget thresholds', [
           {
             path: 'budgetThresholds.warning',
             message: 'The warning threshold must be at or below the critical threshold',
           },
-        ]);
+        ])
       }
     }
 
-    const db = await getDatabase();
+    const db = await getDatabase()
 
     /*
      * Phase 5: an account binding is only useful if it survives, so it is
@@ -170,31 +182,34 @@ async function __PATCH(request: NextRequest) {
      * purchase. Empty string and null both mean "clear it" — the flows then
      * fall back to the oldest active account.
      */
-    const accountIssues: Array<{ path: string; message: string }> = [];
+    const accountIssues: Array<{ path: string; message: string }> = []
     for (const [field, label] of [
       ['purchasingAccountId', 'Purchase expense account'],
       ['salesIncomeAccountId', 'Sales income account'],
     ] as const) {
-      const value = parsed.data[field];
+      const value = parsed.data[field]
       if (value) {
         if (!(await isUsableAccount(db, value))) {
-          accountIssues.push({ path: field, message: `${label}: choose an existing, active account` });
+          accountIssues.push({
+            path: field,
+            message: `${label}: choose an existing, active account`,
+          })
         }
       }
     }
     if (accountIssues.length > 0) {
-      return validationError('Invalid posting account', accountIssues);
+      return validationError('Invalid posting account', accountIssues)
     }
 
-    const collection = getBusinessSettingsCollection(db);
-    const settings = await collection.findOne({ key: 'business' });
-    const before = settingsPayload(settings);
+    const collection = getBusinessSettingsCollection(db)
+    const settings = await collection.findOne({ key: 'business' })
+    const before = settingsPayload(settings)
 
     const set: Record<string, unknown> = {
       withdrawalLockedUntil: next ?? undefined,
       updatedAt: new Date(),
       updatedBy: auth.user._id as ObjectId,
-    };
+    }
     if (parsed.data.profitSharing) {
       set.profitSharing = {
         partners: parsed.data.profitSharing.partners.map((partner) => ({
@@ -202,25 +217,25 @@ async function __PATCH(request: NextRequest) {
           userId: partner.userId?.trim() || undefined,
         })),
         charityPercentage: parsed.data.profitSharing.charityPercentage,
-      };
+      }
     }
     if (parsed.data.budgetThresholds) {
-      set.budgetThresholds = parsed.data.budgetThresholds;
+      set.budgetThresholds = parsed.data.budgetThresholds
     }
     if (typeof parsed.data.allowNegativeStock === 'boolean') {
-      set.allowNegativeStock = parsed.data.allowNegativeStock;
+      set.allowNegativeStock = parsed.data.allowNegativeStock
     }
     if (parsed.data.purchasingAccountId !== undefined) {
       set.purchasingAccountId =
         parsed.data.purchasingAccountId === '' || parsed.data.purchasingAccountId === null
           ? null
-          : new ObjectId(parsed.data.purchasingAccountId);
+          : new ObjectId(parsed.data.purchasingAccountId)
     }
     if (parsed.data.salesIncomeAccountId !== undefined) {
       set.salesIncomeAccountId =
         parsed.data.salesIncomeAccountId === '' || parsed.data.salesIncomeAccountId === null
           ? null
-          : new ObjectId(parsed.data.salesIncomeAccountId);
+          : new ObjectId(parsed.data.salesIncomeAccountId)
     }
     /*
      * Phase 6: `null` / empty string clears the override and lets the resolver
@@ -231,7 +246,7 @@ async function __PATCH(request: NextRequest) {
       set.commentEditWindowMinutes =
         parsed.data.commentEditWindowMinutes === '' || parsed.data.commentEditWindowMinutes === null
           ? undefined
-          : parsed.data.commentEditWindowMinutes;
+          : parsed.data.commentEditWindowMinutes
       // `undefined` under $set drops the key entirely — matches the pattern
       // used by the other optional writers in this file.
     }
@@ -240,12 +255,12 @@ async function __PATCH(request: NextRequest) {
       { key: 'business' },
       { $set: set, $setOnInsert: { key: 'business', createdAt: new Date() } },
       { upsert: true }
-    );
+    )
 
-    const updated = await collection.findOne({ key: 'business' });
-    const after = settingsPayload(updated);
+    const updated = await collection.findOne({ key: 'business' })
+    const after = settingsPayload(updated)
 
-    const meta = await getRequestMeta();
+    const meta = await getRequestMeta()
     await recordAuditEntry(db, {
       userId: auth.user._id as ObjectId,
       userEmail: auth.user.email,
@@ -274,17 +289,17 @@ async function __PATCH(request: NextRequest) {
       ].join(' · '),
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
-    });
+    })
 
     return NextResponse.json({
       success: true,
       data: await settingsView(db, updated),
       timestamp: new Date().toISOString(),
-    });
+    })
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error)
   }
 }
 
-export const GET = withAuth(__GET);
-export const PATCH = withAuth(__PATCH);
+export const GET = withAuth(__GET)
+export const PATCH = withAuth(__PATCH)

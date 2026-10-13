@@ -67,7 +67,8 @@ type LegacyTask = {
 
 type UserRow = { _id: ObjectId; role: string; isActive: boolean; name: string }
 
-const collectionNames = async (db: Db) => new Set((await db.listCollections().toArray()).map((c) => c.name))
+const collectionNames = async (db: Db) =>
+  new Set((await db.listCollections().toArray()).map((c) => c.name))
 
 const run = async () => {
   const env = getEnv()
@@ -232,7 +233,9 @@ const run = async () => {
     }
 
     const unboarded = await tasks
-      .find<LegacyTask>({ $or: [{ boardId: { $exists: false } }, { columnId: { $exists: false } }] } as never)
+      .find<LegacyTask>({
+        $or: [{ boardId: { $exists: false } }, { columnId: { $exists: false } }],
+      } as never)
       .sort({ createdAt: 1 })
       .toArray()
 
@@ -324,10 +327,7 @@ const run = async () => {
     let versioned = 0
     let initialised = 0
     if (!DRY_RUN) {
-      const vRes = await tasks.updateMany(
-        { version: { $exists: false } },
-        { $set: { version: 1 } }
-      )
+      const vRes = await tasks.updateMany({ version: { $exists: false } }, { $set: { version: 1 } })
       versioned = vRes.modifiedCount
       const iRes = await tasks.updateMany(
         { assigneeIds: { $exists: false } },

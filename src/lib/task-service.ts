@@ -95,7 +95,10 @@ export async function computePosition(
  */
 export async function renumberColumnIfTight(db: Db, columnId: ObjectId): Promise<void> {
   const col = getTaskDocCollection(db)
-  const all = await col.find({ columnId } as never).sort({ position: 1 }).toArray()
+  const all = await col
+    .find({ columnId } as never)
+    .sort({ position: 1 })
+    .toArray()
   for (let i = 0; i < all.length - 1; i++) {
     if (all[i + 1].position - all[i].position < 2) {
       const bulk = col.initializeUnorderedBulkOp()

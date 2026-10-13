@@ -74,12 +74,12 @@ const CHAT_OPEN = {
 const TASKS_PARTNER = {
   view: true,
   create: true,
-  edit: true,          // edit / move own
-  editOthers: false,   // grantable by Founder per role
-  delete: true,        // archive own
+  edit: true, // edit / move own
+  editOthers: false, // grantable by Founder per role
+  delete: true, // archive own
   deleteOthers: false,
   comment: true,
-  manage: false,       // Founder-only, not grantable
+  manage: false, // Founder-only, not grantable
 }
 
 /** Founder: everything open, sole owner of board and column management. */
@@ -226,10 +226,7 @@ export const TEAM_ROLES = SPEC_ROLES.map((role) => ({
   label: role.displayName,
 }))
 
-export const ASSIGNEE_OPTIONS = [
-  { value: '', label: 'Unassigned' },
-  ...TEAM_ROLES,
-]
+export const ASSIGNEE_OPTIONS = [{ value: '', label: 'Unassigned' }, ...TEAM_ROLES]
 
 export const roleLabel = (role?: string): string | undefined =>
   SPEC_ROLES.find((r) => r.name === role)?.displayName

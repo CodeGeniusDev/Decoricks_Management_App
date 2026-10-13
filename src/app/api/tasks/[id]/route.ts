@@ -36,11 +36,7 @@ const badId = () => validationError('Invalid task id', [{ path: 'id', message: '
  * enough — the row-level rule lives here so it cannot be forgotten by any
  * new endpoint that mutates tasks.
  */
-const canActOnTask = (
-  doc: TaskDoc,
-  userId: ObjectId,
-  canActOnOthers: boolean
-): boolean => {
+const canActOnTask = (doc: TaskDoc, userId: ObjectId, canActOnOthers: boolean): boolean => {
   if (canActOnOthers) return true
   if (doc.createdBy.equals(userId)) return true
   return doc.assigneeIds.some((a) => a.equals(userId))
@@ -138,14 +134,19 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
 
     const canEditOthers = auth.permissions?.tasks?.editOthers === true
     if (!canActOnTask(before, auth.user._id as ObjectId, canEditOthers)) {
-      return errorResponse('You can only edit tasks you created or are assigned to', 403, 'FORBIDDEN')
+      return errorResponse(
+        'You can only edit tasks you created or are assigned to',
+        403,
+        'FORBIDDEN'
+      )
     }
 
     const set: Partial<Omit<TaskDoc, '_id' | 'version' | 'createdAt' | 'createdBy'>> = {}
     if (parsed.data.title !== undefined) set.title = parsed.data.title
     if (parsed.data.description !== undefined) set.description = parsed.data.description
     if (parsed.data.priority !== undefined) set.priority = parsed.data.priority
-    if (parsed.data.dueDate !== undefined) set.dueDate = parsed.data.dueDate ? new Date(parsed.data.dueDate) : null
+    if (parsed.data.dueDate !== undefined)
+      set.dueDate = parsed.data.dueDate ? new Date(parsed.data.dueDate) : null
     if (parsed.data.assigneeIds !== undefined) {
       set.assigneeIds = parsed.data.assigneeIds.map((a) => new ObjectId(a))
     }
@@ -188,7 +189,11 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
       entityType: 'task',
       entityId: _id,
       oldValue: { title: before.title, description: before.description, priority: before.priority },
-      newValue: { title: updated.title, description: updated.description, priority: updated.priority },
+      newValue: {
+        title: updated.title,
+        description: updated.description,
+        priority: updated.priority,
+      },
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
     })
@@ -220,7 +225,11 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
 
     const canDeleteOthers = auth.permissions?.tasks?.deleteOthers === true
     if (!canActOnTask(before, auth.user._id as ObjectId, canDeleteOthers)) {
-      return errorResponse('You can only archive tasks you created or are assigned to', 403, 'FORBIDDEN')
+      return errorResponse(
+        'You can only archive tasks you created or are assigned to',
+        403,
+        'FORBIDDEN'
+      )
     }
 
     let updated: TaskDoc & { _id: ObjectId }
@@ -262,4 +271,3 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
 export const GET = withAuth(__GET)
 export const PATCH = withAuth(__PATCH)
 export const DELETE = withAuth(__DELETE)
-

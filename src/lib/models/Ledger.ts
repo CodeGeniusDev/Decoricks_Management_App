@@ -178,10 +178,22 @@ export function ensureLedgerIndexes(db: Db): Promise<unknown> {
         { idempotencyKey: 1 },
         { unique: true, sparse: true, name: 'transactions_idempotency_unique' }
       ),
-      getLedgerCollection(db).createIndex({ date: -1, createdAt: -1 }, { name: 'transactions_date' }),
-      getLedgerCollection(db).createIndex({ type: 1, date: -1 }, { name: 'transactions_type_date' }),
-      getLedgerCollection(db).createIndex({ accountId: 1, date: -1 }, { name: 'transactions_account' }),
-      getLedgerCollection(db).createIndex({ fromAccountId: 1 }, { name: 'transactions_fromAccount' }),
+      getLedgerCollection(db).createIndex(
+        { date: -1, createdAt: -1 },
+        { name: 'transactions_date' }
+      ),
+      getLedgerCollection(db).createIndex(
+        { type: 1, date: -1 },
+        { name: 'transactions_type_date' }
+      ),
+      getLedgerCollection(db).createIndex(
+        { accountId: 1, date: -1 },
+        { name: 'transactions_account' }
+      ),
+      getLedgerCollection(db).createIndex(
+        { fromAccountId: 1 },
+        { name: 'transactions_fromAccount' }
+      ),
       getLedgerCollection(db).createIndex({ toAccountId: 1 }, { name: 'transactions_toAccount' }),
       getLedgerCollection(db).createIndex({ category: 1 }, { name: 'transactions_category' }),
       getLedgerCollection(db).createIndex({ partnerId: 1 }, { name: 'transactions_partner' }),

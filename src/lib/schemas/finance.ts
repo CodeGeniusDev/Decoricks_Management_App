@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod'
 
 export const incomeSchema = z.object({
   amount: z.number().int().positive('Amount must be a positive integer (paisa)'),
@@ -8,7 +8,7 @@ export const incomeSchema = z.object({
   referenceId: z.string().optional(),
   referenceType: z.string().optional(),
   date: z.string().datetime('Invalid date format'),
-});
+})
 
 export const expenseSchema = z.object({
   amount: z.number().int().positive('Amount must be a positive integer (paisa)'),
@@ -18,7 +18,7 @@ export const expenseSchema = z.object({
   referenceId: z.string().optional(),
   referenceType: z.string().optional(),
   date: z.string().datetime('Invalid date format'),
-});
+})
 
 export const transferSchema = z.object({
   fromAccount: z.string().min(1, 'From account is required'),
@@ -26,7 +26,7 @@ export const transferSchema = z.object({
   amount: z.number().int().positive('Amount must be a positive integer (paisa)'),
   description: z.string().optional(),
   date: z.string().datetime('Invalid date format'),
-});
+})
 
 export const paginationQuerySchema = z.object({
   page: z
@@ -42,19 +42,19 @@ export const paginationQuerySchema = z.object({
   category: z.string().optional(),
   startDate: z.string().datetime('Invalid start date').optional(),
   endDate: z.string().datetime('Invalid end date').optional(),
-});
+})
 
-export type IncomeFormData = z.infer<typeof incomeSchema>;
-export type ExpenseFormData = z.infer<typeof expenseSchema>;
-export type TransferFormData = z.infer<typeof transferSchema>;
-export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
+export type IncomeFormData = z.infer<typeof incomeSchema>
+export type ExpenseFormData = z.infer<typeof expenseSchema>
+export type TransferFormData = z.infer<typeof transferSchema>
+export type PaginationQuery = z.infer<typeof paginationQuerySchema>
 
 /* -------------------------------------------------------------------------- */
 /* Phase 3 ledger                                                              */
 /* -------------------------------------------------------------------------- */
 
 const objectIdString = (label: string) =>
-  z.string().regex(/^[0-9a-fA-F]{24}$/, `${label} must be a valid id`);
+  z.string().regex(/^[0-9a-fA-F]{24}$/, `${label} must be a valid id`)
 
 /**
  * Accepts either a full ISO instant or a `YYYY-MM-DD` Karachi date. The route
@@ -68,22 +68,22 @@ const ledgerDate = z
   .refine(
     (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) || /T/.test(value),
     'Use YYYY-MM-DD or an ISO datetime'
-  );
+  )
 
 const amountSchema = z
   .number({ invalid_type_error: 'Amount must be a number (paisa)' })
   .int('Amount must be a whole number of paisa')
-  .positive('Amount must be greater than zero');
+  .positive('Amount must be greater than zero')
 
-const noteSchema = z.string().max(1000, 'Note is too long').optional();
-const paymentMethodSchema = z.string().max(60).optional();
-const idempotencyKeySchema = z.string().min(8).max(128).optional();
+const noteSchema = z.string().max(1000, 'Note is too long').optional()
+const paymentMethodSchema = z.string().max(60).optional()
+const idempotencyKeySchema = z.string().min(8).max(128).optional()
 
-const accountIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Select a valid account');
+const accountIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Select a valid account')
 const optionalObjectId = z
   .string()
   .regex(/^[0-9a-fA-F]{24}$/, 'Invalid id')
-  .optional();
+  .optional()
 
 export const ledgerIncomeSchema = z.object({
   type: z.literal('income'),
@@ -94,7 +94,7 @@ export const ledgerIncomeSchema = z.object({
   paymentMethod: paymentMethodSchema,
   note: noteSchema,
   idempotencyKey: idempotencyKeySchema,
-});
+})
 
 export const ledgerExpenseSchema = z.object({
   type: z.literal('expense'),
@@ -105,7 +105,7 @@ export const ledgerExpenseSchema = z.object({
   paymentMethod: paymentMethodSchema,
   note: noteSchema,
   idempotencyKey: idempotencyKeySchema,
-});
+})
 
 export const ledgerTransferSchema = z.object({
   type: z.literal('transfer'),
@@ -115,7 +115,7 @@ export const ledgerTransferSchema = z.object({
   toAccountId: accountIdSchema,
   note: noteSchema,
   idempotencyKey: idempotencyKeySchema,
-});
+})
 
 export const ledgerPartnerCapitalSchema = z.object({
   type: z.literal('partner_capital'),
@@ -127,7 +127,7 @@ export const ledgerPartnerCapitalSchema = z.object({
   paymentMethod: paymentMethodSchema,
   note: noteSchema,
   idempotencyKey: idempotencyKeySchema,
-});
+})
 
 export const ledgerPartnerWithdrawalSchema = z.object({
   type: z.literal('partner_withdrawal'),
@@ -139,7 +139,7 @@ export const ledgerPartnerWithdrawalSchema = z.object({
   paymentMethod: paymentMethodSchema,
   note: noteSchema,
   idempotencyKey: idempotencyKeySchema,
-});
+})
 
 export const ledgerReinvestmentSchema = z.object({
   type: z.literal('reinvestment'),
@@ -148,7 +148,7 @@ export const ledgerReinvestmentSchema = z.object({
   accountId: optionalObjectId,
   note: noteSchema,
   idempotencyKey: idempotencyKeySchema,
-});
+})
 
 export const ledgerEntrySchema = z.discriminatedUnion('type', [
   ledgerIncomeSchema,
@@ -157,12 +157,12 @@ export const ledgerEntrySchema = z.discriminatedUnion('type', [
   ledgerPartnerCapitalSchema,
   ledgerPartnerWithdrawalSchema,
   ledgerReinvestmentSchema,
-]);
+])
 
 export const reverseTransactionSchema = z.object({
   reason: z.string().max(500, 'Reason is too long').optional(),
   idempotencyKey: idempotencyKeySchema,
-});
+})
 
 export const accountCreateSchema = z.object({
   name: z.string().min(1, 'Name is required').max(120),
@@ -174,7 +174,7 @@ export const accountCreateSchema = z.object({
     .int('Opening balance must be a whole number of paisa')
     .default(0),
   note: z.string().max(500).optional(),
-});
+})
 
 export const accountUpdateSchema = z.object({
   name: z.string().min(1, 'Name is required').max(120).optional(),
@@ -182,7 +182,7 @@ export const accountUpdateSchema = z.object({
   openingBalance: z.number().int('Opening balance must be a whole number of paisa').optional(),
   isActive: z.boolean().optional(),
   note: z.string().max(500).optional(),
-});
+})
 
 export const categoryCreateSchema = z.object({
   name: z
@@ -194,12 +194,12 @@ export const categoryCreateSchema = z.object({
   type: z.enum(['expense', 'income'], {
     errorMap: () => ({ message: 'Type must be expense or income' }),
   }),
-});
+})
 
 export const categoryUpdateSchema = z.object({
   label: z.string().min(1).max(120).optional(),
   isActive: z.boolean().optional(),
-});
+})
 
 /**
  * One partner's profit-sharing configuration. Percentages are whole numbers:
@@ -211,17 +211,17 @@ export const profitSharePartnerSchema = z.object({
   name: z.string().trim().min(1, 'Partner name is required').max(120),
   percentage: z.number().int('Share must be a whole percentage').min(0).max(100),
   reinvestPercentage: z.number().int('Reinvestment must be a whole percentage').min(0).max(100),
-});
+})
 
 export const profitSharingSchema = z.object({
   partners: z.array(profitSharePartnerSchema).min(1, 'At least one partner is required').max(12),
   charityPercentage: z.number().int('Charity must be a whole percentage').min(0).max(100),
-});
+})
 
 export const budgetThresholdsSchema = z.object({
   warning: z.number().int('Warning threshold must be a whole percent').min(1).max(500),
   critical: z.number().int('Critical threshold must be a whole percent').min(1).max(500),
-});
+})
 
 /**
  * PATCH /api/finance/settings body. `withdrawalLockedUntil` is a required key:
@@ -244,10 +244,18 @@ export const businessSettingsUpdateSchema = z.object({
    */
   allowNegativeStock: z.boolean().optional(),
   purchasingAccountId: z
-    .union([z.string().regex(/^[0-9a-fA-F]{24}$/, 'Must be a valid account id'), z.literal(''), z.null()])
+    .union([
+      z.string().regex(/^[0-9a-fA-F]{24}$/, 'Must be a valid account id'),
+      z.literal(''),
+      z.null(),
+    ])
     .optional(),
   salesIncomeAccountId: z
-    .union([z.string().regex(/^[0-9a-fA-F]{24}$/, 'Must be a valid account id'), z.literal(''), z.null()])
+    .union([
+      z.string().regex(/^[0-9a-fA-F]{24}$/, 'Must be a valid account id'),
+      z.literal(''),
+      z.null(),
+    ])
     .optional(),
   /*
    * Phase 6: how long a task-comment author has to edit or soft-delete their
@@ -256,13 +264,9 @@ export const businessSettingsUpdateSchema = z.object({
    * can never edit after posting" — legitimate for audit-heavy workspaces.
    */
   commentEditWindowMinutes: z
-    .union([
-      z.number().int().min(0).max(1440),
-      z.literal(null),
-      z.literal(''),
-    ])
+    .union([z.number().int().min(0).max(1440), z.literal(null), z.literal('')])
     .optional(),
-});
+})
 
 export const transactionQuerySchema = z.object({
   page: z
@@ -282,11 +286,11 @@ export const transactionQuerySchema = z.object({
   search: z.string().max(120).optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
-});
+})
 
-export type LedgerEntryInput = z.infer<typeof ledgerEntrySchema>;
-export type AccountCreateInput = z.infer<typeof accountCreateSchema>;
-export type AccountUpdateInput = z.infer<typeof accountUpdateSchema>;
-export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>;
-export type CategoryUpdateInput = z.infer<typeof categoryUpdateSchema>;
-export type TransactionQuery = z.infer<typeof transactionQuerySchema>;
+export type LedgerEntryInput = z.infer<typeof ledgerEntrySchema>
+export type AccountCreateInput = z.infer<typeof accountCreateSchema>
+export type AccountUpdateInput = z.infer<typeof accountUpdateSchema>
+export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>
+export type CategoryUpdateInput = z.infer<typeof categoryUpdateSchema>
+export type TransactionQuery = z.infer<typeof transactionQuerySchema>

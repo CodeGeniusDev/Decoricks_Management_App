@@ -160,11 +160,20 @@ export const ensureAuthIndexes = async (db: Db): Promise<void> => {
     // SPEC §3.1.2
     getRoleCollection(db).createIndex({ name: 1 }, { unique: true, name: 'roles_name_unique' }),
 
-    getSessionCollection(db).createIndex({ tokenHash: 1 }, { unique: true, name: 'sessions_tokenHash' }),
-    getSessionCollection(db).createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: 'sessions_ttl' }),
+    getSessionCollection(db).createIndex(
+      { tokenHash: 1 },
+      { unique: true, name: 'sessions_tokenHash' }
+    ),
+    getSessionCollection(db).createIndex(
+      { expiresAt: 1 },
+      { expireAfterSeconds: 0, name: 'sessions_ttl' }
+    ),
     getSessionCollection(db).createIndex({ userId: 1 }, { name: 'sessions_userId' }),
 
-    getLoginAttemptCollection(db).createIndex({ identifier: 1, createdAt: -1 }, { name: 'loginAttempts_lookup' }),
+    getLoginAttemptCollection(db).createIndex(
+      { identifier: 1, createdAt: -1 },
+      { name: 'loginAttempts_lookup' }
+    ),
 
     // SPEC §3.1.19
     getAuditLogCollection(db).createIndex({ userId: 1 }, { name: 'audit_userId' }),
@@ -174,8 +183,9 @@ export const ensureAuthIndexes = async (db: Db): Promise<void> => {
   ])
 }
 
-export const requiresPasswordChange = (user: Pick<User, 'mustChangePassword' | 'passwordResetAt'>): boolean =>
-  user.mustChangePassword === true || Boolean(user.passwordResetAt)
+export const requiresPasswordChange = (
+  user: Pick<User, 'mustChangePassword' | 'passwordResetAt'>
+): boolean => user.mustChangePassword === true || Boolean(user.passwordResetAt)
 
 export const userToJSON = (user: User) => {
   return {

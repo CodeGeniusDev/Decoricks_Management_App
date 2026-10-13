@@ -185,10 +185,8 @@ export default function TasksBoardPage() {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
   const activeTaskRef = useRef<TaskDto | null>(null)
 
-  const showToast = (
-    kind: 'success' | 'error' | 'info' | 'warning',
-    message: string
-  ) => setToast({ kind, message })
+  const showToast = (kind: 'success' | 'error' | 'info' | 'warning', message: string) =>
+    setToast({ kind, message })
 
   const loadBoards = useCallback(async () => {
     setLoadingBoards(true)
@@ -308,12 +306,7 @@ export default function TasksBoardPage() {
   // the network comes back — but never while a modal is open or a drag is in
   // progress. That's what preserves "open drawer + in-flight drag" state.
   usePolling(
-    () =>
-      view === 'board'
-        ? boardId
-          ? loadBoard(boardId)
-          : Promise.resolve()
-        : loadList(),
+    () => (view === 'board' ? (boardId ? loadBoard(boardId) : Promise.resolve()) : loadList()),
     { paused: modalOpen || columnModalOpen || activeTaskId !== null }
   )
 
@@ -441,7 +434,9 @@ export default function TasksBoardPage() {
       const moved: TaskDto = { ...task, columnId: toColumnId }
       setDetail((current) => {
         if (!current) return current
-        const fromList = (current.tasksByColumn[task.columnId] ?? []).filter((t) => t._id !== task._id)
+        const fromList = (current.tasksByColumn[task.columnId] ?? []).filter(
+          (t) => t._id !== task._id
+        )
         const toList = [...(current.tasksByColumn[toColumnId] ?? [])]
         // Filter out the task if it was already in the destination column
         // (in-column reorder case) before inserting at the target index.
@@ -496,7 +491,11 @@ export default function TasksBoardPage() {
 
   const archiveTask = async (task: TaskDto) => {
     if (!boardId) return
-    if (!window.confirm(`Archive "${task.title}"? It will disappear from the board but stay in history.`))
+    if (
+      !window.confirm(
+        `Archive "${task.title}"? It will disappear from the board but stay in history.`
+      )
+    )
       return
     try {
       const res = await apiFetch(`/api/tasks/${task._id}`, { method: 'DELETE' })
@@ -689,13 +688,19 @@ export default function TasksBoardPage() {
           <Select
             value={filterLabelId}
             onChange={(e) => setFilterLabelId(e.target.value)}
-            options={[{ value: '', label: 'All labels' }, ...labels.map((l) => ({ value: l._id, label: l.name }))]}
+            options={[
+              { value: '', label: 'All labels' },
+              ...labels.map((l) => ({ value: l._id, label: l.name })),
+            ]}
             aria-label="Filter by label"
           />
           <Select
             value={filterAssigneeId}
             onChange={(e) => setFilterAssigneeId(e.target.value)}
-            options={[{ value: '', label: 'All members' }, ...users.map((u) => ({ value: u._id, label: u.name }))]}
+            options={[
+              { value: '', label: 'All members' },
+              ...users.map((u) => ({ value: u._id, label: u.name })),
+            ]}
             aria-label="Filter by assignee"
             disabled={users.length === 0}
           />
@@ -711,7 +716,10 @@ export default function TasksBoardPage() {
             <Skeleton className="h-64" />
           </div>
         ) : detail.columns.length === 0 ? (
-          <EmptyState title="No columns" description="The Founder can add the first column to this board." />
+          <EmptyState
+            title="No columns"
+            description="The Founder can add the first column to this board."
+          />
         ) : (
           <DndContext
             sensors={sensors}
@@ -741,9 +749,9 @@ export default function TasksBoardPage() {
             <BoardDragOverlay
               task={
                 activeTaskId
-                  ? detail.tasksByColumn[
-                      findTask(activeTaskId)?.columnId ?? ''
-                    ]?.find((t) => t._id === activeTaskId) ?? null
+                  ? (detail.tasksByColumn[findTask(activeTaskId)?.columnId ?? '']?.find(
+                      (t) => t._id === activeTaskId
+                    ) ?? null)
                   : null
               }
             />
@@ -795,7 +803,10 @@ export default function TasksBoardPage() {
           <Tabs
             tabs={[
               { id: 'details', label: 'Details' },
-              { id: 'discussion', label: `Discussion${detailComments.length ? ` (${detailComments.length})` : ''}` },
+              {
+                id: 'discussion',
+                label: `Discussion${detailComments.length ? ` (${detailComments.length})` : ''}`,
+              },
             ]}
           >
             {(tab) =>
@@ -827,9 +838,7 @@ export default function TasksBoardPage() {
                       onChange={(e) => setDraft({ ...draft, dueDate: e.target.value })}
                     />
                   </div>
-                  {detailLoading && (
-                    <p className="text-xs text-ink-muted">Loading discussion…</p>
-                  )}
+                  {detailLoading && <p className="text-xs text-ink-muted">Loading discussion…</p>}
                 </div>
               ) : (
                 <TaskDetailPanel
@@ -1015,11 +1024,7 @@ function TaskCard(props: TaskCardProps) {
         >
           <DragGrip />
         </button>
-        <button
-          type="button"
-          className="block flex-1 text-left"
-          onClick={() => props.onEdit(task)}
-        >
+        <button type="button" className="block flex-1 text-left" onClick={() => props.onEdit(task)}>
           <p className="text-sm font-medium text-decoricks-dark">{task.title}</p>
           {task.taskNumber && (
             <p className="mt-0.5 text-xs text-ink-muted tabular-nums">{task.taskNumber}</p>
@@ -1030,11 +1035,7 @@ function TaskCard(props: TaskCardProps) {
         <Badge
           size="sm"
           variant={
-            task.priority === 'urgent'
-              ? 'error'
-              : task.priority === 'high'
-                ? 'warning'
-                : 'default'
+            task.priority === 'urgent' ? 'error' : task.priority === 'high' ? 'warning' : 'default'
           }
         >
           {PRIORITY_LABEL[task.priority]}
@@ -1056,7 +1057,12 @@ function TaskCard(props: TaskCardProps) {
           aria-label="Move task to another column"
         />
         {canArchive && (
-          <Button variant="ghost" size="sm" onClick={() => props.onArchive(task)} aria-label="Archive task">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => props.onArchive(task)}
+            aria-label="Archive task"
+          >
             Archive
           </Button>
         )}
@@ -1078,7 +1084,9 @@ function BoardDragOverlay({ task }: { task: TaskDto | null }) {
       aria-hidden="true"
     >
       <p className="text-sm font-medium text-decoricks-dark">{task.title}</p>
-      {task.taskNumber && <p className="mt-0.5 text-xs text-ink-muted tabular-nums">{task.taskNumber}</p>}
+      {task.taskNumber && (
+        <p className="mt-0.5 text-xs text-ink-muted tabular-nums">{task.taskNumber}</p>
+      )}
     </div>
   )
 }

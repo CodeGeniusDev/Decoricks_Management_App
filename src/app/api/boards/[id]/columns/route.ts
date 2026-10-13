@@ -31,7 +31,8 @@ async function __POST(request: NextRequest, context: RouteContext) {
     const auth = await requireFounder()
 
     const { id } = await context.params
-    if (!isObjectId(id)) return validationError('Invalid board id', [{ path: 'id', message: 'Malformed' }])
+    if (!isObjectId(id))
+      return validationError('Invalid board id', [{ path: 'id', message: 'Malformed' }])
 
     const parsed = columnCreateSchema.safeParse(await request.json())
     if (!parsed.success) {
@@ -41,7 +42,9 @@ async function __POST(request: NextRequest, context: RouteContext) {
       )
     }
     if (parsed.data.boardId !== id) {
-      return validationError('boardId mismatch', [{ path: 'boardId', message: 'Does not match URL' }])
+      return validationError('boardId mismatch', [
+        { path: 'boardId', message: 'Does not match URL' },
+      ])
     }
 
     const db = await getDatabase()
@@ -59,15 +62,19 @@ async function __POST(request: NextRequest, context: RouteContext) {
     let position: number
     if (anchorId) {
       const anchor = await columns.findOne({ _id: new ObjectId(anchorId), boardId } as never)
-      if (!anchor) return validationError('Unknown column', [{ path: 'afterColumnId', message: 'Not in this board' }])
+      if (!anchor)
+        return validationError('Unknown column', [
+          { path: 'afterColumnId', message: 'Not in this board' },
+        ])
       const next = await columns
         .find({ boardId, position: { $gt: anchor.position } } as never)
         .sort({ position: 1 })
         .limit(1)
         .toArray()
-      position = next.length > 0
-        ? Math.floor((anchor.position + next[0].position) / 2)
-        : anchor.position + POSITION_GAP
+      position =
+        next.length > 0
+          ? Math.floor((anchor.position + next[0].position) / 2)
+          : anchor.position + POSITION_GAP
     } else {
       const last = await columns
         .find({ boardId } as never)

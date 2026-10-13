@@ -1,20 +1,20 @@
-'use client';
+'use client'
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
-import { Input } from '@/components/ui/Input';
-import { Select } from '@/components/ui/Select';
-import { Checkbox } from '@/components/ui/Checkbox';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { ErrorState } from '@/components/ui/ErrorState';
-import { Toast } from '@/components/ui/Toast';
-import { apiJson, ApiError } from '@/lib/api-client';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { can } from '@/lib/permissions-client';
-import { fieldIssues } from '@/modules/finance/finance-ui';
-import { IconPlus } from '@/components/ui/icons';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
+import { Checkbox } from '@/components/ui/Checkbox'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { Toast } from '@/components/ui/Toast'
+import { apiJson, ApiError } from '@/lib/api-client'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { can } from '@/lib/permissions-client'
+import { fieldIssues } from '@/modules/finance/finance-ui'
+import { IconPlus } from '@/components/ui/icons'
 
 /**
  * Business Settings — the configurable policy behind every Phase 4 number
@@ -29,36 +29,36 @@ import { IconPlus } from '@/components/ui/icons';
  */
 
 interface PartnerRow {
-  name: string;
-  percentage: string;
-  reinvestPercentage: string;
-  userId?: string;
+  name: string
+  percentage: string
+  reinvestPercentage: string
+  userId?: string
   /** Client-only stable identity for React keys — rows are added/removed mid-list. */
-  rowId: string;
+  rowId: string
 }
 
 /** The API shape: integer percentages, not form strings. */
 interface ApiPartner {
-  name: string;
-  percentage: number;
-  reinvestPercentage: number;
-  userId?: string;
+  name: string
+  percentage: number
+  reinvestPercentage: number
+  userId?: string
 }
 
 interface SettingsView {
-  withdrawalLockedUntil: string | null;
-  withdrawalLockedUntilDisplay: string | null;
-  withdrawalsLocked: boolean;
-  profitSharing: { partners: ApiPartner[]; charityPercentage: number };
-  budgetThresholds: { warning: number; critical: number };
-  policyConfigured: boolean;
+  withdrawalLockedUntil: string | null
+  withdrawalLockedUntilDisplay: string | null
+  withdrawalsLocked: boolean
+  profitSharing: { partners: ApiPartner[]; charityPercentage: number }
+  budgetThresholds: { warning: number; critical: number }
+  policyConfigured: boolean
   /** Phase 5: the Founder-only guard that lets a stock write go below zero. */
-  inventory: { allowNegativeStock: boolean };
+  inventory: { allowNegativeStock: boolean }
   /** Where purchase expenses and COD income land unless a flow names an account. */
-  postingAccounts: { purchasingAccountId: string | null; salesIncomeAccountId: string | null };
+  postingAccounts: { purchasingAccountId: string | null; salesIncomeAccountId: string | null }
   /** Phase 6: how long a comment author may still edit or delete a comment. */
-  taskComments: { editWindowMinutes: number; editWindowConfigured: boolean };
-  accountOptions: Array<{ id: string; name: string; kind: string }>;
+  taskComments: { editWindowMinutes: number; editWindowConfigured: boolean }
+  accountOptions: Array<{ id: string; name: string; kind: string }>
 }
 
 const toRow = (p: ApiPartner): PartnerRow => ({
@@ -67,78 +67,80 @@ const toRow = (p: ApiPartner): PartnerRow => ({
   reinvestPercentage: String(p.reinvestPercentage),
   userId: p.userId,
   rowId: crypto.randomUUID(),
-});
+})
 
 const DEFAULT_ROWS: PartnerRow[] = [
   { name: 'Partner 1', percentage: '20', reinvestPercentage: '0', rowId: crypto.randomUUID() },
-];
+]
 
 export function BusinessSettingsTab() {
-  const { user } = useAuth();
-  const canWrite = user ? can({ role: user.role }, 'finance', 'approve') : false;
+  const { user } = useAuth()
+  const canWrite = user ? can({ role: user.role }, 'finance', 'approve') : false
 
-  const [view, setView] = useState<SettingsView | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const savingRef = useRef(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [view, setView] = useState<SettingsView | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   // Form state, seeded from the API on load / save.
-  const [partners, setPartners] = useState<PartnerRow[]>(DEFAULT_ROWS);
-  const [charity, setCharity] = useState('20');
-  const [warning, setWarning] = useState('80');
-  const [critical, setCritical] = useState('100');
-  const [lockDate, setLockDate] = useState('');
-  const [allowNegative, setAllowNegative] = useState(false);
-  const [purchasingAccount, setPurchasingAccount] = useState('');
-  const [incomeAccount, setIncomeAccount] = useState('');
+  const [partners, setPartners] = useState<PartnerRow[]>(DEFAULT_ROWS)
+  const [charity, setCharity] = useState('20')
+  const [warning, setWarning] = useState('80')
+  const [critical, setCritical] = useState('100')
+  const [lockDate, setLockDate] = useState('')
+  const [allowNegative, setAllowNegative] = useState(false)
+  const [purchasingAccount, setPurchasingAccount] = useState('')
+  const [incomeAccount, setIncomeAccount] = useState('')
   // Phase 6: comment edit window (minutes). Kept as a string so an empty
   // input cleanly means "clear the override, fall back to the default".
-  const [commentWindow, setCommentWindow] = useState('');
-  const [issues, setIssues] = useState<Record<string, string>>({});
+  const [commentWindow, setCommentWindow] = useState('')
+  const [issues, setIssues] = useState<Record<string, string>>({})
 
   const seed = useCallback((next: SettingsView) => {
-    setPartners(next.profitSharing.partners.length > 0 ? next.profitSharing.partners.map(toRow) : DEFAULT_ROWS);
-    setCharity(String(next.profitSharing.charityPercentage));
-    setWarning(String(next.budgetThresholds.warning));
-    setCritical(String(next.budgetThresholds.critical));
-    setLockDate(next.withdrawalLockedUntil ?? '');
-    setAllowNegative(next.inventory?.allowNegativeStock ?? false);
-    setPurchasingAccount(next.postingAccounts?.purchasingAccountId ?? '');
-    setIncomeAccount(next.postingAccounts?.salesIncomeAccountId ?? '');
+    setPartners(
+      next.profitSharing.partners.length > 0 ? next.profitSharing.partners.map(toRow) : DEFAULT_ROWS
+    )
+    setCharity(String(next.profitSharing.charityPercentage))
+    setWarning(String(next.budgetThresholds.warning))
+    setCritical(String(next.budgetThresholds.critical))
+    setLockDate(next.withdrawalLockedUntil ?? '')
+    setAllowNegative(next.inventory?.allowNegativeStock ?? false)
+    setPurchasingAccount(next.postingAccounts?.purchasingAccountId ?? '')
+    setIncomeAccount(next.postingAccounts?.salesIncomeAccountId ?? '')
     // Only seed the input when the Founder has actually saved a value; the
     // resolved default (15) is shown as placeholder copy, never as an input
     // value — otherwise pressing Save would silently persist an override.
     setCommentWindow(
       next.taskComments?.editWindowConfigured ? String(next.taskComments.editWindowMinutes) : ''
-    );
-    setIssues({});
-  }, []);
+    )
+    setIssues({})
+  }, [])
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
-      const next = await apiJson<SettingsView>('/api/finance/settings');
-      setView(next);
-      seed(next);
+      const next = await apiJson<SettingsView>('/api/finance/settings')
+      setView(next)
+      seed(next)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load business settings');
+      setError(err instanceof Error ? err.message : 'Failed to load business settings')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, [seed]);
+  }, [seed])
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load()
+  }, [load])
 
   const partnerTotal = useMemo(
     () => partners.reduce((sum, p) => sum + (Number.parseInt(p.percentage, 10) || 0), 0),
     [partners]
-  );
-  const charityValue = Number.parseInt(charity, 10) || 0;
+  )
+  const charityValue = Number.parseInt(charity, 10) || 0
 
   /*
    * One empty option meaning "not configured": the flows then fall back to the
@@ -153,68 +155,79 @@ export function BusinessSettingsTab() {
       })),
     ],
     [view]
-  );
+  )
 
   const validate = (): Record<string, string> => {
-    const errors: Record<string, string> = {};
-    const names = new Set<string>();
+    const errors: Record<string, string> = {}
+    const names = new Set<string>()
     partners.forEach((partner, index) => {
-      const name = partner.name.trim();
-      if (!name) errors[`name-${index}`] = 'Name is required';
-      else if (names.has(name.toLowerCase())) errors[`name-${index}`] = 'Duplicate partner';
-      else names.add(name.toLowerCase());
+      const name = partner.name.trim()
+      if (!name) errors[`name-${index}`] = 'Name is required'
+      else if (names.has(name.toLowerCase())) errors[`name-${index}`] = 'Duplicate partner'
+      else names.add(name.toLowerCase())
       for (const [field, value] of [
         ['percentage', partner.percentage],
         ['reinvestPercentage', partner.reinvestPercentage],
       ] as const) {
-        const parsed = Number(value);
-        if (!/^\d+$/.test(value.trim()) || !Number.isInteger(parsed) || parsed < 0 || parsed > 100) {
-          errors[`${field}-${index}`] = 'Whole number 0–100';
+        const parsed = Number(value)
+        if (
+          !/^\d+$/.test(value.trim()) ||
+          !Number.isInteger(parsed) ||
+          parsed < 0 ||
+          parsed > 100
+        ) {
+          errors[`${field}-${index}`] = 'Whole number 0–100'
         }
       }
-    });
-    if (partners.length === 0) errors.partners = 'At least one partner is required';
-    if (partnerTotal > 100) errors.partners = `Partner percentages sum to ${partnerTotal}% (max 100%)`;
+    })
+    if (partners.length === 0) errors.partners = 'At least one partner is required'
+    if (partnerTotal > 100)
+      errors.partners = `Partner percentages sum to ${partnerTotal}% (max 100%)`
     if (!/^\d+$/.test(charity.trim()) || charityValue < 0 || charityValue > 100) {
-      errors.charity = 'Whole number 0–100';
+      errors.charity = 'Whole number 0–100'
     } else if (partnerTotal + charityValue > 100) {
-      errors.charity = `Partners (${partnerTotal}%) + charity (${charityValue}%) exceed 100%`;
+      errors.charity = `Partners (${partnerTotal}%) + charity (${charityValue}%) exceed 100%`
     }
     for (const [label, value, key] of [
       ['warning', warning, 'warning'],
       ['critical', critical, 'critical'],
     ] as const) {
-      const parsed = Number(value);
+      const parsed = Number(value)
       if (!/^\d+$/.test(value.trim()) || parsed < 1 || parsed > 500) {
-        errors[key] = `Whole percent 1–500 (${label})`;
+        errors[key] = `Whole percent 1–500 (${label})`
       }
     }
     if (!errors.warning && !errors.critical && Number(warning) > Number(critical)) {
-      errors.warning = 'Warning must be at or below critical';
+      errors.warning = 'Warning must be at or below critical'
     }
     // Phase 6: comment edit window. Empty means "use the 15-minute default";
     // any other value must be a whole number 0–1440 (a day).
-    const trimmedWindow = commentWindow.trim();
+    const trimmedWindow = commentWindow.trim()
     if (trimmedWindow !== '') {
-      const parsed = Number(trimmedWindow);
-      if (!/^\d+$/.test(trimmedWindow) || !Number.isInteger(parsed) || parsed < 0 || parsed > 1440) {
-        errors.commentEditWindowMinutes = 'Whole number 0–1440 (minutes), or leave empty for 15';
+      const parsed = Number(trimmedWindow)
+      if (
+        !/^\d+$/.test(trimmedWindow) ||
+        !Number.isInteger(parsed) ||
+        parsed < 0 ||
+        parsed > 1440
+      ) {
+        errors.commentEditWindowMinutes = 'Whole number 0–1440 (minutes), or leave empty for 15'
       }
     }
-    return errors;
-  };
+    return errors
+  }
 
   const save = async () => {
-    if (savingRef.current) return;
-    const local = validate();
-    setIssues(local);
+    if (savingRef.current) return
+    const local = validate()
+    setIssues(local)
     if (Object.keys(local).length > 0) {
-      setToast({ type: 'error', message: 'Fix the highlighted fields before saving' });
-      return;
+      setToast({ type: 'error', message: 'Fix the highlighted fields before saving' })
+      return
     }
 
-    savingRef.current = true;
-    setSaving(true);
+    savingRef.current = true
+    setSaving(true)
     try {
       // withdrawalLockedUntil is a required key: '' clears the lock instead of
       // a partial body silently wiping it. The backend validates again — server
@@ -241,23 +254,26 @@ export function BusinessSettingsTab() {
           commentEditWindowMinutes:
             commentWindow.trim() === '' ? null : Number.parseInt(commentWindow, 10),
         }),
-      });
-      setView(updated);
-      seed(updated);
-      setToast({ type: 'success', message: 'Business settings saved. Every screen now uses the new policy.' });
+      })
+      setView(updated)
+      seed(updated)
+      setToast({
+        type: 'success',
+        message: 'Business settings saved. Every screen now uses the new policy.',
+      })
     } catch (err) {
       if (err instanceof ApiError) {
-        const serverIssues = fieldIssues(err.details);
-        if (Object.keys(serverIssues).length > 0) setIssues(serverIssues);
-        setToast({ type: 'error', message: err.message });
+        const serverIssues = fieldIssues(err.details)
+        if (Object.keys(serverIssues).length > 0) setIssues(serverIssues)
+        setToast({ type: 'error', message: err.message })
       } else {
-        setToast({ type: 'error', message: 'Could not save business settings' });
+        setToast({ type: 'error', message: 'Could not save business settings' })
       }
     } finally {
-      savingRef.current = false;
-      setSaving(false);
+      savingRef.current = false
+      setSaving(false)
     }
-  };
+  }
 
   if (loading) {
     return (
@@ -265,7 +281,7 @@ export function BusinessSettingsTab() {
         <Skeleton variant="rect" className="h-40" />
         <Skeleton variant="rect" className="h-64" />
       </div>
-    );
+    )
   }
 
   if (error || !view) {
@@ -277,7 +293,7 @@ export function BusinessSettingsTab() {
           action={{ label: 'Retry', onClick: () => void load() }}
         />
       </Card>
-    );
+    )
   }
 
   return (
@@ -294,8 +310,8 @@ export function BusinessSettingsTab() {
             <Badge variant="warning">Defaults in use</Badge>
             <p className="text-sm text-ink-secondary">
               The Founder has never saved a profit-sharing policy here, so the engines are using the
-              SPEC.md defaults. Everything below is live policy the moment it is saved — no numbers in
-              the code assume these values.
+              SPEC.md defaults. Everything below is live policy the moment it is saved — no numbers
+              in the code assume these values.
             </p>
           </div>
         </Card>
@@ -312,7 +328,9 @@ export function BusinessSettingsTab() {
           <h2 className="text-lg font-semibold text-decoricks-dark">Profit sharing</h2>
           <span
             className={`text-sm tabular-nums ${
-              partnerTotal + charityValue <= 100 ? 'text-ink-muted' : 'font-semibold text-status-danger'
+              partnerTotal + charityValue <= 100
+                ? 'text-ink-muted'
+                : 'font-semibold text-status-danger'
             }`}
           >
             Partners {partnerTotal}% + charity {charityValue}% = {partnerTotal + charityValue}%
@@ -331,7 +349,9 @@ export function BusinessSettingsTab() {
                   value={partner.name}
                   readOnly={!canWrite}
                   onChange={(e) =>
-                    setPartners((prev) => prev.map((p, i) => (i === index ? { ...p, name: e.target.value } : p)))
+                    setPartners((prev) =>
+                      prev.map((p, i) => (i === index ? { ...p, name: e.target.value } : p))
+                    )
                   }
                   error={issues[`name-${index}`]}
                 />
@@ -358,7 +378,9 @@ export function BusinessSettingsTab() {
                   readOnly={!canWrite}
                   onChange={(e) =>
                     setPartners((prev) =>
-                      prev.map((p, i) => (i === index ? { ...p, reinvestPercentage: e.target.value } : p))
+                      prev.map((p, i) =>
+                        i === index ? { ...p, reinvestPercentage: e.target.value } : p
+                      )
                     )
                   }
                   error={issues[`reinvestPercentage-${index}`]}
@@ -371,7 +393,9 @@ export function BusinessSettingsTab() {
                   readOnly={!canWrite}
                   onChange={(e) =>
                     setPartners((prev) =>
-                      prev.map((p, i) => (i === index ? { ...p, userId: e.target.value || undefined } : p))
+                      prev.map((p, i) =>
+                        i === index ? { ...p, userId: e.target.value || undefined } : p
+                      )
                     )
                   }
                 />
@@ -419,16 +443,17 @@ export function BusinessSettingsTab() {
           />
         </div>
         <p className="mt-2 text-xs text-ink-muted">
-          Percentages are of net profit. Whatever charity and the partners do not take stays as retained
-          earnings — the distribution screen proves it adds up to 100% exactly, paisa by paisa.
+          Percentages are of net profit. Whatever charity and the partners do not take stays as
+          retained earnings — the distribution screen proves it adds up to 100% exactly, paisa by
+          paisa.
         </p>
       </Card>
 
       <Card className="p-4 sm:p-6">
         <h2 className="mb-1 text-lg font-semibold text-decoricks-dark">Budget warnings</h2>
         <p className="mb-4 text-sm text-ink-secondary">
-          When spend in a budget category passes these percentages of the allocation, the budget turns a
-          warning — now on screen, later in the notification module.
+          When spend in a budget category passes these percentages of the allocation, the budget
+          turns a warning — now on screen, later in the notification module.
         </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
@@ -483,10 +508,10 @@ export function BusinessSettingsTab() {
       <Card className="p-4 sm:p-6">
         <h2 className="mb-1 text-lg font-semibold text-decoricks-dark">Inventory and sales</h2>
         <p className="mb-4 text-sm text-ink-secondary">
-          Stock is written through the movement ledger. By default a sale, transfer or adjustment that
-          would take a location below zero is refused — that is what keeps the ledger and the physical
-          count honest. Enable the override only when the business genuinely ships before the count is
-          entered.
+          Stock is written through the movement ledger. By default a sale, transfer or adjustment
+          that would take a location below zero is refused — that is what keeps the ledger and the
+          physical count honest. Enable the override only when the business genuinely ships before
+          the count is entered.
         </p>
 
         <div className="space-y-4">
@@ -522,8 +547,8 @@ export function BusinessSettingsTab() {
             />
           </div>
           <p className="text-xs text-ink-muted">
-            Purchase costs and delivered-order COD income are posted to these accounts unless a specific
-            entry names another one. Nothing here changes what the ledger already recorded.
+            Purchase costs and delivered-order COD income are posted to these accounts unless a
+            specific entry names another one. Nothing here changes what the ledger already recorded.
           </p>
         </div>
       </Card>
@@ -531,9 +556,9 @@ export function BusinessSettingsTab() {
       <Card className="p-4 sm:p-6">
         <h2 className="mb-1 text-lg font-semibold text-decoricks-dark">Task comments</h2>
         <p className="mb-4 text-sm text-ink-secondary">
-          How long an author may still edit or delete a comment after posting it on a task card. Bigger
-          windows are friendlier; shorter ones are safer for audit-heavy workspaces. Deletes are always
-          soft — the row stays in the history, the body is redacted.
+          How long an author may still edit or delete a comment after posting it on a task card.
+          Bigger windows are friendlier; shorter ones are safer for audit-heavy workspaces. Deletes
+          are always soft — the row stays in the history, the body is redacted.
         </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="sm:w-56">
@@ -552,9 +577,7 @@ export function BusinessSettingsTab() {
           </div>
           <div className="pb-2">
             {view.taskComments.editWindowConfigured ? (
-              <Badge variant="default">
-                Saved: {view.taskComments.editWindowMinutes} min
-              </Badge>
+              <Badge variant="default">Saved: {view.taskComments.editWindowMinutes} min</Badge>
             ) : (
               <Badge variant="warning">Using 15-minute default</Badge>
             )}
@@ -574,5 +597,5 @@ export function BusinessSettingsTab() {
         </div>
       )}
     </div>
-  );
+  )
 }

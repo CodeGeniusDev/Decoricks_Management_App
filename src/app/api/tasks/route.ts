@@ -11,10 +11,7 @@ import {
   taskToJSON,
   type TaskDoc,
 } from '@/lib/models/Tasks'
-import {
-  taskCreateSchema,
-  taskListQuerySchema,
-} from '@/lib/schemas/tasks'
+import { taskCreateSchema, taskListQuerySchema } from '@/lib/schemas/tasks'
 import {
   computePosition,
   createTaskNumber,
@@ -73,7 +70,10 @@ async function __GET(request: NextRequest) {
     }
     if (q.search) {
       const safe = q.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      filter.$or = [{ title: { $regex: safe, $options: 'i' } }, { taskNumber: { $regex: safe, $options: 'i' } }]
+      filter.$or = [
+        { title: { $regex: safe, $options: 'i' } },
+        { taskNumber: { $regex: safe, $options: 'i' } },
+      ]
     }
     if (q.overdue === 'true') {
       filter.dueDate = { $lt: new Date(), $ne: null }
@@ -89,7 +89,12 @@ async function __GET(request: NextRequest) {
     const skip = (q.page - 1) * q.limit
     const col = getTaskDocCollection(db)
     const [docs, total] = await Promise.all([
-      col.find(filter as never).sort({ boardId: 1, position: 1 }).skip(skip).limit(q.limit).toArray(),
+      col
+        .find(filter as never)
+        .sort({ boardId: 1, position: 1 })
+        .skip(skip)
+        .limit(q.limit)
+        .toArray(),
       col.countDocuments(filter as never),
     ])
 
@@ -140,7 +145,11 @@ async function __POST(request: NextRequest) {
       if (existing) return successResponse(taskToJSON(existing))
     }
 
-    const position = await computePosition(col, columnId, parsed.data.afterTaskId ? new ObjectId(parsed.data.afterTaskId) : null)
+    const position = await computePosition(
+      col,
+      columnId,
+      parsed.data.afterTaskId ? new ObjectId(parsed.data.afterTaskId) : null
+    )
     await renumberColumnIfTight(db, columnId)
 
     const now = new Date()

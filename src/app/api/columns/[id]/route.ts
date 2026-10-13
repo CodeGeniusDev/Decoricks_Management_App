@@ -3,11 +3,7 @@ import { ObjectId } from 'mongodb'
 import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
 import { requireFounder } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
-import {
-  columnToJSON,
-  getColumnCollection,
-  getTaskDocCollection,
-} from '@/lib/models/Tasks'
+import { columnToJSON, getColumnCollection, getTaskDocCollection } from '@/lib/models/Tasks'
 import { columnUpdateSchema } from '@/lib/schemas/tasks'
 import { recordAuditEntry } from '@/lib/audit'
 import { notFoundError, successResponse, validationError } from '@/lib/api-response'
@@ -32,7 +28,8 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
     const auth = await requireFounder()
 
     const { id } = await context.params
-    if (!isObjectId(id)) return validationError('Invalid column id', [{ path: 'id', message: 'Malformed' }])
+    if (!isObjectId(id))
+      return validationError('Invalid column id', [{ path: 'id', message: 'Malformed' }])
 
     const parsed = columnUpdateSchema.safeParse(await request.json())
     if (!parsed.success) {
@@ -61,11 +58,9 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
       set.isDoneColumn = wantsDone
     }
 
-    const updated = await columns.findOneAndUpdate(
-      { _id } as never,
-      { $set: set } as never,
-      { returnDocument: 'after' }
-    )
+    const updated = await columns.findOneAndUpdate({ _id } as never, { $set: set } as never, {
+      returnDocument: 'after',
+    })
     if (!updated) return notFoundError('Column not found')
 
     // Promote/demote side effects:
