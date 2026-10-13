@@ -406,6 +406,43 @@ export class MemCollection {
     const doc = opts.returnDocument === 'before' ? result.before : result.after
     return doc ? { ...doc } : null
   }
+
+  /**
+   * Minimal unordered bulk API — enough for `renumberColumnIfTight`, which
+   * queues `find(...).updateOne(...)` ops and then `execute()`s them. Each op
+   * is applied through the same synchronous read-modify-write as `updateOne`,
+   * so a test sees the renumbered positions exactly as production would.
+   */
+  initializeUnorderedBulkOp(): MemBulk {
+    return new MemBulk(this)
+  }
+}
+
+class MemBulk {
+  private readonly ops: Array<{ filter: Doc; update: { $set?: Doc; $inc?: Doc } }> = []
+  private tail: { filter: Doc; update?: { $set?: Doc; $inc?: Doc } } | null = null
+
+  constructor(private readonly col: MemCollection) {}
+
+  find(filter: Doc): MemBulk {
+    if (this.tail?.update) this.ops.push(this.tail as { filter: Doc; update: { $set?: Doc; $inc?: Doc } })
+    this.tail = { filter }
+    return this
+  }
+
+  updateOne(update: { $set?: Doc; $inc?: Doc }): MemBulk {
+    if (!this.tail) throw new Error('mem-mongo: bulk updateOne before find')
+    this.tail.update = update
+    return this
+  }
+
+  async execute(): Promise<{ acknowledged: true }> {
+    if (this.tail?.update) this.ops.push(this.tail as { filter: Doc; update: { $set?: Doc; $inc?: Doc } })
+    for (const op of this.ops) await this.col.updateOne(op.filter, op.update)
+    this.ops.length = 0
+    this.tail = null
+    return { acknowledged: true }
+  }
 }
 
 export interface MemDb {
