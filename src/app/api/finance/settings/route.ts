@@ -9,7 +9,7 @@ import { formatKarachiDate } from '@/lib/date';
 import { businessSettingsUpdateSchema } from '@/lib/schemas/finance';
 import { parseLedgerDate } from '@/lib/finance-ledger';
 import { getBusinessSettingsCollection, getAccountCollection, type BusinessSettings } from '@/lib/models/Ledger';
-import { resolveBusinessPolicy, validateProfitSharing } from '@/lib/business-policy';
+import { resolveBusinessPolicy, validateProfitSharing, resolveCommentEditWindow } from '@/lib/business-policy';
 
 /** The Phase 4 slice of the settings document the UI and engines read. */
 function settingsPayload(settings: BusinessSettings | null) {
@@ -38,6 +38,19 @@ function settingsPayload(settings: BusinessSettings | null) {
     postingAccounts: {
       purchasingAccountId: settings?.purchasingAccountId ? String(settings.purchasingAccountId) : null,
       salesIncomeAccountId: settings?.salesIncomeAccountId ? String(settings.salesIncomeAccountId) : null,
+    },
+    /*
+     * Phase 6: surfaced as the resolved integer, not the raw field, so the UI
+     * can show the effective value (15 by default) even when the Founder has
+     * never set it. The `configured` flag lets the tab hint that the setting
+     * is still on its default without hiding the number.
+     */
+    taskComments: {
+      editWindowMinutes: resolveCommentEditWindow(settings),
+      editWindowConfigured:
+        typeof settings?.commentEditWindowMinutes === 'number' &&
+        Number.isInteger(settings.commentEditWindowMinutes) &&
+        settings.commentEditWindowMinutes >= 0,
     },
   };
 }
@@ -208,6 +221,19 @@ async function __PATCH(request: NextRequest) {
         parsed.data.salesIncomeAccountId === '' || parsed.data.salesIncomeAccountId === null
           ? null
           : new ObjectId(parsed.data.salesIncomeAccountId);
+    }
+    /*
+     * Phase 6: `null` / empty string clears the override and lets the resolver
+     * fall back to the 15-minute default. An explicit integer is stored as-is
+     * (including 0, meaning "the author cannot edit after posting").
+     */
+    if (parsed.data.commentEditWindowMinutes !== undefined) {
+      set.commentEditWindowMinutes =
+        parsed.data.commentEditWindowMinutes === '' || parsed.data.commentEditWindowMinutes === null
+          ? undefined
+          : parsed.data.commentEditWindowMinutes;
+      // `undefined` under $set drops the key entirely — matches the pattern
+      // used by the other optional writers in this file.
     }
 
     await collection.updateOne(

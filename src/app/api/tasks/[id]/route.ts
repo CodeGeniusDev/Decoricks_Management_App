@@ -3,6 +3,8 @@ import { ObjectId } from 'mongodb'
 import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
+import { getBusinessSettingsCollection } from '@/lib/models/Ledger'
+import { resolveCommentEditWindow } from '@/lib/business-policy'
 import {
   getTaskActivityCollection,
   getTaskCommentCollection,
@@ -63,7 +65,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
     const doc = await getTaskDocCollection(db).findOne({ _id } as never)
     if (!doc) return notFoundError('Task not found')
 
-    const [comments, activity] = await Promise.all([
+    const [comments, activity, settings] = await Promise.all([
       getTaskCommentCollection(db)
         .find({ taskId: _id, isDeleted: false } as never)
         .sort({ createdAt: 1 })
@@ -73,6 +75,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
         .sort({ at: -1 })
         .limit(100)
         .toArray(),
+      getBusinessSettingsCollection(db).findOne({ key: 'business' }),
     ])
 
     return successResponse({
@@ -93,6 +96,9 @@ async function __GET(_request: NextRequest, context: RouteContext) {
         changes: a.changes,
         at: a.at,
       })),
+      // Surfaced so the client can grey out Edit/Delete once the window has
+      // closed, without a separate round-trip to /api/finance/settings.
+      editWindowMinutes: resolveCommentEditWindow(settings),
     })
   } catch (error) {
     console.error('GET /api/tasks/[id] failed:', error)

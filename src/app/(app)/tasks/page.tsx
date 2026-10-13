@@ -24,11 +24,17 @@ import { Modal } from '@/components/ui/Modal'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Toast } from '@/components/ui/Toast'
+import { Tabs } from '@/components/ui/Tabs'
 import { IconPlus } from '@/components/ui/icons'
 import { apiFetch } from '@/lib/api-client'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { isFounder } from '@/lib/permissions-client'
 import { usePolling } from '@/hooks/usePolling'
+import {
+  TaskDetailPanel,
+  type ActivityDto,
+  type CommentDto,
+} from '@/components/tasks/TaskDetailPanel'
 
 /**
  * Phase 6 board.
@@ -148,6 +154,14 @@ export default function TasksBoardPage() {
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
 
+  // Phase 6e: comments + activity, loaded lazily the first time a card is
+  // opened for editing. Creating a new task never touches the discussion tab
+  // because there is no task id yet — the panel is not mounted then.
+  const [detailComments, setDetailComments] = useState<CommentDto[]>([])
+  const [detailActivity, setDetailActivity] = useState<ActivityDto[]>([])
+  const [editWindowMinutes, setEditWindowMinutes] = useState<number>(15)
+  const [detailLoading, setDetailLoading] = useState(false)
+
   const [columnModalOpen, setColumnModalOpen] = useState(false)
   const [newColumnName, setNewColumnName] = useState('')
 
@@ -228,6 +242,28 @@ export default function TasksBoardPage() {
     })
     setFormErrors({})
     setModalOpen(true)
+    // Fetch the discussion + timeline for this card. Not awaited — the
+    // Details tab opens immediately, Discussion fills in when the round-trip
+    // lands. Any previous card's data is cleared so we never show stale rows.
+    setDetailComments([])
+    setDetailActivity([])
+    setDetailLoading(true)
+    void (async () => {
+      try {
+        const res = await apiFetch(`/api/tasks/${task._id}`)
+        const body = await res.json()
+        if (!res.ok || !body.success) throw new Error(body?.error?.message ?? 'Load failed')
+        setDetailComments((body.data.comments ?? []) as CommentDto[])
+        setDetailActivity((body.data.activity ?? []) as ActivityDto[])
+        if (typeof body.data.editWindowMinutes === 'number') {
+          setEditWindowMinutes(body.data.editWindowMinutes)
+        }
+      } catch (err) {
+        showToast('error', err instanceof Error ? err.message : 'Could not load discussion')
+      } finally {
+        setDetailLoading(false)
+      }
+    })()
   }
 
   const submitTask = async () => {
@@ -572,6 +608,7 @@ export default function TasksBoardPage() {
               ? `Into "${creatingInColumn.name}"`
               : undefined
         }
+        size={editing ? 'lg' : 'md'}
         footer={
           <>
             <Button variant="ghost" onClick={() => setModalOpen(false)}>
@@ -583,34 +620,90 @@ export default function TasksBoardPage() {
           </>
         }
       >
-        <div className="flex flex-col gap-3">
-          <Input
-            label="Title"
-            value={draft.title}
-            onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-            error={formErrors.title}
-          />
-          <Textarea
-            label="Description"
-            value={draft.description}
-            onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-            rows={4}
-          />
-          <div className="grid grid-cols-2 gap-3">
-            <Select
-              label="Priority"
-              value={draft.priority}
-              onChange={(e) => setDraft({ ...draft, priority: e.target.value as Priority })}
-              options={PRIORITY_OPTIONS}
-            />
+        {editing ? (
+          <Tabs
+            tabs={[
+              { id: 'details', label: 'Details' },
+              { id: 'discussion', label: `Discussion${detailComments.length ? ` (${detailComments.length})` : ''}` },
+            ]}
+          >
+            {(tab) =>
+              tab === 'details' ? (
+                <div className="flex flex-col gap-3">
+                  <Input
+                    label="Title"
+                    value={draft.title}
+                    onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                    error={formErrors.title}
+                  />
+                  <Textarea
+                    label="Description"
+                    value={draft.description}
+                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                    rows={4}
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Select
+                      label="Priority"
+                      value={draft.priority}
+                      onChange={(e) => setDraft({ ...draft, priority: e.target.value as Priority })}
+                      options={PRIORITY_OPTIONS}
+                    />
+                    <Input
+                      label="Due date"
+                      type="date"
+                      value={draft.dueDate}
+                      onChange={(e) => setDraft({ ...draft, dueDate: e.target.value })}
+                    />
+                  </div>
+                  {detailLoading && (
+                    <p className="text-xs text-ink-muted">Loading discussion…</p>
+                  )}
+                </div>
+              ) : (
+                <TaskDetailPanel
+                  taskId={editing._id}
+                  comments={detailComments}
+                  activity={detailActivity}
+                  editWindowMinutes={editWindowMinutes}
+                  currentUserId={user?._id}
+                  canModerate={founder}
+                  onCommentsChange={setDetailComments}
+                  onNotice={showToast}
+                />
+              )
+            }
+          </Tabs>
+        ) : (
+          <div className="flex flex-col gap-3">
             <Input
-              label="Due date"
-              type="date"
-              value={draft.dueDate}
-              onChange={(e) => setDraft({ ...draft, dueDate: e.target.value })}
+              label="Title"
+              value={draft.title}
+              onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+              error={formErrors.title}
             />
+            <Textarea
+              label="Description"
+              value={draft.description}
+              onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+              rows={4}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <Select
+                label="Priority"
+                value={draft.priority}
+                onChange={(e) => setDraft({ ...draft, priority: e.target.value as Priority })}
+                options={PRIORITY_OPTIONS}
+              />
+              <Input
+                label="Due date"
+                type="date"
+                value={draft.dueDate}
+                onChange={(e) => setDraft({ ...draft, dueDate: e.target.value })}
+              />
+            </div>
           </div>
-        </div>
+        )}
       </Modal>
 
       <Modal

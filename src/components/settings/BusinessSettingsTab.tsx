@@ -56,6 +56,8 @@ interface SettingsView {
   inventory: { allowNegativeStock: boolean };
   /** Where purchase expenses and COD income land unless a flow names an account. */
   postingAccounts: { purchasingAccountId: string | null; salesIncomeAccountId: string | null };
+  /** Phase 6: how long a comment author may still edit or delete a comment. */
+  taskComments: { editWindowMinutes: number; editWindowConfigured: boolean };
   accountOptions: Array<{ id: string; name: string; kind: string }>;
 }
 
@@ -91,6 +93,9 @@ export function BusinessSettingsTab() {
   const [allowNegative, setAllowNegative] = useState(false);
   const [purchasingAccount, setPurchasingAccount] = useState('');
   const [incomeAccount, setIncomeAccount] = useState('');
+  // Phase 6: comment edit window (minutes). Kept as a string so an empty
+  // input cleanly means "clear the override, fall back to the default".
+  const [commentWindow, setCommentWindow] = useState('');
   const [issues, setIssues] = useState<Record<string, string>>({});
 
   const seed = useCallback((next: SettingsView) => {
@@ -102,6 +107,12 @@ export function BusinessSettingsTab() {
     setAllowNegative(next.inventory?.allowNegativeStock ?? false);
     setPurchasingAccount(next.postingAccounts?.purchasingAccountId ?? '');
     setIncomeAccount(next.postingAccounts?.salesIncomeAccountId ?? '');
+    // Only seed the input when the Founder has actually saved a value; the
+    // resolved default (15) is shown as placeholder copy, never as an input
+    // value — otherwise pressing Save would silently persist an override.
+    setCommentWindow(
+      next.taskComments?.editWindowConfigured ? String(next.taskComments.editWindowMinutes) : ''
+    );
     setIssues({});
   }, []);
 
@@ -181,6 +192,15 @@ export function BusinessSettingsTab() {
     if (!errors.warning && !errors.critical && Number(warning) > Number(critical)) {
       errors.warning = 'Warning must be at or below critical';
     }
+    // Phase 6: comment edit window. Empty means "use the 15-minute default";
+    // any other value must be a whole number 0–1440 (a day).
+    const trimmedWindow = commentWindow.trim();
+    if (trimmedWindow !== '') {
+      const parsed = Number(trimmedWindow);
+      if (!/^\d+$/.test(trimmedWindow) || !Number.isInteger(parsed) || parsed < 0 || parsed > 1440) {
+        errors.commentEditWindowMinutes = 'Whole number 0–1440 (minutes), or leave empty for 15';
+      }
+    }
     return errors;
   };
 
@@ -217,6 +237,9 @@ export function BusinessSettingsTab() {
           allowNegativeStock: allowNegative,
           purchasingAccountId: purchasingAccount || null,
           salesIncomeAccountId: incomeAccount || null,
+          // Phase 6: `null` clears the override back to the code default.
+          commentEditWindowMinutes:
+            commentWindow.trim() === '' ? null : Number.parseInt(commentWindow, 10),
         }),
       });
       setView(updated);
@@ -503,6 +526,44 @@ export function BusinessSettingsTab() {
             entry names another one. Nothing here changes what the ledger already recorded.
           </p>
         </div>
+      </Card>
+
+      <Card className="p-4 sm:p-6">
+        <h2 className="mb-1 text-lg font-semibold text-decoricks-dark">Task comments</h2>
+        <p className="mb-4 text-sm text-ink-secondary">
+          How long an author may still edit or delete a comment after posting it on a task card. Bigger
+          windows are friendlier; shorter ones are safer for audit-heavy workspaces. Deletes are always
+          soft — the row stays in the history, the body is redacted.
+        </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="sm:w-56">
+            <Input
+              label="Edit window (minutes)"
+              inputMode="numeric"
+              type="number"
+              min={0}
+              max={1440}
+              placeholder="15 (default)"
+              value={commentWindow}
+              readOnly={!canWrite}
+              onChange={(e) => setCommentWindow(e.target.value)}
+              error={issues.commentEditWindowMinutes}
+            />
+          </div>
+          <div className="pb-2">
+            {view.taskComments.editWindowConfigured ? (
+              <Badge variant="default">
+                Saved: {view.taskComments.editWindowMinutes} min
+              </Badge>
+            ) : (
+              <Badge variant="warning">Using 15-minute default</Badge>
+            )}
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-ink-muted">
+          Leave empty to keep the built-in default. Set to <code>0</code> to prevent authors from
+          editing after posting (they can still add new comments).
+        </p>
       </Card>
 
       {canWrite && (

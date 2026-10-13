@@ -249,6 +249,19 @@ export const businessSettingsUpdateSchema = z.object({
   salesIncomeAccountId: z
     .union([z.string().regex(/^[0-9a-fA-F]{24}$/, 'Must be a valid account id'), z.literal(''), z.null()])
     .optional(),
+  /*
+   * Phase 6: how long a task-comment author has to edit or soft-delete their
+   * comment after posting. `null` or `''` clears the override and the resolver
+   * falls back to DEFAULT_COMMENT_EDIT_WINDOW_MINUTES. Zero means "the author
+   * can never edit after posting" — legitimate for audit-heavy workspaces.
+   */
+  commentEditWindowMinutes: z
+    .union([
+      z.number().int().min(0).max(1440),
+      z.literal(null),
+      z.literal(''),
+    ])
+    .optional(),
 });
 
 export const transactionQuerySchema = z.object({
