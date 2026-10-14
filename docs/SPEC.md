@@ -717,16 +717,61 @@ Indexes:
 ```javascript
 {
   _id: ObjectId,
+  channelId: ObjectId, // references chatChannels (Phase 7)
   senderId: ObjectId, // references users
-  content: String,
+  senderName: String, // denormalised for cheap transcript rendering
+  content: String, // sanitized plain text; nulled once soft-deleted
   isSystem: Boolean, // default false
+  clientId: String, // client-generated idempotency key (retry guard)
+  editedAt: Date | null,
+  isDeleted: Boolean, // default false (soft delete)
+  deletedAt: Date | null,
+  deletedBy: ObjectId | null,
   createdAt: Date
 }
 
 Indexes:
-- createdAt: -1
+- createdAt: -1 (owned by the sync change-cursor)
 - senderId: 1
+- { channelId: 1, createdAt: -1 } // channel history + cursor pagination
+- { channelId: 1, clientId: 1 } unique, sparse // idempotent send
 ```
+
+##### 3.1.16.1 chatChannels (Phase 7)
+```javascript
+{
+  _id: ObjectId,
+  key: String, // unique slug; `general` / `orders` / `content` are seeded
+  name: String,
+  description: String,
+  isArchived: Boolean, // default false
+  createdBy: ObjectId | null, // null for the three seeded channels
+  createdAt: Date,
+  updatedAt: Date
+}
+
+Indexes:
+- key: 1 unique
+- { isArchived: 1, updatedAt: -1 }
+```
+
+##### 3.1.16.2 chatChannelReads (Phase 7)
+```javascript
+{
+  _id: ObjectId,
+  userId: ObjectId,
+  channelId: ObjectId,
+  lastReadAt: Date, // drives per-channel unread counts
+  updatedAt: Date
+}
+
+Indexes:
+- { userId: 1, channelId: 1 } unique
+```
+
+The three default channels are seeded and any pre-channel message is backfilled
+into `general` on first touch (`ensureChatCollections`) — no separate migration
+step is required.
 
 #### 3.1.17 suppliers
 ```javascript
@@ -1337,6 +1382,15 @@ where baseDelay = 5 seconds
 
 ### 7.1 Approach
 
+> **Implementation status (Phase 7):** the shipping design — SSE driven by a
+> MongoDB change stream with an automatic per-module cursor-polling fallback —
+> is documented authoritatively in [`docs/REALTIME.md`](./REALTIME.md). Where
+> the illustrative snippets below differ from what was built (per-record event
+> payloads, a 30s poll), `REALTIME.md` is correct. The live stream carries
+> **dataless change signals** ("module X advanced") rather than record data, so
+> a user is never sent information their permissions would hide; the client
+> reacts by re-fetching through the same guarded REST routes it uses normally.
+
 Given free tier constraints, use **Server-Sent Events (SSE)** for real-time updates instead of WebSockets.
 
 **Rationale:**
@@ -1440,22 +1494,49 @@ changeStream.on('change', (change) => {
 
 ### 7.5 Fallback Strategy
 
-If SSE is not available (e.g., hosting restrictions):
-- Poll every 30 seconds for updates
-- Use Last-Modified headers to minimize data transfer
-- Client requests: `GET /api/updates?since=1728038400000`
+Polling is the **automatic** fallback that activates by itself whenever a live
+SSE stream cannot be established or delivered (paused host, buffering proxy,
+resume gap, `EventSource` unavailable, hard close). Both transports emit the
+same per-module cursor shape, so switching is transparent to subscribers.
+
+- Poll the change-cursor endpoint every **6 seconds** (3s floor) — not 30s; a
+  30s gap felt dead for chat. `GET /api/sync/cursor?modules=…` answers only
+  "has this module changed?" with a timestamp, never row data.
+- Pause while the tab is hidden; fire immediately on `online` and on becoming
+  visible so a reconnect reconciles without waiting for the next tick.
 
 ### 7.6 Connection Management
 
 **Client-Side:**
-- Auto-reconnect on disconnect
-- Exponential backoff for reconnection attempts
-- Show connection status indicator (online/offline/syncing)
+- Auto-reconnect on disconnect with exponential backoff (3s base, capped at 60s)
+- Resume from the last received event via `Last-Event-ID` (bounded server replay
+  buffer; a gap triggers one reconciling poll) — no missed or duplicated events
+- Show a visible connection status: Live / Live · syncing (poll carrier) /
+  Connecting… / Reconnecting… / Offline
+- Tear every stream, timer and listener down on unmount and logout
 
 **Server-Side:**
-- Track active connections per user
-- Limit connections per user (max 5 to prevent abuse)
-- Clean up dead connections after 2 minutes of inactivity
+- Authentication and per-module `view` scope resolved **on connect**; an
+  unauthenticated request is a `401` JSON error (never a stream), an
+  all-modules-refused session is `403`
+- Heartbeat comment frame every 20s to keep proxies from closing an idle stream
+- Runs on the Node runtime on a single persistent host (see `REALTIME.md`);
+  the replay buffer and rate limiter are process-local
+
+### 7.7 Chat Module Real-Time Behaviour (Phase 7)
+
+- Channels `General` / `Orders` / `Content` are seeded on first touch; the
+  Founder can create and archive channels and moderate any message.
+- History uses cursor pagination (load-older on scroll-up without scroll jump);
+  the incremental tail is fetched with `since=<epoch-ms>`.
+- Sends carry a client-generated `clientId` and are idempotent, so a retry after
+  a dropped response can never duplicate. Messages have sent / failed / retry
+  states, per-channel unread counts and last-read watermarks.
+- Edit and delete are own-message, time-boxed by the settings edit window (the
+  Founder moderator is exempt), soft-deleted, and audit-logged. Content is
+  sanitized to plain text. Sends are rate-limited per `(user, channel)`.
+- Chat is online-only: offline shows a banner, disables sending and keeps the
+  draft; missed messages are re-fetched on reconnect.
 
 ---
 
