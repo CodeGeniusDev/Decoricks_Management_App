@@ -8,8 +8,12 @@
  * stored payload, because none is ever stored.
  *
  * Order matters: drop whole `<script>/<style>` blocks (content included) first,
- * then strip any remaining tag-shaped run, then control characters. We never
- * HTML-encode, so a message that legitimately contains `a < b` survives intact.
+ * then strip any remaining tag-shaped run, then control characters. This is
+ * deliberately aggressive: chat is "basic text only", so a stray `<` is treated
+ * as the start of markup and everything up to the next `>` (or end of input) is
+ * removed. We never HTML-encode, favouring removal so no consumer can execute a
+ * payload; the accepted cost is that a literal comparison like `a < b` loses its
+ * operator, which is not legitimate markup for a plain-text team channel.
  */
 
 // eslint-disable-next-line no-control-regex

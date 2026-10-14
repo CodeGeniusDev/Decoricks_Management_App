@@ -59,7 +59,7 @@ export function sortMessages(messages: ChatMessage[]): ChatMessage[] {
     const ta = timeOf(a)
     const tb = timeOf(b)
     if (ta !== tb) return ta - tb
-    return (a._id ?? '\uffff').localeCompare(b._id ?? '\uffff')
+    return (a._id || '\uffff').localeCompare(b._id || '\uffff')
   })
 }
 

@@ -402,6 +402,34 @@ export class MemCollection {
   }
 
   /**
+   * Applies the same read-modify-write to every matching document.
+   *
+   * The chat migration (`ensureChatCollections`) backfills legacy rows with
+   * `updateMany`, so the fake needs it; each matched doc goes through the
+   * synchronous `$set`/`$inc` path exactly as `updateOne` does.
+   */
+  async updateMany(
+    filter: Doc,
+    update: { $inc?: Doc; $set?: Doc; $setOnInsert?: Doc },
+    opts: { session?: unknown } = {}
+  ): Promise<{ acknowledged: true; matchedCount: number; modifiedCount: number }> {
+    await Promise.resolve()
+    const session = sessionOf(opts.session ?? opts)
+    let matched = 0
+    for (const doc of this.docs) {
+      if (!matches(doc, filter)) continue
+      const before = { ...doc }
+      for (const [key, value] of Object.entries(update.$set ?? {})) setPath(doc, key, value)
+      for (const [key, value] of Object.entries(update.$inc ?? {})) {
+        setPath(doc, key, Number(getPath(doc, key) ?? 0) + Number(value))
+      }
+      matched += 1
+      session?.record(() => Object.assign(doc, before))
+    }
+    return { acknowledged: true, matchedCount: matched, modifiedCount: matched }
+  }
+
+  /**
    * `updateOne` that hands back the document it produced.
    *
    * Serial allocation needs this shape specifically: reading the counter after
