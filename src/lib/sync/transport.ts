@@ -1,15 +1,15 @@
 import type { SyncCursor, SyncModule, SyncTransport } from './types'
 
 /**
- * The only place that knows *how* we learn about changes. Today it polls the
- * change-cursor endpoint on a timer; swapping in a WebSocket/SSE transport is a
- * matter of implementing this same `SyncTransport` interface and handing it to
- * the coordinator — no subscribing module changes.
+ * The polling `SyncTransport` — Phase 7's automatic fallback.
  *
- * Why polling is the correct transport here: the app is deployed on Netlify
- * serverless, where a request handler cannot hold an open WebSocket or stream a
- * long-lived SSE response. A short conditional poll is the deployment-compatible
- * way to get genuinely cross-device updates without a paid realtime service.
+ * The SSE transport is primary (see `sse-transport.ts`); this is what it
+ * degrades to when a live stream cannot be established or delivered, and it is
+ * also the standalone choice when EventSource is unavailable. Both emit the
+ * same `SyncCursor`, so switching is transparent to the coordinator.
+ *
+ * It polls a tiny change-cursor endpoint on a timer; that endpoint answers only
+ * "has this module changed?" with a timestamp, never row data.
  *
  * Behaviour notes:
  *   - Pauses entirely while the tab is hidden and catches up the instant it is

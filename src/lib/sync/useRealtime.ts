@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { syncCoordinator } from './coordinator'
+import { subscribeConnection, type ConnectionState, type ConnectionMode } from './connection'
 import type { SyncModule } from './types'
 
 /**
@@ -34,4 +35,18 @@ export function useRealtimeSync(
       void callbackRef.current()
     })
   }, [module, enabled])
+}
+
+/**
+ * Live realtime health for the UI. Returns the current connection state and
+ * delivery mode so a screen can show a Live / Reconnecting / Offline chip and
+ * the chat composer can disable sending while offline. Purely presentational:
+ * it does not open or hold any connection itself.
+ */
+export function useConnectionState(): { state: ConnectionState; mode: ConnectionMode } {
+  const [snapshot, setSnapshot] = useState<{ state: ConnectionState; mode: ConnectionMode }>(
+    () => ({ state: 'offline', mode: 'polling' })
+  )
+  useEffect(() => subscribeConnection(setSnapshot), [])
+  return snapshot
 }

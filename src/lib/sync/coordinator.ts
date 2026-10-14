@@ -1,4 +1,4 @@
-import { createPollingTransport } from './transport'
+import { createSseTransport } from './sse-transport'
 import type { SyncCursor, SyncModule, SyncTransport } from './types'
 
 /**
@@ -26,13 +26,11 @@ export class SyncCoordinator {
   private transport: SyncTransport | null = null
 
   /**
-   * The transport is injectable so the fan-out semantics can be unit-tested
-   * with a fake, and so a future WebSocket/SSE transport can replace polling
-   * without changing this class.
+   * Primary transport is SSE (instant, resumes via Last-Event-ID) with polling
+   * built in as its automatic fallback; the transport is injectable so the
+   * fan-out semantics stay unit-testable with a fake.
    */
-  constructor(
-    private readonly makeTransport: () => SyncTransport = () => createPollingTransport()
-  ) {}
+  constructor(private readonly makeTransport: () => SyncTransport = () => createSseTransport()) {}
 
   subscribe(module: SyncModule, listener: Listener): () => void {
     let set = this.listeners.get(module)
