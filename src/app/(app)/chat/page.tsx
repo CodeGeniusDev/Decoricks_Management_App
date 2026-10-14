@@ -1,341 +1,545 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PageTransition } from '@/components/PageTransition'
-import { Card } from '@/components/ui/Card'
-import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
-import { Skeleton } from '@/components/ui/Skeleton'
-import { EmptyState } from '@/components/ui/EmptyState'
 import { Toast } from '@/components/ui/Toast'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { IconMenu } from '@/components/ui/icons'
 import { apiFetch } from '@/lib/api-client'
 import { useAuth } from '@/components/auth/AuthProvider'
+import { isFounder } from '@/lib/permissions-client'
+import { useRealtimeSync, useConnectionState } from '@/lib/sync/useRealtime'
+import { ChannelSidebar } from '@/components/chat/ChannelSidebar'
+import { MessageList } from '@/components/chat/MessageList'
+import { Composer } from '@/components/chat/Composer'
+import { ConnectionStatus, OfflineBanner } from '@/components/chat/ConnectionStatus'
+import { useKeyboardAwareHeight } from '@/components/chat/useKeyboardAwareHeight'
+import {
+  mergeMessages,
+  newestTimestamp,
+  type ChatChannel,
+  type ChatMessage,
+  type ServerMessage,
+} from '@/components/chat/types'
 
-interface Message {
-  _id: string
-  senderId: string
-  senderName: string
-  content: string
-  isSystem: boolean
-  createdAt: string
+const PAGE_SIZE = 50
+
+/** Idempotency token per user intention. Reused on retry so a dropped response
+ *  can never create a duplicate. */
+const genClientId = (): string =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `c-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
+interface Envelope<T> {
+  success: boolean
+  data?: T
+  error?: { message?: string }
 }
 
-const initials = (name: string) => name.trim().charAt(0).toUpperCase() || '?'
-
-/** How often to ask the server for messages newer than what's on screen. */
-const POLL_INTERVAL_MS = 8000
+const readEnvelope = async <T,>(res: Response): Promise<Envelope<T>> => {
+  try {
+    return (await res.json()) as Envelope<T>
+  } catch {
+    return { success: false, error: { message: `Request failed (${res.status})` } }
+  }
+}
 
 export default function ChatPage() {
-  // Identity comes from the verified session; the server derives the stored
-  // sender itself and ignores anything the client sends.
   const { user } = useAuth()
   const currentUserId = user?._id ?? ''
-  const currentUserName = user?.name ?? ''
-  const identityConfigured = Boolean(user?._id)
-  const [messages, setMessages] = useState<Message[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  // A failed background poll must not wipe the conversation or show the
-  // full-page error card — that reads as "chat is broken" when it's really
-  // just a hiccup. This flag only dims the "Live" indicator until the next
-  // poll succeeds.
-  const [pollFailing, setPollFailing] = useState(false)
-  const [inputValue, setInputValue] = useState('')
-  const [sending, setSending] = useState(false)
-  const [toastMessage, setToastMessage] = useState<{
+  const canManage = isFounder(user?.role)
+  const { state: connState } = useConnectionState()
+
+  const [channels, setChannels] = useState<ChatChannel[]>([])
+  const [channelsLoading, setChannelsLoading] = useState(true)
+  const [channelsError, setChannelsError] = useState<string | null>(null)
+  const [activeId, setActiveId] = useState<string | null>(null)
+
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [messagesLoading, setMessagesLoading] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [hasMoreOlder, setHasMoreOlder] = useState(false)
+  const [messagesError, setMessagesError] = useState<string | null>(null)
+
+  const [draft, setDraft] = useState('')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [offline, setOffline] = useState(false)
+  const [toast, setToast] = useState<{
     type: 'success' | 'error' | 'info' | 'warning'
     message: string
   } | null>(null)
 
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const oldestIdRef = useRef<string | null>(null)
+  const lastTsRef = useRef<number>(0)
+  // Guards against a slow response for a previous channel landing after the
+  // user has already switched — the classic "wrong channel's messages" race.
+  const reqSeq = useRef(0)
+  const tailTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const channelsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // High-water mark for incremental polling — only messages created after
-  // this timestamp are fetched on subsequent requests, so the client never
-  // re-downloads the whole history every few seconds.
-  const lastSeenAtRef = useRef<number>(0)
+  useKeyboardAwareHeight(panelRef)
 
-  const mergeMessages = useCallback((incoming: Message[]) => {
-    if (incoming.length === 0) return
-    setMessages((prev) => {
-      // The optimistic append in sendMessage() can race a poll that already
-      // fetched the same document; dedupe by id so nothing ever shows twice.
-      const seen = new Set(prev.map((m) => m._id))
-      const fresh = incoming.filter((m) => !seen.has(m._id))
-      if (fresh.length === 0) return prev
-      return [...prev, ...fresh]
-    })
-    const newest = incoming[incoming.length - 1]
-    const newestTime = new Date(newest.createdAt).getTime()
-    if (newestTime > lastSeenAtRef.current) lastSeenAtRef.current = newestTime
-  }, [])
+  const activeChannel = useMemo(
+    () => channels.find((c) => c._id === activeId) ?? null,
+    [channels, activeId]
+  )
 
-  const fetchMessages = useCallback(async () => {
-    try {
-      setLoading(true)
-      setLoadError(null)
-      const res = await apiFetch('/api/chat')
-      const body = await res.json()
-      if (!res.ok || !body.success) {
-        throw new Error(body?.error?.message || 'Failed to load messages')
-      }
-      setMessages(body.data)
-      const newest = body.data.length ? new Date(body.data[body.data.length - 1].createdAt).getTime() : 0
-      lastSeenAtRef.current = newest
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'Failed to load messages')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  /* ------------------------------- tracking ------------------------------- */
 
   useEffect(() => {
-    fetchMessages()
-  }, [fetchMessages])
-
-  // Poll for messages from other team members. Without this the chat only
-  // ever shows what existed at page load plus whatever *this* client sent —
-  // a real gap, since the API already supports an incremental `since`
-  // query for exactly this purpose.
-  useEffect(() => {
-    if (loadError) return // initial load failed; don't hammer a broken endpoint
-
-    let cancelled = false
-
-    const poll = async () => {
-      // A hidden tab doesn't need fresh messages rendered; skip the request
-      // and catch up on the next tick (or immediately on visibility, below).
-      if (document.hidden) return
-      try {
-        const url = lastSeenAtRef.current
-          ? `/api/chat?since=${lastSeenAtRef.current}`
-          : '/api/chat'
-        const res = await apiFetch(url)
-        const body = await res.json()
-        if (cancelled) return
-        if (!res.ok || !body.success) throw new Error(body?.error?.message || 'Poll failed')
-        setPollFailing(false)
-        mergeMessages(body.data as Message[])
-      } catch {
-        if (!cancelled) setPollFailing(true)
-      }
-    }
-
-    const interval = setInterval(poll, POLL_INTERVAL_MS)
-
-    const onVisible = () => {
-      if (!document.hidden) poll()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-
+    const update = () => setOffline(!navigator.onLine)
+    update()
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
     return () => {
-      cancelled = true
-      clearInterval(interval)
-      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
     }
-  }, [loadError, mergeMessages])
+  }, [])
 
-  // Scroll to bottom on new messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  /* ------------------------------ channels -------------------------------- */
 
-  const formatTime = (dateStr: string): string => {
-    const date = new Date(dateStr)
-    return date.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' })
-  }
-
-  const sendMessage = async () => {
-    if (!inputValue.trim() || sending) return
-
-    const messageText = inputValue.trim()
-    setInputValue('') // Clear input immediately - optimistic
-    setSending(true)
-
+  const loadChannels = useCallback(async (opts: { selectFirst?: boolean } = {}) => {
     try {
-      const res = await apiFetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: messageText }),
+      const res = await apiFetch('/api/chat/channels')
+      const body = await readEnvelope<ChatChannel[]>(res)
+      if (!body.success || !body.data)
+        throw new Error(body.error?.message ?? 'Failed to load channels')
+      const list = body.data
+      setChannels(list)
+      setChannelsError(null)
+      setActiveId((cur) => {
+        if (cur && list.some((c) => c._id === cur)) return cur
+        if (opts.selectFirst && list.length) return list[0]._id
+        return cur
       })
+    } catch (err) {
+      setChannelsError(err instanceof Error ? err.message : 'Failed to load channels')
+    } finally {
+      setChannelsLoading(false)
+    }
+  }, [])
 
-      const result = await res.json()
+  /* ------------------------------- messages ------------------------------- */
 
-      if (result.success) {
-        // Use the persisted document so the id matches what is stored.
-        setMessages((prev) => [...prev, result.data as Message])
+  const openChannel = useCallback(async (channelId: string) => {
+    const seq = ++reqSeq.current
+    setMessages([])
+    setMessagesLoading(true)
+    setMessagesError(null)
+    oldestIdRef.current = null
+    lastTsRef.current = 0
+    setHasMoreOlder(false)
+    try {
+      const res = await apiFetch(`/api/chat/channels/${channelId}/messages?limit=${PAGE_SIZE}`)
+      const body = await readEnvelope<ServerMessage[]>(res)
+      if (seq !== reqSeq.current) return // switched away mid-flight
+      if (!body.success || !body.data)
+        throw new Error(body.error?.message ?? 'Failed to load messages')
+      setMessages(mergeMessages([], body.data, 'tail'))
+      oldestIdRef.current = body.data.length ? body.data[0]._id : null
+      setHasMoreOlder(body.data.length === PAGE_SIZE)
+      lastTsRef.current = newestTimestamp(body.data)
+      // Opening a channel is the intent to read it.
+      void apiFetch(`/api/chat/channels/${channelId}/read`, { method: 'POST', body: '{}' }).then(
+        () =>
+          setChannels((prev) =>
+            prev.map((c) => (c._id === channelId ? { ...c, unreadCount: 0 } : c))
+          )
+      )
+    } catch (err) {
+      if (seq === reqSeq.current)
+        setMessagesError(err instanceof Error ? err.message : 'Failed to load messages')
+    } finally {
+      if (seq === reqSeq.current) setMessagesLoading(false)
+    }
+  }, [])
+
+  const loadOlder = useCallback(async () => {
+    if (!activeId || !oldestIdRef.current || loadingOlder) return
+    setLoadingOlder(true)
+    const before = oldestIdRef.current
+    try {
+      const res = await apiFetch(
+        `/api/chat/channels/${activeId}/messages?before=${before}&limit=${PAGE_SIZE}`
+      )
+      const body = await readEnvelope<ServerMessage[]>(res)
+      if (!body.success || !body.data)
+        throw new Error(body.error?.message ?? 'Failed to load older messages')
+      if (body.data.length === 0) {
+        setHasMoreOlder(false)
       } else {
-        // Rollback - restore input value
-        setInputValue(messageText)
-        setToastMessage({ type: 'error', message: result.error?.message || 'Failed to send message' })
+        setMessages((prev) => mergeMessages(prev, body.data!, 'prepend'))
+        oldestIdRef.current = body.data[0]._id
+        setHasMoreOlder(body.data.length === PAGE_SIZE)
       }
     } catch (err) {
-      // Rollback on network error
-      setInputValue(messageText)
-      setToastMessage({
+      setToast({
         type: 'error',
-        message: 'Network error. Message not sent. Check your connection.',
+        message: err instanceof Error ? err.message : 'Could not load older messages',
       })
     } finally {
-      setSending(false)
+      setLoadingOlder(false)
     }
-  }
+  }, [activeId, loadingOlder])
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
+  const refetchTail = useCallback(async () => {
+    if (!activeId) return
+    const since = lastTsRef.current
+    try {
+      const url = since
+        ? `/api/chat/channels/${activeId}/messages?since=${since}`
+        : `/api/chat/channels/${activeId}/messages?limit=${PAGE_SIZE}`
+      const res = await apiFetch(url)
+      const body = await readEnvelope<ServerMessage[]>(res)
+      if (!body.success || !body.data) return
+      if (body.data.length === 0) return
+      setMessages((prev) => mergeMessages(prev, body.data!, 'tail'))
+      const newest = newestTimestamp(body.data)
+      if (newest > lastTsRef.current) lastTsRef.current = newest
+    } catch {
+      /* a hiccup in the live tail is retried on the next signal or poll tick */
     }
-  }
+  }, [activeId])
 
-  if (loading) {
-    return (
-      <PageTransition>
-        <h1 className="text-2xl font-bold text-decoricks-dark mb-6">Chat</h1>
-        <div className="space-y-4">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} variant="rect" className="h-12 w-3/4" />
-          ))}
-        </div>
-      </PageTransition>
-    )
-  }
+  /* -------------------------------- sending ------------------------------- */
+
+  const postMessage = useCallback(
+    async (row: ChatMessage) => {
+      if (!activeId) return
+      try {
+        const res = await apiFetch(`/api/chat/channels/${activeId}/messages`, {
+          method: 'POST',
+          body: JSON.stringify({ content: row.content, clientId: row.clientId }),
+        })
+        const body = await readEnvelope<ServerMessage>(res)
+        if (res.status === 429) {
+          setMessages((prev) =>
+            prev.map((m) => (m.tempId === row.tempId ? { ...m, status: 'failed' } : m))
+          )
+          setToast({
+            type: 'warning',
+            message: body.error?.message ?? 'Sending too quickly — slow down.',
+          })
+          return
+        }
+        if (!body.success || !body.data) throw new Error(body.error?.message ?? 'Failed to send')
+        // The authoritative row replaces the optimistic one (matched by clientId).
+        setMessages((prev) => mergeMessages(prev, [body.data!], 'tail'))
+        const ts = Date.parse(body.data.createdAt)
+        if (ts > lastTsRef.current) lastTsRef.current = ts
+      } catch (err) {
+        setMessages((prev) =>
+          prev.map((m) => (m.tempId === row.tempId ? { ...m, status: 'failed' } : m))
+        )
+        setToast({
+          type: 'error',
+          message: err instanceof Error ? err.message : 'Message failed to send',
+        })
+      }
+    },
+    [activeId]
+  )
+
+  const sendMessage = useCallback(() => {
+    const text = draft.trim()
+    if (!text || !activeId || !user || offline) return
+    const clientId = genClientId()
+    const optimistic: ChatMessage = {
+      _id: '',
+      tempId: clientId,
+      clientId,
+      channelId: activeId,
+      senderId: currentUserId,
+      senderName: user.name,
+      content: text,
+      isSystem: false,
+      isDeleted: false,
+      editable: true,
+      createdAt: new Date().toISOString(),
+      status: 'sending',
+    }
+    setDraft('')
+    setMessages((prev) => [...prev, optimistic])
+    void postMessage(optimistic)
+  }, [draft, activeId, user, offline, currentUserId, postMessage])
+
+  const retryMessage = useCallback(
+    (row: ChatMessage) => {
+      setMessages((prev) =>
+        prev.map((m) => (m.tempId === row.tempId ? { ...m, status: 'sending' } : m))
+      )
+      void postMessage(row)
+    },
+    [postMessage]
+  )
+
+  /* ---------------------------- edit / moderate --------------------------- */
+
+  const editMessage = useCallback(
+    async (id: string, content: string) => {
+      if (!activeId) return
+      try {
+        const res = await apiFetch(`/api/chat/channels/${activeId}/messages/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ content }),
+        })
+        const body = await readEnvelope<ServerMessage>(res)
+        if (!body.success || !body.data)
+          throw new Error(body.error?.message ?? 'Failed to edit message')
+        setMessages((prev) =>
+          prev.map((m) => (m._id === id ? { ...m, ...body.data, status: 'sent' } : m))
+        )
+      } catch (err) {
+        setToast({
+          type: 'error',
+          message: err instanceof Error ? err.message : 'Failed to edit message',
+        })
+        throw err
+      }
+    },
+    [activeId]
+  )
+
+  const deleteMessage = useCallback(
+    async (id: string) => {
+      if (!activeId) return
+      try {
+        const res = await apiFetch(`/api/chat/channels/${activeId}/messages/${id}`, {
+          method: 'DELETE',
+        })
+        const body = await readEnvelope<ServerMessage>(res)
+        if (!body.success) throw new Error(body.error?.message ?? 'Failed to delete message')
+        setMessages((prev) =>
+          prev.map((m) =>
+            m._id === id
+              ? { ...m, isDeleted: true, content: null as unknown as string, editable: false }
+              : m
+          )
+        )
+      } catch (err) {
+        setToast({
+          type: 'error',
+          message: err instanceof Error ? err.message : 'Failed to delete message',
+        })
+      }
+    },
+    [activeId]
+  )
+
+  /* --------------------------- channel management ------------------------- */
+
+  const createChannel = useCallback(async (name: string, description: string): Promise<boolean> => {
+    try {
+      const res = await apiFetch('/api/chat/channels', {
+        method: 'POST',
+        body: JSON.stringify({ name, description: description || undefined }),
+      })
+      const body = await readEnvelope<ChatChannel>(res)
+      if (!body.success || !body.data)
+        throw new Error(body.error?.message ?? 'Failed to create channel')
+      setChannels((prev) => [...prev, body.data!])
+      setActiveId(body.data._id)
+      setToast({ type: 'success', message: `Created #${body.data.name}` })
+      return true
+    } catch (err) {
+      setToast({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to create channel',
+      })
+      return false
+    }
+  }, [])
+
+  const archiveChannel = useCallback(
+    async (id: string) => {
+      try {
+        const res = await apiFetch(`/api/chat/channels/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ isArchived: true }),
+        })
+        const body = await readEnvelope(res)
+        if (!body.success) throw new Error(body.error?.message ?? 'Failed to archive channel')
+        const remaining = channels.filter((c) => c._id !== id)
+        setChannels(remaining)
+        if (id === activeId) {
+          if (remaining.length) setActiveId(remaining[0]._id)
+          else setActiveId(null)
+        }
+        setToast({ type: 'success', message: 'Channel archived' })
+      } catch (err) {
+        setToast({
+          type: 'error',
+          message: err instanceof Error ? err.message : 'Failed to archive channel',
+        })
+      }
+    },
+    [channels, activeId]
+  )
+
+  /* ------------------------------ lifecycle ------------------------------- */
+
+  useEffect(() => {
+    if (!user) return
+    void loadChannels({ selectFirst: true })
+  }, [user, loadChannels])
+
+  useEffect(() => {
+    if (!user || !activeId) return
+    void openChannel(activeId)
+    // Re-open only when the selected channel changes, not on every channels poll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, activeId])
+
+  /* ------------------------- live updates (SSE/poll) ---------------------- */
+
+  useRealtimeSync(
+    'chat',
+    () => {
+      // Debounce the tail refetch so a burst of changes is one fetch, not many.
+      if (tailTimer.current) clearTimeout(tailTimer.current)
+      tailTimer.current = setTimeout(() => void refetchTail(), 300)
+      // Refresh unread badges for the other channels a little less eagerly.
+      if (channelsTimer.current) clearTimeout(channelsTimer.current)
+      channelsTimer.current = setTimeout(() => void loadChannels(), 1200)
+    },
+    user != null
+  )
+
+  useEffect(() => {
+    return () => {
+      if (tailTimer.current) clearTimeout(tailTimer.current)
+      if (channelsTimer.current) clearTimeout(channelsTimer.current)
+    }
+  }, [])
+
+  /* -------------------------------- render -------------------------------- */
+
+  const canModify = useCallback((m: ChatMessage) => Boolean(m.editable), [])
+  const sendingDisabled = !activeId || offline || !user || connState === 'offline'
+
+  const rail = (
+    <ChannelSidebar
+      channels={channels}
+      activeId={activeId}
+      loading={channelsLoading}
+      canManage={canManage}
+      onSelect={(id) => {
+        setActiveId(id)
+        setSidebarOpen(false)
+      }}
+      onCreate={createChannel}
+      onArchive={archiveChannel}
+    />
+  )
 
   return (
     <PageTransition>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold text-decoricks-dark">Team Chat</h1>
-        {!loadError && (
-          <span
-            className="flex items-center gap-1.5 text-xs text-ink-muted"
-            role="status"
-            aria-live="polite"
-          >
-            <span
-              className={`h-2 w-2 rounded-full ${
-                pollFailing ? 'bg-status-warning' : 'bg-status-success'
-              }`}
-              aria-hidden
-            />
-            {pollFailing ? 'Reconnecting…' : 'Live'}
-          </span>
-        )}
-      </div>
-
-      {/* Toast */}
-      {toastMessage && (
-        <div className="fixed top-20 right-4 z-50">
-          <Toast
-            message={toastMessage.message}
-            type={toastMessage.type}
-            onClose={() => setToastMessage(null)}
-          />
+      {toast && (
+        <div className="fixed right-4 top-20 z-50">
+          <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
         </div>
       )}
 
-      {loadError && (
-        <Card variant="default" className="p-6 mb-6 border-red-200">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-semibold text-decoricks-dark">Could not load messages</h2>
-              <p className="text-sm text-decoricks-dark/60">{loadError}</p>
+      <div
+        ref={panelRef}
+        className="relative flex h-[calc(100dvh-8.5rem)] min-h-[420px] gap-0 overflow-hidden rounded-xl border border-line-subtle bg-surface-raised md:h-[calc(100dvh-9rem)]"
+      >
+        {/* Desktop rail */}
+        <aside className="hidden w-64 shrink-0 border-r border-line-subtle md:block">{rail}</aside>
+
+        {/* Mobile drawer */}
+        {sidebarOpen && (
+          <div className="absolute inset-0 z-30 flex md:hidden" role="dialog" aria-label="Channels">
+            <button
+              type="button"
+              aria-label="Close channels"
+              className="flex-1 bg-decoricks-black/40"
+              onClick={() => setSidebarOpen(false)}
+            />
+            <div className="w-64 max-w-[80%] border-r border-line-subtle bg-surface-raised">
+              {rail}
             </div>
-            <Button variant="outline" onClick={fetchMessages} type="button">
-              Try again
-            </Button>
           </div>
-        </Card>
-      )}
+        )}
 
-      <Card className="h-[600px] flex flex-col">
-        {/* Messages area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
-          {messages.length === 0 ? (
-            <EmptyState
-              title="No messages yet"
-              description="Start the conversation. Messages are saved to the database."
-              action={{ label: 'Focus input', onClick: () => inputRef.current?.focus() }}
-            />
-          ) : (
-            messages.map((message) => (
-              <div
-                key={message._id}
-                className={`flex gap-3 ${
-                  message.senderId === currentUserId ? 'justify-end' : 'justify-start'
-                }`}
-              >
-                {!message.isSystem && message.senderId !== currentUserId && (
-                  <div className="w-8 h-8 rounded-full bg-decoricks-brown text-decoricks-light flex items-center justify-center text-sm font-semibold flex-shrink-0">
-                    {initials(message.senderName)}
-                  </div>
-                )}
-
-                <div
-                  className={`max-w-[70%] px-4 py-3 rounded-lg ${
-                    message.isSystem
-                      ? 'bg-decoricks-dark/10 text-decoricks-dark/60 text-sm self-start'
-                      : message.senderId === currentUserId
-                      ? 'bg-decoricks-brown text-decoricks-light'
-                      : 'border border-line-subtle bg-surface-sunken text-ink-secondary'
-                  }`}
-                >
-                  {!message.isSystem && message.senderId !== currentUserId && (
-                    <p className="text-xs font-semibold mb-1 opacity-80">
-                      {message.senderName}
-                    </p>
-                  )}
-                  <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                  <p
-                    className={`text-xs mt-1 opacity-60 ${
-                      message.senderId === currentUserId
-                        ? 'text-decoricks-light/60'
-                        : 'text-decoricks-dark/40'
-                    }`}
-                  >
-                    {formatTime(message.createdAt)}
-                  </p>
-                </div>
-
-                {message.senderId === currentUserId && !message.isSystem && (
-                  <div className="w-8 h-8 rounded-full bg-decoricks-brown text-decoricks-light flex items-center justify-center text-sm font-semibold flex-shrink-0">
-                    {initials(currentUserName)}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input area - no page reload on form submit */}
-        <div className="border-t border-decoricks-black/10 p-4">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              sendMessage()
-            }}
-            className="flex gap-2 items-center"
-          >
-            <Input
-              ref={inputRef}
-              placeholder="Type a message..."
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyPress}
-              disabled={sending || !identityConfigured}
-              className="flex-1"
-            />
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={!inputValue.trim() || sending || !identityConfigured}
-              loading={sending}
+        {/* Conversation panel */}
+        <section className="flex min-w-0 flex-1 flex-col">
+          <header className="flex items-center gap-2 border-b border-line-subtle px-3 py-2.5">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open channels"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-md text-ink-secondary hover:bg-surface-sunken md:hidden"
             >
-              Send
-            </Button>
-          </form>
-        </div>
-      </Card>
+              <IconMenu className="h-5 w-5" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-sm font-semibold text-ink">
+                {activeChannel ? `#${activeChannel.name}` : 'Team Chat'}
+              </h1>
+              {activeChannel?.description && (
+                <p className="truncate text-xs text-ink-muted">{activeChannel.description}</p>
+              )}
+            </div>
+            <ConnectionStatus />
+          </header>
+
+          <OfflineBanner offline={offline} />
+
+          {channelsError ? (
+            <div className="p-4">
+              <ErrorState
+                title="Could not load channels"
+                description={channelsError}
+                action={{ label: 'Try again', onClick: () => void loadChannels() }}
+              />
+            </div>
+          ) : !activeId ? (
+            <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-ink-muted">
+              {channelsLoading
+                ? 'Loading channels…'
+                : 'No channels yet. Ask the Founder to create one.'}
+            </div>
+          ) : (
+            <>
+              {messagesError ? (
+                <div className="p-4">
+                  <ErrorState
+                    title="Could not load messages"
+                    description={messagesError}
+                    action={{ label: 'Try again', onClick: () => void openChannel(activeId) }}
+                  />
+                </div>
+              ) : (
+                <MessageList
+                  messages={messages}
+                  currentUserId={currentUserId}
+                  loading={messagesLoading}
+                  hasMoreOlder={hasMoreOlder}
+                  loadingOlder={loadingOlder}
+                  onLoadOlder={() => void loadOlder()}
+                  canModify={canModify}
+                  onEdit={editMessage}
+                  onDelete={deleteMessage}
+                  onRetry={(row) => retryMessage(row)}
+                />
+              )}
+
+              <div className="border-t border-line-subtle p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+                <Composer
+                  value={draft}
+                  onChange={setDraft}
+                  onSend={sendMessage}
+                  disabled={sendingDisabled}
+                />
+              </div>
+            </>
+          )}
+        </section>
+      </div>
     </PageTransition>
   )
 }

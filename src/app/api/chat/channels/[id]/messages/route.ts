@@ -2,7 +2,10 @@ import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { handleRouteError, withAuth } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
+import { isFounderRole } from '@/lib/roles'
 import { getDatabase } from '@/lib/mongodb'
+import { getBusinessSettingsCollection } from '@/lib/models/Ledger'
+import { resolveCommentEditWindow, commentWithinEditWindow } from '@/lib/business-policy'
 import { ensureChatCollections, getMessageCollection, messageToJSON } from '@/lib/models/Chat'
 import { messageSendSchema, isObjectId } from '@/lib/schemas/chat'
 import { resolveActiveChannel, sendIdempotent } from '@/lib/chat-service'
@@ -30,7 +33,7 @@ type RouteContext = { params: Promise<{ id: string }> }
 
 async function __GET(request: NextRequest, context: RouteContext) {
   try {
-    await authorize('chat', 'view')
+    const auth = await authorize('chat', 'view')
     const { id } = await context.params
     if (!isObjectId(id)) {
       return validationError('Invalid channel id', [{ path: 'id', message: 'Malformed' }])
@@ -63,7 +66,28 @@ async function __GET(request: NextRequest, context: RouteContext) {
       .limit(limit)
       .toArray()
 
-    return successResponse(docs.reverse().map(messageToJSON))
+    // Stamp an authoritative `editable` flag per message for the caller. This
+    // uses the *real* configured window and the *real* viewer identity, so the
+    // client never shows an edit/delete affordance the server would reject — the
+    // server remains the enforcement point; this only drives the UI.
+    const settings = await getBusinessSettingsCollection(db).findOne({ key: 'business' })
+    const windowMinutes = resolveCommentEditWindow(settings)
+    const isModerator = isFounderRole(auth.user.role)
+    const viewerId = auth.user._id?.toString()
+    const now = new Date()
+
+    const data = docs
+      .reverse()
+      .map((m) => messageToJSON(m))
+      .map((m) => ({
+        ...m,
+        editable:
+          !m.isDeleted &&
+          (isModerator ||
+            (m.senderId === viewerId && commentWithinEditWindow(m.createdAt, now, windowMinutes))),
+      }))
+
+    return successResponse(data)
   } catch (error) {
     console.error('GET /api/chat/channels/[id]/messages failed:', error)
     return handleRouteError(error)
@@ -117,7 +141,7 @@ async function __POST(request: NextRequest, context: RouteContext) {
       clientId,
     })
 
-    return successResponse(messageToJSON(message), created ? 201 : 200)
+    return successResponse({ ...messageToJSON(message), editable: true }, created ? 201 : 200)
   } catch (error) {
     console.error('POST /api/chat/channels/[id]/messages failed:', error)
     return handleRouteError(error)
