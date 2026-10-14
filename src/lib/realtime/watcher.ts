@@ -71,12 +71,12 @@ function handleChange(change: ChangeStreamDocument): void {
   }
   const coll = loose.ns?.coll
   if (!coll) return
-  const module = COLLECTION_MODULES[coll]
-  if (!module) return
+  const mod = COLLECTION_MODULES[coll]
+  if (!mod) return
   // Deletions of a mapped collection must still refresh the module, so we do
   // not gate on operationType here — every write to a watched collection is a
   // reason to re-fetch. clusterTime keeps the cursor monotonic per second.
-  realtimeBus.publish(module, clusterTimeToMs(loose.clusterTime, 0))
+  realtimeBus.publish(mod, clusterTimeToMs(loose.clusterTime, 0))
 }
 
 /**
