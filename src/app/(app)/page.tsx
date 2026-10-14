@@ -1,127 +1,150 @@
-'use client';
+'use client'
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { PageTransition } from '@/components/PageTransition';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Table } from '@/components/ui/Table';
-import { Badge } from '@/components/ui/Badge';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { Toast } from '@/components/ui/Toast';
-import { formatPaisa } from '@/lib/money';
-import { formatKarachiDate } from '@/lib/date';
+import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
+import { PageTransition } from '@/components/PageTransition'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Table } from '@/components/ui/Table'
+import { Badge } from '@/components/ui/Badge'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { Toast } from '@/components/ui/Toast'
+import { formatPaisa } from '@/lib/money'
+import { formatKarachiDate } from '@/lib/date'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
 
 /** Serialized ledger entry as returned by the Phase 3 finance API. */
 interface LedgerEntryView {
-  _id: string;
-  type: string;
-  amount: number;
-  amountDisplay: string;
-  date: string;
-  accountName?: string;
-  category?: string;
-  categoryLabel?: string;
-  partnerName?: string;
-  paymentMethod?: string;
-  note?: string;
-  isReversal: boolean;
-  status: 'posted' | 'reversed';
+  _id: string
+  type: string
+  amount: number
+  amountDisplay: string
+  date: string
+  accountName?: string
+  category?: string
+  categoryLabel?: string
+  partnerName?: string
+  paymentMethod?: string
+  note?: string
+  isReversal: boolean
+  status: 'posted' | 'reversed'
 }
 
 interface DashboardSummary {
-  mtdIncome: number;
-  mtdIncomeDisplay: string;
-  mtdExpenses: number;
-  mtdExpensesDisplay: string;
-  netCashFlow: number;
-  netCashFlowDisplay: string;
-  recentIncome: LedgerEntryView[];
-  recentExpenses: LedgerEntryView[];
+  mtdIncome: number
+  mtdIncomeDisplay: string
+  mtdExpenses: number
+  mtdExpensesDisplay: string
+  netCashFlow: number
+  netCashFlowDisplay: string
+  recentIncome: LedgerEntryView[]
+  recentExpenses: LedgerEntryView[]
 }
 
 interface DashboardAggregates {
-  generatedAt: string;
-  counts: { openTasks: number; orders: number };
-  revenueTrend7d: Array<{ date: string; income: number; expenses: number }>;
-  ordersTrend30d: Array<{ date: string; revenue: number; orders: number }>;
+  generatedAt: string
+  counts: { openTasks: number; orders: number }
+  revenueTrend7d: Array<{ date: string; income: number; expenses: number }>
+  ordersTrend30d: Array<{ date: string; revenue: number; orders: number }>
   stockByLocation: Array<{
-    location: string;
-    label: string;
-    units: number;
-    valuePaisa: number;
-    valueDisplay: string;
-  }>;
-  stockValueDisplay: string;
-  lifetimeOrderRevenueDisplay: string;
+    location: string
+    label: string
+    units: number
+    valuePaisa: number
+    valueDisplay: string
+  }>
+  stockValueDisplay: string
+  lifetimeOrderRevenueDisplay: string
 }
 
 const STOCK_COLUMNS = [
   { key: 'location', label: 'Location' },
   { key: 'value', label: 'Value' },
   { key: 'items', label: 'Items' },
-];
+]
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [aggregates, setAggregates] = useState<DashboardAggregates | null>(null);
+  const router = useRouter()
+  const [summary, setSummary] = useState<DashboardSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [aggregates, setAggregates] = useState<DashboardAggregates | null>(null)
+  // Aggregates (stock levels, revenue/order trends) come from a separate
+  // endpoint. They land independently of the finance summary, so they get
+  // their own loading flag — that keeps the trend cards from flashing their
+  // "No data yet" empty state in the split second before the aggregate read
+  // resolves, which reads as layout shift.
+  const [aggLoading, setAggLoading] = useState(true)
   const [toastMessage, setToastMessage] = useState<{
-    type: 'success' | 'error' | 'info' | 'warning';
-    message: string;
-  } | null>(null);
+    type: 'success' | 'error' | 'info' | 'warning'
+    message: string
+  } | null>(null)
 
   const fetchSummary = useCallback(async (opts: { background?: boolean } = {}) => {
     // The server treats this header as "not user activity": the 60s auto-refresh
     // must not keep an idle session alive, while the first load (navigation) can.
-    const headers = opts.background ? { 'x-session-background': '1' } : undefined;
+    const headers = opts.background ? { 'x-session-background': '1' } : undefined
     try {
-      setError(null);
-      const res = await fetch('/api/finance/summary', { headers });
-      if (!res.ok) throw new Error('Failed to fetch dashboard data');
-      const result = await res.json();
-      if (!result.success) throw new Error(result.error?.message || 'API error');
-      setSummary(result.data);
+      setError(null)
 
-      // Dashboard aggregates (stock, order trends) come from the same database.
-      try {
-        const aggRes = await fetch('/api/dashboard/summary', { headers });
-        const aggBody = await aggRes.json();
-        if (aggRes.ok && aggBody.success) setAggregates(aggBody.data);
-      } catch {
-        // The finance cards still render if the aggregate read fails.
-      }
+      // The finance summary and the dashboard aggregates are two independent
+      // reads against the same database. They used to be awaited one after the
+      // other, so the dashboard paid for both round-trips back to back. Firing
+      // them together and only gating first paint on the finance summary means
+      // the summary cards render as soon as *their* data lands, and the trend
+      // cards fill in a beat later without blocking anything.
+      setAggLoading(true)
+      fetch('/api/dashboard/summary', { headers })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((body) => {
+          if (body?.success) setAggregates(body.data as DashboardAggregates)
+        })
+        .catch(() => {
+          /* trends are a nicety; the finance cards render fine without them */
+        })
+        .finally(() => setAggLoading(false))
+
+      const res = await fetch('/api/finance/summary', { headers })
+      if (!res.ok) throw new Error('Failed to fetch dashboard data')
+      const result = await res.json()
+      if (!result.success) throw new Error(result.error?.message || 'API error')
+      setSummary(result.data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, []);
+  }, [])
 
   useEffect(() => {
-    fetchSummary();
-    // Poll every 60 seconds for fresh data (without extending the session)
-    const interval = setInterval(() => fetchSummary({ background: true }), 60000);
-    return () => clearInterval(interval);
-  }, [fetchSummary]);
+    fetchSummary()
+  }, [fetchSummary])
+
+  // Cross-device realtime. This used to be a blind 60-second interval that
+  // re-fetched the whole dashboard whether or not anything had changed. Now we
+  // listen for a real change to the finance / sales / inventory data that feed
+  // these cards and refresh only when the server's cursor has actually advanced
+  // — fewer needless queries, and updates land in seconds instead of a minute.
+  const refreshBackground = useCallback(() => fetchSummary({ background: true }), [fetchSummary])
+  useRealtimeSync('finance', refreshBackground)
+  useRealtimeSync('sales', refreshBackground)
+  useRealtimeSync('inventory', refreshBackground)
 
   const quickActions = [
     { label: 'Add Order', href: '/sales', color: 'bg-decoricks-brown' },
     { label: 'Add Expense', href: '/finance', color: 'bg-red-500' },
     { label: 'Add Task', href: '/tasks', color: 'bg-blue-500' },
     { label: 'Add Product', href: '/inventory', color: 'bg-green-500' },
-  ];
+  ]
 
   /** Real 7-day income/expense series from the finance collections. */
   const revenueData = (aggregates?.revenueTrend7d ?? []).flatMap((row) => {
     const label = new Date(row.date).toLocaleDateString('en-PK', {
       month: 'short',
       day: 'numeric',
-    });
-    const entries: { id: string; date: string; type: string; amount: string; color: string }[] = [];
+    })
+    const entries: { id: string; date: string; type: string; amount: string; color: string }[] = []
     if (row.income > 0) {
       entries.push({
         id: `${row.date}:income`,
@@ -129,7 +152,7 @@ export default function DashboardPage() {
         type: 'Revenue',
         amount: formatPaisa(row.income),
         color: 'text-green-600',
-      });
+      })
     }
     if (row.expenses > 0) {
       entries.push({
@@ -138,19 +161,19 @@ export default function DashboardPage() {
         type: 'Expenses',
         amount: formatPaisa(row.expenses),
         color: 'text-red-500',
-      });
+      })
     }
-    return entries;
-  });
+    return entries
+  })
 
-  const stockData = aggregates?.stockByLocation ?? [];
+  const stockData = aggregates?.stockByLocation ?? []
 
   /** Real monthly order revenue for the last 30 days. */
   const profitData = (aggregates?.ordersTrend30d ?? []).map((row) => ({
     date: new Date(row.date).toLocaleDateString('en-PK', { month: 'short', day: 'numeric' }),
     amount: formatPaisa(row.revenue),
     color: 'text-green-600',
-  }));
+  }))
 
   if (loading) {
     return (
@@ -167,7 +190,7 @@ export default function DashboardPage() {
         </div>
         <Skeleton variant="rect" className="h-48" />
       </PageTransition>
-    );
+    )
   }
 
   return (
@@ -222,7 +245,13 @@ export default function DashboardPage() {
           <h3 className="text-lg font-semibold text-decoricks-dark mb-4">
             Revenue vs Expenses (7-day)
           </h3>
-          {revenueData.length > 0 ? (
+          {aggLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} variant="rect" className="h-6" />
+              ))}
+            </div>
+          ) : revenueData.length > 0 ? (
             <div className="space-y-3">
               {revenueData.map((row) => (
                 <div key={row.id} className="flex items-center justify-between">
@@ -246,7 +275,9 @@ export default function DashboardPage() {
           <h3 className="text-lg font-semibold text-decoricks-dark mb-4">
             Stock Levels by Location
           </h3>
-          {stockData.length === 0 ? (
+          {aggLoading ? (
+            <Skeleton variant="rect" className="h-40" />
+          ) : stockData.length === 0 ? (
             <EmptyState
               title="No stock yet"
               description="Add products and record stock to see levels by location."
@@ -309,7 +340,7 @@ export default function DashboardPage() {
               action={{
                 label: 'Go to Sales',
                 onClick: () => {
-                  router.push('/sales');
+                  router.push('/sales')
                 },
               }}
             />
@@ -348,7 +379,13 @@ export default function DashboardPage() {
 
         <Card className="p-6">
           <h3 className="text-lg font-semibold text-decoricks-dark mb-4">Order Revenue (30-day)</h3>
-          {profitData.length === 0 ? (
+          {aggLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} variant="rect" className="h-6" />
+              ))}
+            </div>
+          ) : profitData.length === 0 ? (
             <EmptyState
               title="No orders yet"
               description="Order revenue appears here once orders are created."
@@ -366,5 +403,5 @@ export default function DashboardPage() {
         </Card>
       </div>
     </PageTransition>
-  );
+  )
 }

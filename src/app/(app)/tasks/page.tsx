@@ -30,6 +30,7 @@ import { apiFetch } from '@/lib/api-client'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { isFounder } from '@/lib/permissions-client'
 import { usePolling } from '@/hooks/usePolling'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
 import {
   TaskDetailPanel,
   type ActivityDto,
@@ -205,17 +206,25 @@ export default function TasksBoardPage() {
     }
   }, [])
 
+  // Tracks which board is currently materialised so we can tell a genuine
+  // first paint (or a board switch) from a background refresh. Only the former
+  // may show skeletons — the latter must update the columns in place, otherwise
+  // every poll/move/save blanks the board and reads as a full page reload.
+  const loadedBoardIdRef = useRef<string | null>(null)
+
   const loadBoard = useCallback(async (id: string) => {
-    setLoadingBoard(true)
+    const firstPaint = loadedBoardIdRef.current !== id
+    if (firstPaint) setLoadingBoard(true)
     try {
       const res = await apiFetch(`/api/boards/${id}`)
       const body = await res.json()
       if (!res.ok || !body.success) throw new Error(body?.error?.message ?? 'Failed to load board')
       setDetail(body.data as BoardDetail)
+      loadedBoardIdRef.current = id
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load board')
     } finally {
-      setLoadingBoard(false)
+      if (firstPaint) setLoadingBoard(false)
     }
   }, [])
 
@@ -274,15 +283,45 @@ export default function TasksBoardPage() {
     }
   }, [view, filterPriority, filterLabelId, filterAssigneeId, filterSearch])
 
-  /** Reload whatever the active view shows after a save, so a card edited from
-   *  the My-tasks list updates the list, not an invisible board. */
-  const refreshCurrentView = useCallback(async () => {
-    if (view === 'board') {
-      if (boardId) await loadBoard(boardId)
-    } else {
-      await loadList()
-    }
-  }, [view, boardId, loadBoard, loadList])
+  /**
+   * Merge a saved task straight into the mounted state. The create/edit/move
+   * endpoints all return the authoritative document, so instead of refetching
+   * the whole board we drop the fresh card into its column (sorted by the
+   * server's `position`) and refresh the flat list entry if it's present.
+   * This preserves scroll, filters and every unrelated column — the board
+   * never blanks, which is what the previous `loadBoard` reload was doing.
+   */
+  const upsertTaskLocal = useCallback((updated: TaskDto) => {
+    setDetail((current) => {
+      if (!current) return current
+      const tasksByColumn: Record<string, TaskDto[]> = {}
+      for (const [colId, list] of Object.entries(current.tasksByColumn)) {
+        tasksByColumn[colId] = list.filter((t) => t._id !== updated._id)
+      }
+      const target = tasksByColumn[updated.columnId] ?? []
+      target.push(updated)
+      target.sort((a, b) => a.position - b.position)
+      tasksByColumn[updated.columnId] = target
+      return { ...current, tasksByColumn }
+    })
+    setListTasks((current) => {
+      if (!current.some((t) => t._id === updated._id)) return current
+      return current.map((t) => (t._id === updated._id ? updated : t))
+    })
+  }, [])
+
+  /** Drop an archived card from the board and any flat list without a reload. */
+  const removeTaskLocal = useCallback((taskId: string) => {
+    setDetail((current) => {
+      if (!current) return current
+      const tasksByColumn: Record<string, TaskDto[]> = {}
+      for (const [colId, list] of Object.entries(current.tasksByColumn)) {
+        tasksByColumn[colId] = list.filter((t) => t._id !== taskId)
+      }
+      return { ...current, tasksByColumn }
+    })
+    setListTasks((current) => current.filter((t) => t._id !== taskId))
+  }, [])
 
   useEffect(() => {
     loadBoards()
@@ -309,6 +348,42 @@ export default function TasksBoardPage() {
     () => (view === 'board' ? (boardId ? loadBoard(boardId) : Promise.resolve()) : loadList()),
     { paused: modalOpen || columnModalOpen || activeTaskId !== null }
   )
+
+  /**
+   * Cross-device realtime. When the server reports a task changed on another
+   * device/session, refresh the active view — silently, because `loadBoard`
+   * only shows skeletons on a genuine first paint. The refresh is deferred
+   * while a modal is open or a drag is in flight (we must never re-sort cards
+   * mid-gesture or steal the cursor from a form) and applied the moment it is
+   * safe again, so a remote change is never silently dropped.
+   */
+  const realtimePaused = modalOpen || columnModalOpen || activeTaskId !== null
+  const remoteDirtyRef = useRef(false)
+  const refreshActiveView = useCallback(() => {
+    if (view === 'board') return boardId ? loadBoard(boardId) : Promise.resolve()
+    return loadList()
+  }, [view, boardId, loadBoard, loadList])
+
+  useRealtimeSync(
+    'tasks',
+    () => {
+      if (realtimePaused) {
+        remoteDirtyRef.current = true
+        return
+      }
+      void refreshActiveView()
+    },
+    // Only listen once we have a verified session; there is nothing to sync for
+    // an anonymous viewer and the cursor endpoint would 401 anyway.
+    user != null
+  )
+
+  useEffect(() => {
+    if (!realtimePaused && remoteDirtyRef.current) {
+      remoteDirtyRef.current = false
+      void refreshActiveView()
+    }
+  }, [realtimePaused, refreshActiveView])
 
   const openCreate = (column: ColumnDto) => {
     setEditing(null)
@@ -384,6 +459,9 @@ export default function TasksBoardPage() {
           return
         }
         if (!res.ok || !json.success) throw new Error(json?.error?.message ?? 'Update failed')
+        // Merge the saved card (with its bumped version token) straight into
+        // state — the whole board does not need to be refetched.
+        upsertTaskLocal(json.data as TaskDto)
         showToast('success', 'Task updated')
       } else if (creatingInColumn && boardId) {
         const body = {
@@ -401,10 +479,12 @@ export default function TasksBoardPage() {
         const res = await apiFetch('/api/tasks', { method: 'POST', body: JSON.stringify(body) })
         const json = await res.json()
         if (!res.ok || !json.success) throw new Error(json?.error?.message ?? 'Create failed')
+        // Insert the new card into its column locally. No board reload, so
+        // scroll position, filters and every unrelated column are preserved.
+        upsertTaskLocal(json.data as TaskDto)
         showToast('success', 'Task created')
       }
       setModalOpen(false)
-      await refreshCurrentView()
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -478,15 +558,16 @@ export default function TasksBoardPage() {
         }
         if (!res.ok || !json.success) throw new Error(json?.error?.message ?? 'Move failed')
         showToast('success', 'Moved')
-        // Server is source of truth for `position` and bumped `version`.
-        // Reload quietly so the next edit/move starts from the fresh token.
-        await loadBoard(boardId)
+        // Adopt the server's authoritative column/position and bumped version
+        // for this single card. The optimistic move already placed it, so a
+        // full board reload (which re-skeletoned every column) is unnecessary.
+        upsertTaskLocal(json.data as TaskDto)
       } catch (err) {
         if (previous) setDetail(previous)
         showToast('error', err instanceof Error ? err.message : 'Move failed')
       }
     },
-    [boardId, detail, loadBoard]
+    [boardId, detail, loadBoard, upsertTaskLocal]
   )
 
   const archiveTask = async (task: TaskDto) => {
@@ -507,7 +588,8 @@ export default function TasksBoardPage() {
       }
       if (!res.ok || !json.success) throw new Error(json?.error?.message ?? 'Archive failed')
       showToast('success', 'Archived')
-      await loadBoard(boardId)
+      // Remove the card from local state — no board reload needed.
+      removeTaskLocal(task._id)
     } catch (err) {
       showToast('error', err instanceof Error ? err.message : 'Archive failed')
     }
