@@ -28,6 +28,17 @@ import { AFNAN_STATE, CSRF_HEADER, FOUNDER_STATE, csrfFromState } from './helper
 
 const founderCsrf = () => csrfFromState(FOUNDER_STATE)
 
+/**
+ * The message composer textarea.
+ *
+ * Must be matched by an exact accessible name: once a user's own messages are
+ * rendered they expose "Edit message" / "Delete message" action buttons, and a
+ * substring `getByLabel('Message')` (case-insensitive by default) would then
+ * resolve to 5 elements and trip Playwright strict mode intermittently, purely
+ * depending on whether those buttons are in the DOM at that instant.
+ */
+const composer = (page: Page) => page.getByRole('textbox', { name: 'Message', exact: true })
+
 /** Resolve a channel's id by display name through the real, auth-gated list. */
 async function channelIdByName(ctx: BrowserContext, name: string): Promise<string> {
   const res = await ctx.request.get('/api/chat/channels')
@@ -184,14 +195,14 @@ test('going offline shows the banner and disables sending, then resumes and deli
   await openChatOn(pageB, 'General')
 
   const draft = uniqueTag('draft')
-  await pageB.getByLabel('Message').fill(draft)
+  await composer(pageB).fill(draft)
 
   // Cut device B's network: the banner appears, sending is disabled, and the
   // typed draft must survive the offline period untouched.
   await deviceB.setOffline(true)
   await expect(pageB.getByText('You are offline')).toBeVisible({ timeout: 10_000 })
-  await expect(pageB.getByLabel('Message')).toBeDisabled()
-  await expect(pageB.getByLabel('Message')).toHaveValue(draft)
+  await expect(composer(pageB)).toBeDisabled()
+  await expect(composer(pageB)).toHaveValue(draft)
 
   // A writes while B is dark; this message must arrive only on reconnect.
   const whileAway = uniqueTag('while-away')
@@ -201,11 +212,11 @@ test('going offline shows the banner and disables sending, then resumes and deli
   // resumes from its last cursor to pick up the message it missed.
   await deviceB.setOffline(false)
   await expect(pageB.getByText('You are offline')).toHaveCount(0, { timeout: 10_000 })
-  await expect(pageB.getByLabel('Message')).toBeEnabled()
+  await expect(composer(pageB)).toBeEnabled()
   await expect(pageB.getByText(whileAway, { exact: false })).toBeVisible({ timeout: 20_000 })
 
   // The preserved draft is still there and now sends cleanly.
-  await expect(pageB.getByLabel('Message')).toHaveValue(draft)
+  await expect(composer(pageB)).toHaveValue(draft)
   await pageB.getByRole('button', { name: 'Send' }).click()
   await expect(pageB.getByText(draft, { exact: false })).toBeVisible({ timeout: 15_000 })
 
@@ -243,8 +254,8 @@ test('on a phone-width viewport the chat is full-screen with the composer pinned
   await expect(page.getByRole('heading', { name: '#General', exact: true })).toBeVisible()
 
   // The composer sits at the bottom of the viewport, not scrolled off-screen.
-  const composer = page.getByLabel('Message')
-  const box = await composer.boundingBox()
+  const composerInput = composer(page)
+  const box = await composerInput.boundingBox()
   expect(box, 'composer should be laid out').not.toBeNull()
   const viewport = page.viewportSize()!
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height + 1)
@@ -258,7 +269,7 @@ test('on a phone-width viewport the chat is full-screen with the composer pinned
 
   // A message sent from the phone shows up in its own transcript.
   const text = uniqueTag('from-phone')
-  await composer.fill(text)
+  await composerInput.fill(text)
   await page.getByRole('button', { name: 'Send' }).click()
   await expect(page.getByText(text, { exact: false })).toBeVisible({ timeout: 15_000 })
 

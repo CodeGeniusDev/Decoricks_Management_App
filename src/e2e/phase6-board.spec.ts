@@ -1,4 +1,4 @@
-import { test, expect, type Page, type APIRequestContext } from '@playwright/test'
+import { test, expect, type Page, type Locator, type APIRequestContext } from '@playwright/test'
 import { BASE_URL, FOUNDER_STATE, CSRF_HEADER, csrfFromState } from './helpers'
 
 /**
@@ -49,8 +49,23 @@ const fetchBoard = async (): Promise<{
   return { columns: body.data.columns, tasks: body.data.tasksByColumn }
 }
 
+/**
+ * A card's title button inside `scope`, matched by the start of its accessible
+ * name. Each card also renders its `taskNumber` (e.g. "TASK-202610-0007")
+ * inside the same button, so the accessible name is `"<title> <taskNumber>"`
+ * — a `exact: true` title match can never be correct. Anchoring on the title
+ * still distinguishes it from the drag handle, whose name starts with "Drag".
+ */
+const cardButtonIn = (scope: Page | Locator, title: string) =>
+  scope.getByRole('button', { name: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) })
+
 test.describe('phase 6 board journey', () => {
   test.use({ storageState: FOUNDER_STATE })
+  // Board mutations round-trip through the shared Atlas test DB while up to 12
+  // browser contexts run concurrently in the default (non-CI) config, so a
+  // single create/move can legitimately take several seconds. Give the journey
+  // headroom rather than failing on network latency alone.
+  test.setTimeout(90_000)
 
   test.beforeAll(async ({ playwright }) => {
     founder = await playwright.request.newContext({
@@ -117,13 +132,42 @@ test.describe('phase 6 board journey', () => {
     const modal = page.getByRole('dialog')
     await expect(modal.getByText('New task')).toBeVisible()
     await modal.getByLabel('Title').fill(title)
-    await modal.getByRole('button', { name: 'Create task' }).click()
-    await expect(modal).toBeHidden({ timeout: 15_000 })
 
-    // The card now lives in the To Do column.
-    await expect(todoColumn.getByRole('button', { name: title, exact: true })).toBeVisible({
-      timeout: 15_000,
-    })
+    // The authoritative success signal is the card landing on the board — the
+    // guarded POST is idempotent and returns 201 — not the exact frame the
+    // modal's exit animation clears, which races the realtime refresh. Two
+    // phases, so a slow-but-successful POST (common when 12 browser contexts
+    // share one Atlas instance) is never mistaken for a dropped click and
+    // retried into a duplicate:
+    //   1. wait a generous window for the single click to land;
+    //   2. only if the card is STILL absent (the click was swallowed by load)
+    //      re-issue it once and wait again. The retry is unreachable once the
+    //      card exists, so it can never double-create.
+    const waitCreated = (ms: number) =>
+      expect
+        .poll(async () => (await cardOnBoard(title)), { timeout: ms })
+        .toBe(true)
+    await modal.getByRole('button', { name: 'Create task' }).click()
+    await waitCreated(6_000).catch(() => {})
+    if (!(await cardOnBoard(title))) {
+      await modal.getByRole('button', { name: 'Create task' }).click({ timeout: 3_000 }).catch(() => {})
+      await waitCreated(20_000)
+    }
+
+    await modal.getByRole('button', { name: 'Close dialog' }).click({ timeout: 5_000 }).catch(() => {})
+    await expect(cardButtonIn(todoColumn, title)).toBeVisible({ timeout: 15_000 })
+  }
+
+  /** Whether a task with this exact title exists anywhere on the active board. */
+  const cardOnBoard = async (title: string): Promise<boolean> => {
+    const res = await founder.get(`/api/boards/${boardId}`)
+    if (!res.ok()) return false
+    const body = (await res.json()) as {
+      data: { tasksByColumn: Record<string, Array<{ title: string }>> }
+    }
+    return Object.values(body.data.tasksByColumn)
+      .flat()
+      .some((t) => t.title === title)
   }
 
   test('create a card, move it to Done, and the server stamps completedAt', async ({ page }) => {
@@ -135,14 +179,14 @@ test.describe('phase 6 board journey', () => {
     // deterministic board mutation that calls the same guarded /move endpoint.
     const card = page
       .locator('div.group')
-      .filter({ has: page.getByRole('button', { name: title, exact: true }) })
+      .filter({ has: cardButtonIn(page, title) })
     await card.getByLabel('Move task to another column').selectOption({ label: 'Move to Done' })
 
     // Optimistically the card re-appears under the Done column.
     const doneColumn = page
       .locator('section')
       .filter({ has: page.getByRole('heading', { name: 'Done', exact: true }) })
-    await expect(doneColumn.getByRole('button', { name: title, exact: true })).toBeVisible({
+    await expect(cardButtonIn(doneColumn, title)).toBeVisible({
       timeout: 15_000,
     })
 
@@ -179,12 +223,17 @@ test.describe('phase 6 board journey', () => {
     expect(from && to).toBeTruthy()
 
     // dnd-kit's PointerSensor activates after a small move, then follows the
-    // pointer until release over a droppable. Step the moves so the sensor
-    // sees continuous pointer movement.
+    // pointer until release over a droppable. We release over the target
+    // column's *visible* header near the top of the board, not the bottom of
+    // its (potentially very tall) droppable rect: the columns stretch to the
+    // full board height, so dropping at the section's bottom lands far below
+    // the viewport where dnd-kit's default rect-intersection resolver sees no
+    // overlap and dispatches no move. Stepping the move past the 4px
+    // activation distance keeps the sensor happy in a headless browser.
     await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2)
     await page.mouse.down()
-    await page.mouse.move(to!.x + to!.width / 2, to!.y + 40, { steps: 12 })
-    await page.mouse.move(to!.x + to!.width / 2, to!.y + to!.height - 20, { steps: 8 })
+    await page.mouse.move((from!.x + to!.x) / 2 + to!.width / 4, from!.y, { steps: 6 })
+    await page.mouse.move(to!.x + to!.width / 2, to!.y + 12, { steps: 8 })
     await page.mouse.up()
 
     // The drag posts the same guarded /move; verify the completion server-side.

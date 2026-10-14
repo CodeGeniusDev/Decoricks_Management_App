@@ -26,8 +26,13 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   // Three projects run at once; an unbounded worker count makes the heavier
-  // navigation loops contend for CPU and flake on timing assertions.
-  workers: process.env.CI ? 1 : 4,
+  // navigation loops contend for CPU and flake on timing assertions. Since
+  // Phase 7 every context also holds a live SSE /api/events stream and the
+  // server keeps an Atlas change-stream open per subscriber, so 4 workers
+  // (12 concurrent contexts) overwhelm the single free-tier M0 instance and
+  // write round-trips intermittently blow past their timeout. 2 workers is the
+  // highest count that stays deterministic against the free-tier backend.
+  workers: process.env.CI ? 1 : 2,
   reporter: process.env.CI ? 'line' : 'html',
   timeout: 30_000,
   // Login is a bcrypt round-trip plus a DB hop; under load it can exceed the
