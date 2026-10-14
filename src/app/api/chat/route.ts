@@ -2,20 +2,17 @@ import { handleRouteError, withAuth } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
-import { getMessageCollection, type Message } from '@/lib/models/Chat'
+import {
+  getChannelCollection,
+  getMessageCollection,
+  ensureChatCollections,
+  messageToJSON,
+  type Message,
+} from '@/lib/models/Chat'
 import { messageSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
 import { errorResponse, successResponse, validationError } from '@/lib/api-response'
 import { ObjectId } from 'mongodb'
-
-const messageToJSON = (m: Message) => ({
-  _id: m._id?.toString(),
-  senderId: m.senderId.toString(),
-  senderName: m.senderName,
-  content: m.content,
-  isSystem: m.isSystem,
-  createdAt: m.createdAt,
-})
 
 /**
  * GET /api/chat
@@ -44,6 +41,8 @@ async function __GET(request: NextRequest) {
     }
 
     const db = await getDatabase()
+    // Ensures indexes + the `general` channel exist before the first read.
+    await ensureChatCollections(db)
     const col = getMessageCollection(db)
 
     const filter: Record<string, unknown> = {}
@@ -88,11 +87,22 @@ async function __POST(request: NextRequest) {
     }
 
     const db = await getDatabase()
+    await ensureChatCollections(db)
+
+    // Phase 7 keeps the legacy single-thread behaviour until the multi-channel
+    // API lands: every posted message belongs to `general`.
+    const general = await getChannelCollection(db).findOne({ key: 'general' })
+    if (!general?._id) {
+      return errorResponse('Chat is not ready yet. Please try again.', 503, 'CHAT_UNAVAILABLE')
+    }
+
     const doc: Message = {
+      channelId: general._id,
       senderId: auth.user._id,
       senderName: auth.user.name,
       content,
       isSystem: false,
+      isDeleted: false,
       createdAt: getKarachiDate(),
     }
 
