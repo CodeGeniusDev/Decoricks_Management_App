@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { useRealtimeSync } from '@/lib/sync/useRealtime';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PageTransition } from '@/components/PageTransition';
@@ -77,9 +78,44 @@ export default function FinanceOverviewPage() {
     }
   }, []);
 
+  // Background refresh for the live signal: swaps `data` in place without the
+  // `loading` toggle, so an incoming change never blanks the screen. On failure
+  // it keeps the current view (a blip is not a reason to show an error).
+  const silentRefresh = useCallback(async () => {
+    try {
+      setData(await apiJson<OverviewView>('/api/finance/overview'));
+      setError(null);
+    } catch {
+      /* keep the current view */
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Live cross-device refresh of the ledger. Paused while the reverse-entry
+  // modal is open or the withdrawal lock is saving, so a remote change can never
+  // clobber an in-flight entry; applied once the editor closes.
+  const financeModalOpen = reverseTarget !== null || lockSaving;
+  const remoteDirtyRef = React.useRef(false);
+  useRealtimeSync(
+    'finance',
+    () => {
+      if (financeModalOpen) {
+        remoteDirtyRef.current = true;
+        return;
+      }
+      void silentRefresh();
+    },
+    user != null
+  );
+  useEffect(() => {
+    if (!financeModalOpen && remoteDirtyRef.current) {
+      remoteDirtyRef.current = false;
+      void silentRefresh();
+    }
+  }, [financeModalOpen, silentRefresh]);
 
   const saveLock = async () => {
     if (lockSubmittingRef.current) return;

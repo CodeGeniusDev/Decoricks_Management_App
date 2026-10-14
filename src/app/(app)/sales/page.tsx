@@ -48,6 +48,7 @@ import {
 } from '@/modules/sales/sales-ui'
 import type { ProductView, StockPools, StockSummaryView } from '@/modules/inventory/inventory-ui'
 import { OrderFormModal } from '@/modules/sales/OrderFormModal'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
 
 const LIMIT = 25
 
@@ -145,6 +146,29 @@ export default function SalesOrdersPage() {
     const timer = setTimeout(() => void load(filters, page), filters.search ? 350 : 0)
     return () => clearTimeout(timer)
   }, [filters, page, reloadTick, load])
+
+  // Live cross-device refresh. `load` is race-guarded and swaps `data` in place
+  // without touching `loading`, so an incoming order change updates the table
+  // silently. Paused while the order form modal is open so it can never disturb a
+  // half-filled order; applied once the modal closes.
+  const salesRemoteDirtyRef = useRef(false)
+  useRealtimeSync(
+    'sales',
+    () => {
+      if (formOpen) {
+        salesRemoteDirtyRef.current = true
+        return
+      }
+      void load(filters, page)
+    },
+    user != null
+  )
+  useEffect(() => {
+    if (!formOpen && salesRemoteDirtyRef.current) {
+      salesRemoteDirtyRef.current = false
+      void load(filters, page)
+    }
+  }, [formOpen, filters, page, load])
 
   // Order form reference data: active products plus the ledger-derived pools.
   useEffect(() => {
@@ -276,7 +300,9 @@ export default function SalesOrdersPage() {
         actions={
           <>
             <ExportLink href={exportHref} />
-            {canCreate && canShipAnywhere && <Button onClick={() => setFormOpen(true)}>New order</Button>}
+            {canCreate && canShipAnywhere && (
+              <Button onClick={() => setFormOpen(true)}>New order</Button>
+            )}
           </>
         }
       />

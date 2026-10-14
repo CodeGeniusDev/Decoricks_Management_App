@@ -39,6 +39,7 @@ import {
 } from '@/modules/inventory/inventory-ui'
 import { CountModal, DamageModal, TransferModal } from '@/modules/inventory/StockActionModals'
 import { InventoryCalcPanel } from '@/modules/inventory/InventoryCalcPanel'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
 
 const LOCATION_LABELS: Record<string, string> = {
   sheikhupura: 'Sheikhupura',
@@ -61,7 +62,9 @@ export default function InventoryOverviewPage() {
   const requestSeq = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
 
-  const canWriteSheikhupura = user ? canWriteStockLocation({ role: user.role }, 'sheikhupura') : false
+  const canWriteSheikhupura = user
+    ? canWriteStockLocation({ role: user.role }, 'sheikhupura')
+    : false
   const canWriteLahore = user ? canWriteStockLocation({ role: user.role }, 'lahore') : false
   const canWriteAnyStock = canWriteSheikhupura || canWriteLahore
   const canWriteLocation = useCallback(
@@ -101,6 +104,30 @@ export default function InventoryOverviewPage() {
     return () => abortRef.current?.abort()
   }, [load])
 
+  // Live cross-device refresh. `load()` keeps existing data painted until the
+  // new snapshot arrives, so this updates in place with no flicker. It is paused
+  // while a stock-action modal is open (so a remote change can never clobber a
+  // half-filled transfer/count/damage form) and applied once on close.
+  const stockModalOpen = transferOpen || countOpen || damageOpen
+  const remoteDirtyRef = useRef(false)
+  useRealtimeSync(
+    'inventory',
+    () => {
+      if (stockModalOpen) {
+        remoteDirtyRef.current = true
+        return
+      }
+      void load()
+    },
+    user != null
+  )
+  useEffect(() => {
+    if (!stockModalOpen && remoteDirtyRef.current) {
+      remoteDirtyRef.current = false
+      void load()
+    }
+  }, [stockModalOpen, load])
+
   const pools = useMemo(() => {
     const map: Record<string, StockPools> = {}
     for (const item of data?.items ?? []) {
@@ -128,10 +155,7 @@ export default function InventoryOverviewPage() {
   const rows = useMemo(() => {
     let items = (data?.items ?? []).filter(
       (item) =>
-        item.isActive ||
-        item.totalAvailable > 0 ||
-        item.totalDamaged > 0 ||
-        item.totalReturned > 0
+        item.isActive || item.totalAvailable > 0 || item.totalDamaged > 0 || item.totalReturned > 0
     )
     if (stockFilter === 'low') items = items.filter((item) => item.lowStock)
     return items
@@ -180,7 +204,9 @@ export default function InventoryOverviewPage() {
           {sheikhupura?.available ?? 0}
         </span>
       ),
-      lahore: <span className={lahore?.available ? '' : 'text-ink-muted'}>{lahore?.available ?? 0}</span>,
+      lahore: (
+        <span className={lahore?.available ? '' : 'text-ink-muted'}>{lahore?.available ?? 0}</span>
+      ),
       damaged: (
         <span className={item.totalDamaged ? 'text-status-warning' : 'text-ink-muted'}>
           {item.totalDamaged}
@@ -192,9 +218,13 @@ export default function InventoryOverviewPage() {
         </span>
       ),
       reorder: (
-        <span className="text-ink-muted">{item.reorderLevel === null ? '—' : item.reorderLevel}</span>
+        <span className="text-ink-muted">
+          {item.reorderLevel === null ? '—' : item.reorderLevel}
+        </span>
       ),
-      valuation: <span className="font-medium text-decoricks-dark">{formatPaisa(item.valuation)}</span>,
+      valuation: (
+        <span className="font-medium text-decoricks-dark">{formatPaisa(item.valuation)}</span>
+      ),
     }
   })
 
@@ -301,7 +331,11 @@ export default function InventoryOverviewPage() {
                   </div>
                   <div>
                     <dt className="text-xs text-ink-muted">Damaged</dt>
-                    <dd className={loc.damaged ? 'font-semibold text-status-warning' : 'text-ink-muted'}>
+                    <dd
+                      className={
+                        loc.damaged ? 'font-semibold text-status-warning' : 'text-ink-muted'
+                      }
+                    >
                       {loc.damaged}
                     </dd>
                   </div>
@@ -311,7 +345,9 @@ export default function InventoryOverviewPage() {
                   </div>
                   <div>
                     <dt className="text-xs text-ink-muted">Valuation</dt>
-                    <dd className="font-semibold text-decoricks-dark">{formatPaisa(loc.valuation)}</dd>
+                    <dd className="font-semibold text-decoricks-dark">
+                      {formatPaisa(loc.valuation)}
+                    </dd>
                   </div>
                 </dl>
               </Card>
@@ -351,21 +387,30 @@ export default function InventoryOverviewPage() {
             ) : (
               <>
                 <div className="hidden md:block">
-                  <Table caption="Stock by product and location" columns={columns} data={tableRows} rowKey="_id" />
+                  <Table
+                    caption="Stock by product and location"
+                    columns={columns}
+                    data={tableRows}
+                    rowKey="_id"
+                  />
                 </div>
                 <ul className="divide-y divide-line-subtle md:hidden">
                   {rows.map((item) => (
                     <li key={item._id} className="px-4 py-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-decoricks-dark">{item.name}</p>
+                          <p className="truncate text-sm font-medium text-decoricks-dark">
+                            {item.name}
+                          </p>
                           <p className="text-xs text-ink-muted">{item.sku}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-semibold text-decoricks-dark">
                             {formatPaisa(item.valuation)}
                           </p>
-                          <p className="text-xs text-ink-muted">{item.totalAvailable} units available</p>
+                          <p className="text-xs text-ink-muted">
+                            {item.totalAvailable} units available
+                          </p>
                         </div>
                       </div>
                       <div className="mt-2 flex flex-wrap gap-2 text-xs">
@@ -374,7 +419,8 @@ export default function InventoryOverviewPage() {
                             key={loc.location}
                             className="rounded-md bg-surface-sunken px-2 py-1 text-ink-secondary"
                           >
-                            {LOCATION_LABELS[loc.location] ?? loc.location}: {loc.available} available
+                            {LOCATION_LABELS[loc.location] ?? loc.location}: {loc.available}{' '}
+                            available
                             {loc.damaged > 0 && ` · ${loc.damaged} damaged`}
                             {loc.returned > 0 && ` · ${loc.returned} returned`}
                           </span>
