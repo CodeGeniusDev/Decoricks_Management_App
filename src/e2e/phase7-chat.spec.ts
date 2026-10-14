@@ -52,13 +52,45 @@ async function sendMessage(
   expect(res.ok(), `send should be 2xx, got ${res.status()}`).toBeTruthy()
 }
 
+/** Create a Founder-only channel and return its id (unique name → hermetic). */
+async function createChannel(ctx: BrowserContext, name: string): Promise<string> {
+  const res = await ctx.request.post('/api/chat/channels', {
+    data: { name, description: 'Ephemeral e2e channel' },
+    headers: { [CSRF_HEADER]: founderCsrf() },
+  })
+  expect(res.status(), `channel create should be 201, got ${res.status()}`).toBe(201)
+  return (await res.json()).data._id as string
+}
+
+/** Post a message directly by channel id (idempotent). */
+async function sendToChannelId(
+  ctx: BrowserContext,
+  channelId: string,
+  content: string
+): Promise<void> {
+  const res = await ctx.request.post(`/api/chat/channels/${channelId}/messages`, {
+    data: { content, clientId: crypto.randomUUID() },
+    headers: { [CSRF_HEADER]: founderCsrf() },
+  })
+  expect(res.ok(), `send should be 2xx, got ${res.status()}`).toBeTruthy()
+}
+
+/**
+ * The channel's button inside the rail. Matched by its visible `#Name` text
+ * rather than the exact accessible name, because an unread badge appends a
+ * count to the button's accessible name ("#General 3") and would break an
+ * `exact` role-name match.
+ */
+const railButton = (page: Page, name: string) =>
+  page.locator('nav[aria-label="Chat channels"] button', { hasText: `#${name}` }).first()
+
 /** Wait for the conversation panel to be live on the given channel. */
 async function openChatOn(page: Page, channelName: string): Promise<void> {
   await page.goto('/chat')
   await expect(page.getByRole('status')).toBeVisible({ timeout: 20_000 })
-  // The desktop rail selects the first channel automatically; pick the target.
-  await page.getByRole('button', { name: `#${channelName}`, exact: true }).click()
-  await expect(page.getByRole('heading', { name: `#${channelName}` })).toBeVisible()
+  // The rail selects the first channel automatically; pick the target explicitly.
+  await railButton(page, channelName).click()
+  await expect(page.getByRole('heading', { name: `#${channelName}`, exact: true })).toBeVisible()
 }
 
 const uniqueTag = (label: string) => `${label}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`
@@ -112,24 +144,28 @@ test('unread badge counts messages in a channel device B is not viewing', async 
   const deviceA = await browser.newContext({ storageState: FOUNDER_STATE })
   const deviceB = await browser.newContext({ storageState: AFNAN_STATE })
 
+  // A brand-new channel has no read watermark for anyone, so its unread count
+  // is exactly the messages device A posts now — deterministic regardless of
+  // what earlier runs left in the seeded channels.
+  const name = `e2e unread ${Date.now()}`
+  const channelId = await createChannel(deviceA, name)
+
   const pageB = await deviceB.newPage()
-  // B is reading General; Orders stays in the background and accumulates unread.
+  // B is reading General; the new channel stays in the background and accrues unread.
   await openChatOn(pageB, 'General')
 
-  const one = uniqueTag('orders-1')
-  const two = uniqueTag('orders-2')
-  await sendMessage(deviceA, 'Orders', one)
-  await sendMessage(deviceA, 'Orders', two)
+  await sendToChannelId(deviceA, channelId, uniqueTag('unread-1'))
+  await sendToChannelId(deviceA, channelId, uniqueTag('unread-2'))
 
-  // The Orders rail entry grows an unread badge as the channel list reconciles.
-  const ordersButton = pageB.getByRole('button', { name: '#Orders', exact: true })
-  await expect(ordersButton.getByText('2', { exact: true })).toBeVisible({ timeout: 20_000 })
+  // The rail entry grows an unread badge as the channel list reconciles.
+  const channelButton = railButton(pageB, name)
+  await expect(channelButton.getByText('2', { exact: true })).toBeVisible({ timeout: 20_000 })
 
   // Opening it marks the channel read and paints the messages.
-  await ordersButton.click()
-  await expect(pageB.getByText(one, { exact: false })).toBeVisible()
-  await expect(pageB.getByText(two, { exact: false })).toBeVisible()
-  await expect(ordersButton.getByText('2', { exact: true })).toHaveCount(0)
+  await channelButton.click()
+  await expect(pageB.getByText('unread-1', { exact: false }).first()).toBeVisible()
+  await expect(pageB.getByText('unread-2', { exact: false }).first()).toBeVisible()
+  await expect(channelButton.getByText('2', { exact: true })).toHaveCount(0)
 
   await pageB.close()
   await deviceA.close()
@@ -153,7 +189,7 @@ test('going offline shows the banner and disables sending, then resumes and deli
   // Cut device B's network: the banner appears, sending is disabled, and the
   // typed draft must survive the offline period untouched.
   await deviceB.setOffline(true)
-  await expect(pageB.getByRole('alert')).toContainText('offline', { timeout: 10_000 })
+  await expect(pageB.getByText('You are offline')).toBeVisible({ timeout: 10_000 })
   await expect(pageB.getByLabel('Message')).toBeDisabled()
   await expect(pageB.getByLabel('Message')).toHaveValue(draft)
 
@@ -164,7 +200,7 @@ test('going offline shows the banner and disables sending, then resumes and deli
   // Restore the connection: banner clears, the composer re-enables, and B
   // resumes from its last cursor to pick up the message it missed.
   await deviceB.setOffline(false)
-  await expect(pageB.getByRole('alert')).toHaveCount(0, { timeout: 10_000 })
+  await expect(pageB.getByText('You are offline')).toHaveCount(0, { timeout: 10_000 })
   await expect(pageB.getByLabel('Message')).toBeEnabled()
   await expect(pageB.getByText(whileAway, { exact: false })).toBeVisible({ timeout: 20_000 })
 
@@ -197,10 +233,14 @@ test('on a phone-width viewport the chat is full-screen with the composer pinned
   await expect(page.getByRole('status')).toBeVisible({ timeout: 20_000 })
 
   // The rail collapses behind a menu button on <md; the conversation fills the
-  // width. Opening the drawer selects a channel.
+  // width. Opening the drawer selects a channel (scoped to the dialog so the
+  // hidden desktop rail is never matched).
   await page.getByLabel('Open channels').click()
-  await page.getByRole('button', { name: '#General', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '#General' })).toBeVisible()
+  const drawerButton = page
+    .locator('div[role="dialog"] nav[aria-label="Chat channels"] button', { hasText: '#General' })
+    .first()
+  await drawerButton.click()
+  await expect(page.getByRole('heading', { name: '#General', exact: true })).toBeVisible()
 
   // The composer sits at the bottom of the viewport, not scrolled off-screen.
   const composer = page.getByLabel('Message')

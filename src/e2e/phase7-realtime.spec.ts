@@ -87,15 +87,16 @@ test('a task written by one session advances the cursor observed by another sess
   await deviceB.close()
 })
 
-test('the cursor endpoint is auth-gated and scoped to permitted modules', async ({
-  browser,
-  request,
-}) => {
-  // Anonymous poll: the middleware answers /api with 401 JSON, never data.
-  const anon = await request.get('/api/sync/cursor?modules=tasks,finance')
+test('the cursor endpoint is auth-gated and scoped to permitted modules', async ({ browser }) => {
+  // Anonymous poll. `browser.newContext()` inherits the project's
+  // storageState, so we must explicitly empty it — otherwise the "anonymous"
+  // request quietly carries the Founder session and the guard never runs.
+  const anonCtx = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+  const anon = await anonCtx.request.get('/api/sync/cursor?modules=tasks,finance')
   expect(anon.status()).toBe(401)
   const anonBody = await anon.json().catch(() => null)
   expect(anonBody?.data).toBeUndefined()
+  await anonCtx.close()
 
   // An authenticated Partner poll: permitted modules come back as numbers, and
   // a made-up module is silently dropped rather than leaking or erroring.
