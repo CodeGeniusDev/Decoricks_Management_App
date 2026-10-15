@@ -18,17 +18,17 @@ credits-out. Polling-only (option C) is kept — as the fallback, not the primar
 
 ## What the stream carries (and what it deliberately does not)
 
-The SSE stream carries **dataless change signals only** — "module *X* advanced
-at timestamp *T*" — never record contents. This is a refinement of `SPEC.md`
+The SSE stream carries **dataless change signals only** — "module _X_ advanced
+at timestamp _T_" — never record contents. This is a refinement of `SPEC.md`
 §7.3, whose event table implied per-record payloads (`message_sent` with the
 message data). The implementation does not do that, for two reasons:
 
 1. **Permission safety.** A change signal leaks nothing. The stream's module
-   scope is computed from the caller's `view` permissions *on connect*, so a user
+   scope is computed from the caller's `view` permissions _on connect_, so a user
    with no finance grant is never even sent a `finance` signal. We never have to
    reason about whether an event body is safe to show — there is no body.
 2. **Freshness correctness.** The client reacts to a signal by re-fetching the
-   affected data through the *same* permission-guarded REST routes it uses for a
+   affected data through the _same_ permission-guarded REST routes it uses for a
    normal load. The UI can therefore never render a record the API would have
    hidden, and there is a single source of truth for serialization.
 
@@ -76,7 +76,7 @@ event: reconcile { reason }      # resume gap → client must poll once
   client does one poll to close the hole. Either way the coordinator dedupes by
   module timestamp, so a replay and a poll that overlap collapse to one refresh.
 - **Ordering.** Signals are appended to a per-process monotonic sequence and the
-  client only ever *advances* a module's cursor (`ts > prev`), so out-of-order or
+  client only ever _advances_ a module's cursor (`ts > prev`), so out-of-order or
   duplicate signals are idempotent by construction.
 
 ## Automatic polling fallback
@@ -156,7 +156,7 @@ internal tool, not bugs to hide.
   throughput. A standalone local `mongod` (common on a dev laptop) does **not**
   support change streams at all — the watcher detects this, logs once, and steps
   aside; live updates continue to work through the polling fallback. Liveness is
-  guaranteed by polling; the stream only makes it *instant*.
+  guaranteed by polling; the stream only makes it _instant_.
 - **Weak mobile connections.** On a lossy Pakistani mobile link the stream drops
   often; reconnect + resume + polling mean the app stays correct (eventually
   consistent) even when it is not instant. The visible status is honest about

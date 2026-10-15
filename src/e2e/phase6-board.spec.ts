@@ -57,7 +57,9 @@ const fetchBoard = async (): Promise<{
  * still distinguishes it from the drag handle, whose name starts with "Drag".
  */
 const cardButtonIn = (scope: Page | Locator, title: string) =>
-  scope.getByRole('button', { name: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) })
+  scope.getByRole('button', {
+    name: new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+  })
 
 test.describe('phase 6 board journey', () => {
   test.use({ storageState: FOUNDER_STATE })
@@ -144,17 +146,21 @@ test.describe('phase 6 board journey', () => {
     //      re-issue it once and wait again. The retry is unreachable once the
     //      card exists, so it can never double-create.
     const waitCreated = (ms: number) =>
-      expect
-        .poll(async () => (await cardOnBoard(title)), { timeout: ms })
-        .toBe(true)
+      expect.poll(async () => await cardOnBoard(title), { timeout: ms }).toBe(true)
     await modal.getByRole('button', { name: 'Create task' }).click()
     await waitCreated(6_000).catch(() => {})
     if (!(await cardOnBoard(title))) {
-      await modal.getByRole('button', { name: 'Create task' }).click({ timeout: 3_000 }).catch(() => {})
+      await modal
+        .getByRole('button', { name: 'Create task' })
+        .click({ timeout: 3_000 })
+        .catch(() => {})
       await waitCreated(20_000)
     }
 
-    await modal.getByRole('button', { name: 'Close dialog' }).click({ timeout: 5_000 }).catch(() => {})
+    await modal
+      .getByRole('button', { name: 'Close dialog' })
+      .click({ timeout: 5_000 })
+      .catch(() => {})
     await expect(cardButtonIn(todoColumn, title)).toBeVisible({ timeout: 15_000 })
   }
 
@@ -177,9 +183,7 @@ test.describe('phase 6 board journey', () => {
 
     // Move the card into Done via the per-card "Move to…" dropdown — the
     // deterministic board mutation that calls the same guarded /move endpoint.
-    const card = page
-      .locator('div.group')
-      .filter({ has: cardButtonIn(page, title) })
+    const card = page.locator('div.group').filter({ has: cardButtonIn(page, title) })
     await card.getByLabel('Move task to another column').selectOption({ label: 'Move to Done' })
 
     // Optimistically the card re-appears under the Done column.

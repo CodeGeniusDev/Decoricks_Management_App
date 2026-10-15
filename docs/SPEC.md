@@ -12,6 +12,7 @@
 ### 1.1 MVP Scope (Phase 1)
 
 **Core Modules:**
+
 - Financial management (income, expenses, transfers, profit calculation)
 - Budgeting and profit tracking (budget creation, tracking, variance reporting)
 - Inventory management (multi-location stock tracking, weighted average valuation)
@@ -23,6 +24,7 @@
 - Alerts and notifications (in-app and push where supported)
 
 **Core Features:**
+
 - Responsive web app (desktop, tablet, mobile)
 - Real-time sync across devices
 - Offline data entry for financial/budget data with automatic sync
@@ -36,6 +38,7 @@
 ### 1.2 Out-of-Scope (Phase 1)
 
 **Deferred to Future Phases:**
+
 - Payment gateway integration
 - Bank account reconciliation
 - Automated tax/GST tracking
@@ -97,6 +100,7 @@
 ### 2.2 Screen Descriptions
 
 #### Dashboard
+
 - **Purpose:** Real-time overview of business health
 - **Widgets:**
   - Current cash balance
@@ -113,40 +117,49 @@
   - Profit trend (30-day)
 
 #### Finance Module
+
 - **Income Screen:** List of all income records, filterable by date, category, source. Add/Edit/View actions.
 - **Expenses Screen:** List of all expense records, filterable by date, category, vendor. Add/Edit/View actions.
 - **Transfers Screen:** List of cash transfers between accounts (not income/expense). Add/Edit/View actions.
 - **Profit Distribution Screen:** Monthly profit breakdown, partner shares, charity allocation, manual adjustments.
 
 #### Budgeting Module
+
 - **Budgets Screen:** List of budget periods, with status (active, archived). Create/Edit/View budgets.
 - **Reports Screen:** Budget vs Actual comparison, variance analysis, per category.
 
 #### Inventory Module
+
 - **Products Screen:** Product catalog with name, SKU, description, cost, selling price. Add/Edit/View actions.
 - **Stock Screens (per location):** Current stock levels, low stock alerts, stock movements log.
 - **Transfers Screen:** Transfer stock between Sheikhupura and Lahore. Add/Edit/View actions.
 
 #### Sales Module
+
 - **Orders Screen:** Order list with customer details, items, total, status, COD outcome. Add/Edit/View actions.
 - **Returns Screen:** Return processing with restock/damaged/write-off options. Add/Edit/View actions.
 
 #### Tasks Module
+
 - **Kanban Board:** Boards (create/rename/archive by Founder) with editable columns — defaults To Do, In Progress, Review, Done; Founder can add/rename/reorder/archive. Cards drag between columns (dnd-kit; keyboard and touch supported) with optimistic writes and version-based conflict rejection; mobile also offers a "Move to…" menu. Task detail opens in a right drawer on desktop, full-screen sheet on mobile. Assignees, priorities (low/medium/high/urgent), due dates, labels, checklists, activity timeline, comments. Views: Board, My Tasks, Overdue. Weekly summary reports task completions and per-member overdue counts (informational; penalties remain a manual Founder action).
 
 #### Chat Module
+
 - **Chat Screen:** Real-time messaging with all team members. Message history, typing indicators, read receipts.
 
 #### Suppliers Module
+
 - **Suppliers Screen:** Supplier list with name, contact, city, products supplied, notes. Add/Edit/View actions.
 
 #### Settings Module
+
 - **Roles & Permissions Screen:** User management, role definitions, permission matrix.
 - **Business Settings Screen:** Configurable business policies (profit sharing, withdrawal lock date, expense categories, payment methods).
 - **Data Export/Backup Screen:** Manual export, scheduled export configuration, restore procedure.
 - **Audit Log Screen:** Searchable log of all critical actions with timestamp, user, action, details.
 
 #### Weekly Summary
+
 - **Purpose:** One-page summary for weekly meetings
 - **Sections:**
   - Sales summary (orders, revenue, COD delivery rate)
@@ -162,6 +175,7 @@
 ### 3.1 Collections
 
 #### 3.1.1 users
+
 ```javascript
 {
   _id: ObjectId,
@@ -182,6 +196,7 @@ Indexes:
 ```
 
 #### 3.1.2 roles
+
 ```javascript
 {
   _id: ObjectId,
@@ -256,6 +271,7 @@ Indexes:
 ```
 
 #### 3.1.3 products
+
 ```javascript
 {
   _id: ObjectId,
@@ -277,6 +293,7 @@ Indexes:
 ```
 
 #### 3.1.4 stock
+
 ```javascript
 {
   _id: ObjectId,
@@ -294,6 +311,7 @@ Indexes:
 ```
 
 #### 3.1.5 stockMovements
+
 ```javascript
 {
   _id: ObjectId,
@@ -318,6 +336,7 @@ Indexes:
 ```
 
 #### 3.1.6 orders
+
 ```javascript
 {
   _id: ObjectId,
@@ -359,6 +378,7 @@ Indexes:
 ```
 
 #### 3.1.7 returns
+
 ```javascript
 {
   _id: ObjectId,
@@ -386,6 +406,7 @@ Indexes:
 ```
 
 #### 3.1.8 income
+
 ```javascript
 {
   _id: ObjectId,
@@ -410,6 +431,7 @@ Indexes:
 ```
 
 #### 3.1.9 expenses
+
 ```javascript
 {
   _id: ObjectId,
@@ -434,6 +456,7 @@ Indexes:
 ```
 
 #### 3.1.10 transfers
+
 ```javascript
 {
   _id: ObjectId,
@@ -454,6 +477,7 @@ Indexes:
 ```
 
 #### 3.1.11 budgets
+
 ```javascript
 {
   _id: ObjectId,
@@ -481,6 +505,7 @@ Indexes:
 ```
 
 #### 3.1.12 budgetActuals
+
 ```javascript
 {
   _id: ObjectId,
@@ -496,6 +521,7 @@ Indexes:
 ```
 
 #### 3.1.13 profitDistributions
+
 ```javascript
 {
   _id: ObjectId,
@@ -540,6 +566,7 @@ Indexes:
 ```
 
 #### 3.1.14 profitShareAdjustments
+
 ```javascript
 {
   _id: ObjectId,
@@ -565,6 +592,7 @@ in UTC and rendered in Asia/Karachi. Nothing in the task family is ever hard-
 deleted — every document archives.
 
 ##### 3.1.15.1 boards
+
 ```javascript
 {
   _id: ObjectId,
@@ -583,6 +611,7 @@ Indexes:
 ```
 
 ##### 3.1.15.2 columns
+
 ```javascript
 {
   _id: ObjectId,
@@ -602,6 +631,7 @@ Indexes:
 ```
 
 ##### 3.1.15.3 tasks
+
 ```javascript
 {
   _id: ObjectId,
@@ -650,6 +680,7 @@ by joining `columnId → columns.name` (or `columns.isDoneColumn` for done).
 The stored `status` field is removed; readers must not depend on it.
 
 ##### 3.1.15.4 taskComments
+
 ```javascript
 {
   _id: ObjectId,
@@ -674,6 +705,7 @@ Authors may edit or delete only their own comments, and only within
 audit-logged.
 
 ##### 3.1.15.5 taskActivity
+
 ```javascript
 {
   _id: ObjectId,
@@ -697,6 +729,7 @@ entry and clears those fields, but the original `completed` entry stays in the
 timeline.
 
 ##### 3.1.15.6 taskLabels
+
 ```javascript
 {
   _id: ObjectId,
@@ -714,6 +747,7 @@ Indexes:
 ```
 
 #### 3.1.16 messages
+
 ```javascript
 {
   _id: ObjectId,
@@ -738,6 +772,7 @@ Indexes:
 ```
 
 ##### 3.1.16.1 chatChannels (Phase 7)
+
 ```javascript
 {
   _id: ObjectId,
@@ -756,6 +791,7 @@ Indexes:
 ```
 
 ##### 3.1.16.2 chatChannelReads (Phase 7)
+
 ```javascript
 {
   _id: ObjectId,
@@ -774,6 +810,7 @@ into `general` on first touch (`ensureChatCollections`) — no separate migratio
 step is required.
 
 #### 3.1.17 suppliers
+
 ```javascript
 {
   _id: ObjectId,
@@ -797,6 +834,7 @@ Indexes:
 ```
 
 #### 3.1.18 businessSettings
+
 ```javascript
 {
   _id: ObjectId,
@@ -829,6 +867,7 @@ Indexes:
 ```
 
 #### 3.1.19 auditLog
+
 ```javascript
 {
   _id: ObjectId,
@@ -852,6 +891,7 @@ Indexes:
 ```
 
 #### 3.1.20 offlineQueue
+
 ```javascript
 {
   _id: ObjectId,
@@ -875,6 +915,7 @@ Indexes:
 ```
 
 #### 3.1.21 notifications
+
 ```javascript
 {
   _id: ObjectId,
@@ -896,12 +937,14 @@ Indexes:
 ### 3.2 Validation Rules
 
 **Common validations:**
+
 - All monetary fields: must be non-negative integers (paisa)
 - All dates: must be valid ISO dates
 - All required fields: must be present and non-empty
 - All references: must exist in target collection
 
 **Specific validations:**
+
 - `users.email`: valid email format
 - `products.sku`: alphanumeric with hyphens/underscores, unique
 - `stock.quantity`: non-negative integer
@@ -943,69 +986,69 @@ Indexes:
 
 ### 4.1 Default Roles
 
-| Role | Description |
-|------|-------------|
-| Founder | Full control over all modules and settings. Sole owner of board and column management (create/rename/archive boards, add/rename/reorder/archive columns). Can edit or archive any task, including others'. |
+| Role             | Description                                                                                                                                                                                                                                                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Founder          | Full control over all modules and settings. Sole owner of board and column management (create/rename/archive boards, add/rename/reorder/archive columns). Can edit or archive any task, including others'.                                                                                                                      |
 | Partner (Hasnat) | Create/update orders, record delivery outcomes/returns, record Lahore stock movements, view all dashboards/finance/budgets/inventory/sales. Tasks and chat are open: create, edit or move own, comment on any. Can edit or move others' tasks only if the corresponding permission is granted. Cannot manage boards or columns. |
-| Partner (Ali) | Record Lahore stock movements, view all dashboards/finance/budgets/inventory/sales. Tasks and chat are open on the same terms as Hasnat. Cannot manage boards or columns. |
-| Partner (Afnan) | View-only access to dashboards, finance, budgets, inventory, sales. Tasks and chat are still open on the same terms (create, edit or move own, comment on any) — the earlier "view-only on tasks and chat" line contradicted §4.2 and is corrected here. Cannot manage boards or columns. |
+| Partner (Ali)    | Record Lahore stock movements, view all dashboards/finance/budgets/inventory/sales. Tasks and chat are open on the same terms as Hasnat. Cannot manage boards or columns.                                                                                                                                                       |
+| Partner (Afnan)  | View-only access to dashboards, finance, budgets, inventory, sales. Tasks and chat are still open on the same terms (create, edit or move own, comment on any) — the earlier "view-only on tasks and chat" line contradicted §4.2 and is corrected here. Cannot manage boards or columns.                                       |
 
 ### 4.2 Permission Matrix
 
-| Module | Action | Founder | Partner (Hasnat) | Partner (Ali) | Partner (Afnan) |
-|--------|--------|---------|-----------------|---------------|----------------|
-| **Finance** | | | | | |
-| | View | ✅ | ✅ | ✅ | ✅ |
-| | Create | ✅ | ❌ | ❌ | ❌ |
-| | Edit | ✅ | ❌ | ❌ | ❌ |
-| | Delete | ✅ | ❌ | ❌ | ❌ |
-| | Approve | ✅ | ❌ | ❌ | ❌ |
-| **Budget** | | | | | |
-| | View | ✅ | ✅ | ✅ | ✅ |
-| | Create | ✅ | ❌ | ❌ | ❌ |
-| | Edit | ✅ | ❌ | ❌ | ❌ |
-| | Delete | ✅ | ❌ | ❌ | ❌ |
-| | Approve | ✅ | ❌ | ❌ | ❌ |
-| **Inventory** | | | | | |
-| | View | ✅ | ✅ | ✅ | ✅ |
-| | Create | ✅ | ❌ (except Lahore stock) | ❌ (except Lahore stock) | ❌ |
-| | Edit | ✅ | ❌ (except Lahore stock) | ❌ (except Lahore stock) | ❌ |
-| | Delete | ✅ | ❌ | ❌ | ❌ |
-| **Sales** | | | | | |
-| | View | ✅ | ✅ | ✅ | ✅ |
-| | Create | ✅ | ✅ | ❌ | ❌ |
-| | Edit | ✅ | ✅ (delivery outcomes/returns) | ❌ | ❌ |
-| | Delete | ✅ | ❌ | ❌ | ❌ |
-| **Tasks** | | | | | |
-| | View | ✅ | ✅ | ✅ | ✅ |
-| | Create | ✅ | ✅ | ✅ | ✅ |
-| | Edit own | ✅ | ✅ | ✅ | ✅ |
-| | Edit any | ✅ | ❌* | ❌* | ❌* |
-| | Move (drag) own | ✅ | ✅ | ✅ | ✅ |
-| | Move (drag) any | ✅ | ❌* | ❌* | ❌* |
-| | Comment | ✅ | ✅ | ✅ | ✅ |
-| | Edit/Delete own comment | ✅ | ✅ | ✅ | ✅ |
-| | Delete/Archive own task | ✅ | ✅ | ✅ | ✅ |
-| | Archive any task | ✅ | ❌ | ❌ | ❌ |
-| | Manage boards and columns | ✅ | ❌ | ❌ | ❌ |
-| **Chat** | | | | | |
-| | View | ✅ | ✅ | ✅ | ✅ |
-| | Create | ✅ | ✅ | ✅ | ✅ |
-| | Edit | ✅ | ✅ | ✅ | ✅ |
-| | Delete | ✅ | ✅ | ✅ | ✅ |
-| **Suppliers** | | | | | |
-| | View | ✅ | ✅ | ✅ | ✅ |
-| | Create | ✅ | ❌ | ❌ | ❌ |
-| | Edit | ✅ | ❌ | ❌ | ❌ |
-| | Delete | ✅ | ❌ | ❌ | ❌ |
-| **Settings** | | | | | |
-| | View | ✅ | ❌ | ❌ | ❌ |
-| | Edit | ✅ | ❌ | ❌ | ❌ |
-| **Users** | | | | | |
-| | View | ✅ | ❌ | ❌ | ❌ |
-| | Create | ✅ | ❌ | ❌ | ❌ |
-| | Edit | ✅ | ❌ | ❌ | ❌ |
-| | Delete | ✅ | ❌ | ❌ | ❌ |
+| Module        | Action                    | Founder | Partner (Hasnat)               | Partner (Ali)            | Partner (Afnan) |
+| ------------- | ------------------------- | ------- | ------------------------------ | ------------------------ | --------------- |
+| **Finance**   |                           |         |                                |                          |                 |
+|               | View                      | ✅      | ✅                             | ✅                       | ✅              |
+|               | Create                    | ✅      | ❌                             | ❌                       | ❌              |
+|               | Edit                      | ✅      | ❌                             | ❌                       | ❌              |
+|               | Delete                    | ✅      | ❌                             | ❌                       | ❌              |
+|               | Approve                   | ✅      | ❌                             | ❌                       | ❌              |
+| **Budget**    |                           |         |                                |                          |                 |
+|               | View                      | ✅      | ✅                             | ✅                       | ✅              |
+|               | Create                    | ✅      | ❌                             | ❌                       | ❌              |
+|               | Edit                      | ✅      | ❌                             | ❌                       | ❌              |
+|               | Delete                    | ✅      | ❌                             | ❌                       | ❌              |
+|               | Approve                   | ✅      | ❌                             | ❌                       | ❌              |
+| **Inventory** |                           |         |                                |                          |                 |
+|               | View                      | ✅      | ✅                             | ✅                       | ✅              |
+|               | Create                    | ✅      | ❌ (except Lahore stock)       | ❌ (except Lahore stock) | ❌              |
+|               | Edit                      | ✅      | ❌ (except Lahore stock)       | ❌ (except Lahore stock) | ❌              |
+|               | Delete                    | ✅      | ❌                             | ❌                       | ❌              |
+| **Sales**     |                           |         |                                |                          |                 |
+|               | View                      | ✅      | ✅                             | ✅                       | ✅              |
+|               | Create                    | ✅      | ✅                             | ❌                       | ❌              |
+|               | Edit                      | ✅      | ✅ (delivery outcomes/returns) | ❌                       | ❌              |
+|               | Delete                    | ✅      | ❌                             | ❌                       | ❌              |
+| **Tasks**     |                           |         |                                |                          |                 |
+|               | View                      | ✅      | ✅                             | ✅                       | ✅              |
+|               | Create                    | ✅      | ✅                             | ✅                       | ✅              |
+|               | Edit own                  | ✅      | ✅                             | ✅                       | ✅              |
+|               | Edit any                  | ✅      | ❌*                            | ❌*                      | ❌*             |
+|               | Move (drag) own           | ✅      | ✅                             | ✅                       | ✅              |
+|               | Move (drag) any           | ✅      | ❌*                            | ❌*                      | ❌*             |
+|               | Comment                   | ✅      | ✅                             | ✅                       | ✅              |
+|               | Edit/Delete own comment   | ✅      | ✅                             | ✅                       | ✅              |
+|               | Delete/Archive own task   | ✅      | ✅                             | ✅                       | ✅              |
+|               | Archive any task          | ✅      | ❌                             | ❌                       | ❌              |
+|               | Manage boards and columns | ✅      | ❌                             | ❌                       | ❌              |
+| **Chat**      |                           |         |                                |                          |                 |
+|               | View                      | ✅      | ✅                             | ✅                       | ✅              |
+|               | Create                    | ✅      | ✅                             | ✅                       | ✅              |
+|               | Edit                      | ✅      | ✅                             | ✅                       | ✅              |
+|               | Delete                    | ✅      | ✅                             | ✅                       | ✅              |
+| **Suppliers** |                           |         |                                |                          |                 |
+|               | View                      | ✅      | ✅                             | ✅                       | ✅              |
+|               | Create                    | ✅      | ❌                             | ❌                       | ❌              |
+|               | Edit                      | ✅      | ❌                             | ❌                       | ❌              |
+|               | Delete                    | ✅      | ❌                             | ❌                       | ❌              |
+| **Settings**  |                           |         |                                |                          |                 |
+|               | View                      | ✅      | ❌                             | ❌                       | ❌              |
+|               | Edit                      | ✅      | ❌                             | ❌                       | ❌              |
+| **Users**     |                           |         |                                |                          |                 |
+|               | View                      | ✅      | ❌                             | ❌                       | ❌              |
+|               | Create                    | ✅      | ❌                             | ❌                       | ❌              |
+|               | Edit                      | ✅      | ❌                             | ❌                       | ❌              |
+|               | Delete                    | ✅      | ❌                             | ❌                       | ❌              |
 
 Notes on the Tasks rows:
 
@@ -1015,6 +1058,7 @@ Notes on the Tasks rows:
 ### 4.3 Enforcement
 
 All permission checks are enforced on the server:
+
 - API endpoints validate user role and permissions before executing operations
 - Role assignment can only be modified by Founder
 - Permissions are stored in the `roles` collection and cached in memory for performance
@@ -1027,11 +1071,13 @@ All permission checks are enforced on the server:
 ### 5.1 Revenue
 
 **Formula:**
+
 ```
 Revenue = Sum of all order totals for the period
 ```
 
 **Numeric Example:**
+
 - Order 1: PKR 5,000 (5 items × PKR 1,000 each)
 - Order 2: PKR 3,500 (1 item × PKR 3,500)
 - Order 3: PKR 7,200 (3 items × PKR 2,400 each)
@@ -1043,11 +1089,13 @@ Revenue = 5,000 + 3,500 + 7,200 = PKR 15,700
 ### 5.2 Net Sales
 
 **Formula:**
+
 ```
 Net Sales = Revenue - Returns - Refunds
 ```
 
 **Numeric Example:**
+
 - Revenue: PKR 15,700
 - Returns: PKR 2,000 (2 items returned)
 - Refunds: PKR 500 (partial refund on damaged item)
@@ -1059,16 +1107,19 @@ Net Sales = 15,700 - 2,000 - 500 = PKR 13,200
 ### 5.3 Cost of Goods Sold (COGS)
 
 **Formula:**
+
 ```
 COGS = Sum of (sold quantity × weighted average cost at time of sale)
 ```
 
 **Weighted Average Cost Calculation:**
+
 ```
 Weighted Average Cost = Total Cost of Inventory / Total Quantity in Inventory
 ```
 
 **Numeric Example:**
+
 - Initial stock: 10 units at PKR 500 each = PKR 5,000
 - Purchase 1: 5 units at PKR 600 each = PKR 3,000
 - Total cost: PKR 8,000
@@ -1081,11 +1132,13 @@ Weighted Average Cost = Total Cost of Inventory / Total Quantity in Inventory
 ### 5.4 Gross Profit
 
 **Formula:**
+
 ```
 Gross Profit = Net Sales - COGS
 ```
 
 **Numeric Example:**
+
 - Net Sales: PKR 13,200
 - COGS: PKR 4,266.64
 
@@ -1096,11 +1149,13 @@ Gross Profit = 13,200 - 4,266.64 = PKR 8,933.36
 ### 5.5 Net Profit
 
 **Formula:**
+
 ```
 Net Profit = Gross Profit - Operating Expenses
 ```
 
 **Numeric Example:**
+
 - Gross Profit: PKR 8,933.36
 - Operating Expenses:
   - Meta Ads: PKR 2,000
@@ -1116,16 +1171,19 @@ Net Profit = 8,933.36 - 4,800 = PKR 4,133.36
 ### 5.6 Cash Balance
 
 **Formula:**
+
 ```
 Cash Balance = Opening Balance + Cash Inflows - Cash Outflows
 ```
 
 Where:
+
 - Cash Inflows = Income (COD received, bank transfers, etc.)
 - Cash Outflows = Expenses (paid) + Withdrawals + Transfers out
 - Transfers between accounts are NOT cash inflows or outflows
 
 **Numeric Example:**
+
 - Opening Balance: PKR 50,000
 - Cash Inflows:
   - COD received: PKR 15,000
@@ -1143,11 +1201,13 @@ Cash Balance = 50,000 + 20,000 - 4,800 = PKR 65,200
 ### 5.7 Inventory Valuation
 
 **Formula:**
+
 ```
 Inventory Value = Sum of (current quantity × weighted average cost) per product
 ```
 
 **Numeric Example:**
+
 - Product A: 7 units × PKR 533.33 = PKR 3,733.31
 - Product B: 5 units × PKR 800 = PKR 4,000
 - Product C: 3 units × PKR 1,200 = PKR 3,600
@@ -1159,11 +1219,13 @@ Total Inventory Value = 3,733.31 + 4,000 + 3,600 = PKR 11,333.31
 ### 5.8 Reinvestment
 
 **Formula:**
+
 ```
 Reinvestment = Sum of (partner share × reinvestment percentage per partner)
 ```
 
 **Numeric Example:**
+
 - Partner 1 share: PKR 826.67 (20% of PKR 4,133.36)
 - Partner 1 reinvestment: 100% = PKR 826.67
 - Partner 2 share: PKR 826.67
@@ -1180,11 +1242,13 @@ Total Reinvestment = 826.67 + 413.33 + 826.67 + 0 = PKR 2,066.67
 ### 5.9 Retained Earnings
 
 **Formula:**
+
 ```
 Retained Earnings = Cumulative Net Profit - Cumulative Distributions - Cumulative Withdrawals
 ```
 
 **Numeric Example:**
+
 - Cumulative Net Profit (Month 1): PKR 4,133.36
 - Cumulative Distributions: PKR 0 (withdrawals locked)
 - Cumulative Withdrawals: PKR 0
@@ -1196,11 +1260,13 @@ Retained Earnings = 4,133.36 - 0 - 0 = PKR 4,133.36
 ### 5.10 Returns and Refunds
 
 **Formula:**
+
 ```
 Return Impact = (Returned Item Value × Refund Percentage) + Return Processing Costs
 ```
 
 **Numeric Example:**
+
 - Returned item selling price: PKR 1,000
 - Refund percentage: 100% (full refund)
 - Return processing cost (courier): PKR 200
@@ -1218,6 +1284,7 @@ Return Impact = (1,000 × 1.0) + 200 = PKR 1,200
 The offline sync strategy uses a local queue-based approach with idempotency keys to ensure data consistency across devices.
 
 **Components:**
+
 1. **Local Queue (IndexedDB):** Stores pending operations while offline
 2. **Idempotency Keys:** Unique identifiers for each operation to prevent duplicate execution
 3. **Sync Status Tracking:** pending → synced → failed → conflict
@@ -1226,11 +1293,13 @@ The offline sync strategy uses a local queue-based approach with idempotency key
 ### 6.2 Operation Flow
 
 #### 6.2.1 Online Flow
+
 ```
 User Action → Server API → Database → Success Response → Update UI
 ```
 
 #### 6.2.2 Offline Flow
+
 ```
 User Action → Add to Local Queue (status: pending) → Update UI (optimistic)
 → Background Sync Attempts → On Success: Mark synced → On Failure: Mark failed
@@ -1258,32 +1327,36 @@ User Action → Add to Local Queue (status: pending) → Update UI (optimistic)
 ### 6.4 Idempotency Key Generation
 
 **Format:**
+
 ```
 ${userId}_${entityType}_${operation}_${timestamp}_${random}
 ```
 
 **Example:**
+
 ```
 user123_order_create_1728038400000_abc123
 ```
 
 ### 6.5 Sync Statuses
 
-| Status | Description | Action |
-|--------|-------------|--------|
-| Pending | Operation queued, not yet synced | Auto-retry on next sync cycle |
-| Synced | Operation successfully synced with server | Remove from queue after confirmation |
-| Failed | Sync failed due to network or server error | Auto-retry with exponential backoff |
-| Conflict | Sync failed due to data conflict | Manual resolution required |
+| Status   | Description                                | Action                               |
+| -------- | ------------------------------------------ | ------------------------------------ |
+| Pending  | Operation queued, not yet synced           | Auto-retry on next sync cycle        |
+| Synced   | Operation successfully synced with server  | Remove from queue after confirmation |
+| Failed   | Sync failed due to network or server error | Auto-retry with exponential backoff  |
+| Conflict | Sync failed due to data conflict           | Manual resolution required           |
 
 ### 6.6 Conflict Handling
 
 **Conflict Detection:**
+
 - Server validates idempotency key on each request
 - If idempotency key exists but data differs, conflict is detected
 - Server returns current state and client detects conflict
 
 **Conflict Resolution:**
+
 1. **Task moves and edits:** Optimistic-concurrency with a version field. Every task document carries `version: Number` (starting at 1, incremented server-side on each successful write). Clients send `version` on `PATCH /api/tasks/[id]` and on `POST /api/tasks/[id]/move`. If the stored version has advanced, the server returns `409 Conflict` with the current document; the client shows a clear toast — "Someone moved this card. Refreshed." — rolls back the optimistic change and re-fetches. Never a silent overwrite; never a lost card. Column reordering follows the same rule per board.
 2. **Chat messages:** Append-only and non-conflicting (last-write wins is safe because each message is a new document). Auto-merge.
 3. **Financial data:** Always require manual resolution.
@@ -1293,6 +1366,7 @@ user123_order_create_1728038400000_abc123
    - Or discard local changes and keep server version
 
 **Conflict Resolution UI:**
+
 ```
 ┌─────────────────────────────────────────┐
 │ Sync Conflict Detected                   │
@@ -1314,11 +1388,13 @@ user123_order_create_1728038400000_abc123
 ### 6.7 Sync Algorithm
 
 **Automatic Sync:**
+
 - Triggered on: app foreground, network reconnection, every 5 minutes when online
 - Process: Send all pending operations in batch
 - Batching: Group up to 10 operations per request to reduce overhead
 
 **Retry Logic:**
+
 - Attempt 1: Immediate
 - Attempt 2: 5 seconds later
 - Attempt 3: 30 seconds later
@@ -1327,6 +1403,7 @@ user123_order_create_1728038400000_abc123
 - After 5 failures: Mark as failed, notify user
 
 **Exponential Backoff:**
+
 ```
 delay = baseDelay × (2 ^ (attempts - 1))
 where baseDelay = 5 seconds
@@ -1335,21 +1412,25 @@ where baseDelay = 5 seconds
 ### 6.8 Data Consistency Guarantees
 
 **Idempotency:**
+
 - Each operation is executed exactly once on the server
 - Duplicate requests with same idempotency key return the same result
 - No side effects from retries
 
 **Ordering:**
+
 - Operations within the same entity are processed in creation order
 - Use timestamps to sequence operations
 
 **Atomicity:**
+
 - Financial operations are wrapped in database transactions
 - If any part fails, entire operation is rolled back
 
 ### 6.9 Offline Capabilities
 
 **Supported Offline Operations:**
+
 - Create orders
 - Create expenses
 - Create tasks
@@ -1358,6 +1439,7 @@ where baseDelay = 5 seconds
 - Update own user profile
 
 **Blocked Offline Operations:**
+
 - Delete operations (require server confirmation)
 - Permission changes (require online)
 - Role assignments (require online)
@@ -1367,11 +1449,13 @@ where baseDelay = 5 seconds
 ### 6.10 Data Freshness
 
 **Stale Data Detection:**
+
 - Each entity has `updatedAt` timestamp
 - Client tracks last sync timestamp per entity type
 - On sync, client requests all changes since last sync
 
 **Cache Invalidation:**
+
 - Real-time updates via WebSocket when online
 - When offline, show "Last synced: X minutes ago" indicator
 - After sync, refresh all displayed data
@@ -1394,6 +1478,7 @@ where baseDelay = 5 seconds
 Given free tier constraints, use **Server-Sent Events (SSE)** for real-time updates instead of WebSockets.
 
 **Rationale:**
+
 - SSE is simpler to implement
 - Works better with HTTP/2 and modern browsers
 - Easier to scale on free hosting tiers
@@ -1403,6 +1488,7 @@ Given free tier constraints, use **Server-Sent Events (SSE)** for real-time upda
 ### 7.2 Implementation
 
 **Server-Side (Next.js API Route):**
+
 ```typescript
 // /api/events/route.ts
 export async function GET(request: Request) {
@@ -1421,20 +1507,21 @@ export async function GET(request: Request) {
         unsubscribe()
         controller.close()
       })
-    }
+    },
   })
 
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
+      Connection: 'keep-alive',
     },
   })
 }
 ```
 
 **Client-Side:**
+
 ```typescript
 const eventSource = new EventSource('/api/events')
 
@@ -1455,31 +1542,34 @@ eventSource.onmessage = (event) => {
 
 ### 7.3 Event Types
 
-| Event Type | Payload | Triggers UI Update |
-|------------|---------|-------------------|
-| `order_created` | `{ orderId, orderData }` | Orders list, dashboard |
-| `order_updated` | `{ orderId, changes }` | Orders list, dashboard |
-| `expense_created` | `{ expenseId, expenseData }` | Expenses list, dashboard |
-| `expense_updated` | `{ expenseId, changes }` | Expenses list, dashboard |
-| `stock_changed` | `{ productId, location, quantity }` | Stock screens, dashboard |
-| `task_created` | `{ taskId, taskData }` | Tasks board |
-| `task_updated` | `{ taskId, changes }` | Tasks board |
-| `message_sent` | `{ messageId, messageData }` | Chat screen |
-| `notification` | `{ notificationId, notificationData }` | Notification bell |
+| Event Type        | Payload                                | Triggers UI Update       |
+| ----------------- | -------------------------------------- | ------------------------ |
+| `order_created`   | `{ orderId, orderData }`               | Orders list, dashboard   |
+| `order_updated`   | `{ orderId, changes }`                 | Orders list, dashboard   |
+| `expense_created` | `{ expenseId, expenseData }`           | Expenses list, dashboard |
+| `expense_updated` | `{ expenseId, changes }`               | Expenses list, dashboard |
+| `stock_changed`   | `{ productId, location, quantity }`    | Stock screens, dashboard |
+| `task_created`    | `{ taskId, taskData }`                 | Tasks board              |
+| `task_updated`    | `{ taskId, changes }`                  | Tasks board              |
+| `message_sent`    | `{ messageId, messageData }`           | Chat screen              |
+| `notification`    | `{ notificationId, notificationData }` | Notification bell        |
 
 ### 7.4 Free Tier Limitations
 
 **Vercel (Free Tier):**
+
 - Serverless functions have 10-second timeout
 - SSE connections may timeout after 60 seconds of inactivity
 - Auto-reconnect logic required on client
 
 **MongoDB Atlas (Free Tier):**
+
 - Change Streams are supported on M0 cluster
 - No real-time triggers (server must poll or use Change Streams)
 - Use MongoDB Change Streams for real-time database events
 
 **Change Stream Implementation:**
+
 ```typescript
 const changeStream = db.collection('orders').watch()
 
@@ -1487,7 +1577,7 @@ changeStream.on('change', (change) => {
   // Broadcast to all connected SSE clients
   broadcastToClients({
     type: 'order_updated',
-    data: change
+    data: change,
   })
 })
 ```
@@ -1508,6 +1598,7 @@ same per-module cursor shape, so switching is transparent to subscribers.
 ### 7.6 Connection Management
 
 **Client-Side:**
+
 - Auto-reconnect on disconnect with exponential backoff (3s base, capped at 60s)
 - Resume from the last received event via `Last-Event-ID` (bounded server replay
   buffer; a gap triggers one reconciling poll) — no missed or duplicated events
@@ -1516,6 +1607,7 @@ same per-module cursor shape, so switching is transparent to subscribers.
 - Tear every stream, timer and listener down on unmount and logout
 
 **Server-Side:**
+
 - Authentication and per-module `view` scope resolved **on connect**; an
   unauthenticated request is a `401` JSON error (never a stream), an
   all-modules-refused session is `403`
@@ -1545,6 +1637,7 @@ same per-module cursor shape, so switching is transparent to subscribers.
 ### 8.1 Hosting Providers
 
 **Application Hosting: Vercel (Free Tier)**
+
 - Next.js native support
 - Automatic deployments from Git
 - Free SSL certificates
@@ -1552,12 +1645,14 @@ same per-module cursor shape, so switching is transparent to subscribers.
 - Limitations: 10-second function timeout, 100GB bandwidth/month
 
 **Database: MongoDB Atlas (Free M0 Cluster)**
+
 - 512MB storage
 - Shared RAM
 - Geo-distributed (choose region closest to Pakistan: Mumbai)
 - Limitations: No automated backups, connection pooling restrictions
 
 **Asset Storage: Vercel Blob (Free Tier)**
+
 - For storing exported backup files
 - 1GB storage limit
 - Direct file uploads/downloads
@@ -1565,6 +1660,7 @@ same per-module cursor shape, so switching is transparent to subscribers.
 ### 8.2 Environment Variables
 
 **Required Variables:**
+
 ```env
 MONGODB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/decoricks
 NEXTAUTH_SECRET=<random-secret>
@@ -1573,6 +1669,7 @@ NODE_ENV=production
 ```
 
 **Optional Variables:**
+
 ```env
 BACKUP_SCHEDULE=0 2 * * * # Daily at 2 AM Karachi time
 BACKUP_RETENTION_DAYS=30
@@ -1581,6 +1678,7 @@ BACKUP_RETENTION_DAYS=30
 ### 8.3 Deployment Steps
 
 **1. Prepare Repository:**
+
 ```bash
 git init
 git add .
@@ -1588,33 +1686,39 @@ git commit -m "Initial commit"
 ```
 
 **2. Connect to Vercel:**
+
 - Install Vercel CLI: `npm i -g vercel`
 - Login: `vercel login`
 - Deploy: `vercel`
 
 **3. Configure Environment Variables:**
+
 - In Vercel dashboard, add environment variables
 - Set MongoDB connection string
 - Generate NEXTAUTH_SECRET: `openssl rand -base64 32`
 
 **4. Setup MongoDB Atlas:**
+
 - Create free M0 cluster
 - Create database user with read/write permissions
 - Whitelist Vercel IP addresses (or use 0.0.0.0/0 for simplicity)
 - Get connection string
 
 **5. Deploy:**
+
 ```bash
 vercel --prod
 ```
 
 **6. Configure Custom Domain (Optional):**
+
 - Add domain in Vercel dashboard
 - Update DNS records
 
 ### 8.4 CI/CD Pipeline
 
 **GitHub Actions (Free Tier):**
+
 ```yaml
 name: Deploy
 
@@ -1644,11 +1748,13 @@ jobs:
 ### 8.5 Monitoring
 
 **Free Tier Monitoring:**
+
 - Vercel Analytics (free)
 - MongoDB Atlas Metrics (free)
 - Custom error logging to MongoDB (auditLog collection)
 
 **Health Checks:**
+
 - `/api/health` endpoint
 - Checks database connectivity
 - Returns status and uptime
@@ -1656,17 +1762,20 @@ jobs:
 ### 8.6 Backup Strategy
 
 **Manual Backup:**
+
 - "Export Now" button triggers server-side export
 - Export format: JSON dump of all collections
 - Stored in Vercel Blob
 - Downloadable by Founder
 
 **Scheduled Backup:**
+
 - Cron job (Vercel Cron Jobs) triggers export at scheduled time
 - Same export process as manual
 - Stored with timestamp in filename
 
 **Restore Procedure:**
+
 1. Download backup file from Vercel Blob
 2. Upload to restore endpoint (Founder-only)
 3. Server validates backup format
@@ -1676,6 +1785,7 @@ jobs:
 7. Confirmation message
 
 **Restore Documentation:**
+
 - Step-by-step guide in Settings → Data Export/Backup
 - Warning about data loss
 - Recommendation to test restore on staging environment first
@@ -1687,6 +1797,7 @@ jobs:
 ### 9.1 MongoDB Atlas Free Tier (M0 Cluster)
 
 **Limitations:**
+
 - **Storage:** 512MB total (may be insufficient for long-term audit logs)
 - **RAM:** Shared, no guaranteed performance
 - **Connections:** Max 500 simultaneous connections
@@ -1696,6 +1807,7 @@ jobs:
 - **Change Streams:** Supported but may have latency
 
 **Hidden Costs/Risks:**
+
 - **Data Loss Risk:** No automated backups means manual backup failure = data loss
 - **Storage Exhaustion:** 512MB may fill up with audit logs over time
 - **Connection Limits:** May hit 500 connection limit with multiple users + real-time connections
@@ -1703,6 +1815,7 @@ jobs:
 - **Maintenance:** MongoDB may restart cluster without notice
 
 **Mitigation:**
+
 - Regular manual exports (daily recommended)
 - Implement audit log rotation (archive old logs to file exports)
 - Use connection pooling to minimize connections
@@ -1711,6 +1824,7 @@ jobs:
 ### 9.2 Vercel Free Tier
 
 **Limitations:**
+
 - **Function Timeout:** 10 seconds (may not be sufficient for large exports)
 - **Execution Time:** 10,000 minutes/month (may be insufficient for heavy usage)
 - **Bandwidth:** 100GB/month (may be insufficient for backup downloads/uploads)
@@ -1719,6 +1833,7 @@ jobs:
 - **Team Members:** Unlimited on Hobby plan
 
 **Hidden Costs/Risks:**
+
 - **Cold Starts:** First request after inactivity has 1-2 second delay
 - **Function Timeout:** Large backup exports may timeout
 - **Execution Limit:** Heavy real-time sync may hit execution time limit
@@ -1726,6 +1841,7 @@ jobs:
 - **WebSocket Support:** Vercel does not support raw WebSockets (use SSE instead)
 
 **Mitigation:**
+
 - Use streaming responses for large exports
 - Implement server-side batching for exports
 - Optimize sync frequency to reduce execution time
@@ -1735,11 +1851,13 @@ jobs:
 ### 9.3 iOS Push Notification Limits
 
 **Free Tier Limitations:**
+
 - Apple Push Notification Service (APNs) requires paid Apple Developer Program ($99/year)
 - Free tier: No push notifications on iOS
 - Background Sync: iOS restricts background processing (max 30 seconds, infrequent)
 
 **Mitigation:**
+
 - Rely on in-app notifications when app is open
 - Use badge count updates (limited support)
 - Implement polling when app is foregrounded
@@ -1748,22 +1866,26 @@ jobs:
 ### 9.4 Background Sync Limits
 
 **iOS:**
+
 - Background execution limited to 30 seconds
 - Background sync only triggered by system (not app-controlled)
 - Silent push notifications require paid developer account
 - Background fetch is infrequent and unpredictable
 
 **Android:**
+
 - WorkManager API for background tasks
 - More flexible than iOS
 - Doze mode may restrict background execution
 
 **Web (PWA):**
+
 - Service Workers support background sync
 - Requires HTTPS
 - Not supported on all browsers (Safari partial support)
 
 **Mitigation:**
+
 - Sync on app foreground (user opens app)
 - Use optimistic UI updates while offline
 - Queue operations and sync when next online
@@ -1771,16 +1893,16 @@ jobs:
 
 ### 9.5 Summary of Free Tier Risks
 
-| Risk | Impact | Probability | Mitigation |
-|------|--------|-------------|------------|
-| MongoDB storage exhaustion | App stops working | Medium (6-12 months) | Regular exports, log rotation |
-| No automated backups | Data loss if manual backup fails | High | Daily exports, dual backup strategy |
-| Function timeout | Large exports fail | Medium | Streaming, batching |
-| Execution time limit | Rate limiting | Low | Optimize sync frequency |
-| Bandwidth limit | Cannot download backups | Low | Compress files |
-| Cold starts | Slow first request | High | Acceptable trade-off |
-| No iOS push | Poor UX on iOS | High | In-app notifications only |
-| Background sync limits | Delayed sync | High | Sync on foreground |
+| Risk                       | Impact                           | Probability          | Mitigation                          |
+| -------------------------- | -------------------------------- | -------------------- | ----------------------------------- |
+| MongoDB storage exhaustion | App stops working                | Medium (6-12 months) | Regular exports, log rotation       |
+| No automated backups       | Data loss if manual backup fails | High                 | Daily exports, dual backup strategy |
+| Function timeout           | Large exports fail               | Medium               | Streaming, batching                 |
+| Execution time limit       | Rate limiting                    | Low                  | Optimize sync frequency             |
+| Bandwidth limit            | Cannot download backups          | Low                  | Compress files                      |
+| Cold starts                | Slow first request               | High                 | Acceptable trade-off                |
+| No iOS push                | Poor UX on iOS                   | High                 | In-app notifications only           |
+| Background sync limits     | Delayed sync                     | High                 | Sync on foreground                  |
 
 ---
 
@@ -1791,6 +1913,7 @@ jobs:
 #### 10.1.1 Authentication Threats
 
 **Threat 1: Credential Stuffing**
+
 - **Description:** Attacker uses leaked passwords from other breaches to access accounts
 - **Impact:** Unauthorized access to sensitive financial data
 - **Mitigation:**
@@ -1800,6 +1923,7 @@ jobs:
   - Session timeout after 30 minutes of inactivity
 
 **Threat 2: Session Hijacking**
+
 - **Description:** Attacker steals session token to impersonate user
 - **Impact:** Unauthorized access under user's identity
 - **Mitigation:**
@@ -1809,6 +1933,7 @@ jobs:
   - IP-based session validation (optional)
 
 **Threat 3: Password Reset Abuse**
+
 - **Description:** Attacker triggers password reset to take over account
 - **Impact:** Account takeover
 - **Mitigation:**
@@ -1819,6 +1944,7 @@ jobs:
 #### 10.1.2 Authorization Threats
 
 **Threat 4: Privilege Escalation**
+
 - **Description:** Attacker gains higher privileges than assigned
 - **Impact:** Unauthorized modification of financial data, settings
 - **Mitigation:**
@@ -1828,6 +1954,7 @@ jobs:
   - No client-side permission enforcement (security by obscurity)
 
 **Threat 5: Horizontal Privilege Escalation**
+
 - **Description:** User accesses another user's data
 - **Impact:** Data breach, privacy violation
 - **Mitigation:**
@@ -1838,6 +1965,7 @@ jobs:
 #### 10.1.3 Data Integrity Threats
 
 **Threat 6: SQL/NoSQL Injection**
+
 - **Description:** Attacker injects malicious queries to manipulate database
 - **Impact:** Data corruption, unauthorized data access
 - **Mitigation:**
@@ -1847,6 +1975,7 @@ jobs:
   - Use MongoDB's built-in injection protection
 
 **Threat 7: Mass Assignment**
+
 - **Description:** Attacker sends unexpected fields to update sensitive data
 - **Impact:** Unauthorized modification of restricted fields
 - **Mitigation:**
@@ -1857,6 +1986,7 @@ jobs:
 #### 10.1.4 Data Confidentiality Threats
 
 **Threat 8: Data in Transit Interception**
+
 - **Description:** Attacker eavesdrops on network traffic
 - **Impact:** Sensitive data (passwords, financial data) exposed
 - **Mitigation:**
@@ -1865,6 +1995,7 @@ jobs:
   - No sensitive data in URL parameters
 
 **Threat 9: Data at Rest Exposure**
+
 - **Description:** Database compromised, sensitive data exposed
 - **Impact:** Financial data, passwords exposed
 - **Mitigation:**
@@ -1876,6 +2007,7 @@ jobs:
 #### 10.1.5 Availability Threats
 
 **Threat 10: DoS Attack**
+
 - **Description:** Attacker overwhelms server with requests
 - **Impact:** App unavailable, business disruption
 - **Mitigation:**
@@ -1885,6 +2017,7 @@ jobs:
   - Implement caching for read-heavy operations
 
 **Threat 11: Resource Exhaustion**
+
 - **Description:** Attacker triggers expensive operations to exhaust resources
 - **Impact:** Server slowdown, timeouts
 - **Mitigation:**
@@ -1896,6 +2029,7 @@ jobs:
 #### 10.1.6 Audit Trail Threats
 
 **Threat 12: Audit Log Tampering**
+
 - **Description:** Attacker modifies or deletes audit logs
 - **Impact:** Loss of accountability, undetected fraud
 - **Mitigation:**
@@ -1909,6 +2043,7 @@ jobs:
 #### 10.2.1 Authentication Testing
 
 **Test 1: Password Strength Enforcement**
+
 - **Objective:** Verify weak passwords are rejected
 - **Steps:**
   1. Attempt to create account with password "123456"
@@ -1917,6 +2052,7 @@ jobs:
 - **Expected Result:** All attempts rejected with error message
 
 **Test 2: Rate Limiting on Login**
+
 - **Objective:** Verify account lockout after failed attempts
 - **Steps:**
   1. Attempt login with wrong password 5 times
@@ -1924,6 +2060,7 @@ jobs:
 - **Expected Result:** Account locked for 15 minutes
 
 **Test 3: Session Timeout**
+
 - **Objective:** Verify session expires after inactivity
 - **Steps:**
   1. Login to account
@@ -1934,6 +2071,7 @@ jobs:
 #### 10.2.2 Authorization Testing
 
 **Test 4: Permission Enforcement on API**
+
 - **Objective:** Verify unauthorized access is blocked
 - **Steps:**
   1. Login as Partner (Afnan - view-only)
@@ -1943,6 +2081,7 @@ jobs:
 - **Expected Result:** All requests return 403 Forbidden
 
 **Test 5: Horizontal Access Control**
+
 - **Objective:** Verify users cannot access other users' data
 - **Steps:**
   1. Login as User A
@@ -1951,6 +2090,7 @@ jobs:
 - **Expected Result:** All requests return 403 Forbidden or 404 Not Found
 
 **Test 6: Role Modification Protection**
+
 - **Objective:** Verify only Founder can modify roles
 - **Steps:**
   1. Login as Partner (Hasnat)
@@ -1961,6 +2101,7 @@ jobs:
 #### 10.2.3 Data Integrity Testing
 
 **Test 7: NoSQL Injection**
+
 - **Objective:** Verify NoSQL injection attempts are blocked
 - **Steps:**
   1. Send login request with username: `{"$ne": null}`
@@ -1969,6 +2110,7 @@ jobs:
 - **Expected Result:** All requests rejected or sanitized
 
 **Test 8: Mass Assignment**
+
 - **Objective:** Verify unexpected fields are rejected
 - **Steps:**
   1. Send update request with `role: "founder"` field
@@ -1977,6 +2119,7 @@ jobs:
 - **Expected Result:** All requests return 400 Bad Request or ignore fields
 
 **Test 9: Financial Data Immutability**
+
 - **Objective:** Verify financial records cannot be silently edited
 - **Steps:**
   1. Create expense record
@@ -1987,6 +2130,7 @@ jobs:
 #### 10.2.4 Data Confidentiality Testing
 
 **Test 10: HTTPS Enforcement**
+
 - **Objective:** Verify all traffic uses HTTPS
 - **Steps:**
   1. Attempt to access app via HTTP
@@ -1994,6 +2138,7 @@ jobs:
 - **Expected Result:** Redirect to HTTPS, HSTS header present
 
 **Test 11: Password Hashing**
+
 - **Objective:** Verify passwords are hashed in database
 - **Steps:**
   1. Create account with password "TestPassword123!"
@@ -2002,6 +2147,7 @@ jobs:
 - **Expected Result:** passwordHash is bcrypt hash, not plaintext
 
 **Test 12: Sensitive Data in Logs**
+
 - **Objective:** Verify sensitive data is not logged
 - **Steps:**
   1. Create expense with large amount
@@ -2012,6 +2158,7 @@ jobs:
 #### 10.2.5 Availability Testing
 
 **Test 13: Rate Limiting**
+
 - **Objective:** Verify rate limiting prevents abuse
 - **Steps:**
   1. Send 101 requests to API endpoint within 1 minute
@@ -2019,6 +2166,7 @@ jobs:
 - **Expected Result:** Request 101 returns 429 Too Many Requests
 
 **Test 14: Query Timeout**
+
 - **Objective:** Verify long-running queries timeout
 - **Steps:**
   1. Send request with large pagination (page=1, limit=10000)
@@ -2026,6 +2174,7 @@ jobs:
 - **Expected Result:** Request times out after 5 seconds
 
 **Test 15: File Upload Limits**
+
 - **Objective:** Verify large file uploads are rejected
 - **Steps:**
   1. Attempt to upload 20MB file
@@ -2035,6 +2184,7 @@ jobs:
 #### 10.2.6 Audit Trail Testing
 
 **Test 16: Audit Log Creation**
+
 - **Objective:** Verify all critical actions are logged
 - **Steps:**
   1. Create expense
@@ -2044,6 +2194,7 @@ jobs:
 - **Expected Result:** All 3 actions present in audit log with correct details
 
 **Test 17: Audit Log Immutability**
+
 - **Objective:** Verify audit logs cannot be modified
 - **Steps:**
   1. Attempt to update audit log entry via API
@@ -2051,6 +2202,7 @@ jobs:
 - **Expected Result:** All requests return 403 Forbidden
 
 **Test 18: Audit Log Completeness**
+
 - **Objective:** Verify audit log includes all required fields
 - **Steps:**
   1. Perform critical action
@@ -2060,29 +2212,34 @@ jobs:
 ### 10.3 Security Best Practices Implementation
 
 **1. Environment Variables:**
+
 - Never commit secrets to Git
 - Use `.env.local` for local development
 - Use Vercel environment variables for production
 - Rotate secrets regularly
 
 **2. Dependency Management:**
+
 - Run `npm audit` regularly
 - Keep dependencies updated
 - Review security advisories
 - Use `npm ci` for consistent installs
 
 **3. Code Review:**
+
 - All code changes reviewed before merge
 - Security-focused review for sensitive modules
 - Use automated security scanning (Snyk, Dependabot)
 
 **4. Monitoring:**
+
 - Monitor for failed login attempts
 - Monitor for unusual API usage patterns
 - Alert on audit log anomalies
 - Regular security log review
 
 **5. Incident Response:**
+
 - Document incident response procedure
 - Have contact information for all team members
 - Plan for data restoration from backups
@@ -2120,44 +2277,44 @@ The following business policies were not defined in Phase 0 and should be addres
 
 ### 12.1 Technical Risks
 
-| Risk | Severity | Likelihood | Mitigation |
-|------|----------|------------|------------|
-| MongoDB storage exhaustion (512MB) | High | Medium | Implement log rotation, regular exports |
-| No automated backups | Critical | High | Daily manual exports, dual backup strategy |
-| Function timeout on large exports | Medium | Medium | Streaming responses, batching |
-| Free tier execution time limit | Medium | Low | Optimize sync frequency |
-| SSE connection drops | Low | High | Auto-reconnect with exponential backoff |
-| Offline sync conflicts | Medium | Medium | Manual resolution for financial data |
-| Real-time latency (Mumbai region) | Low | High | Acceptable for this use case |
+| Risk                               | Severity | Likelihood | Mitigation                                 |
+| ---------------------------------- | -------- | ---------- | ------------------------------------------ |
+| MongoDB storage exhaustion (512MB) | High     | Medium     | Implement log rotation, regular exports    |
+| No automated backups               | Critical | High       | Daily manual exports, dual backup strategy |
+| Function timeout on large exports  | Medium   | Medium     | Streaming responses, batching              |
+| Free tier execution time limit     | Medium   | Low        | Optimize sync frequency                    |
+| SSE connection drops               | Low      | High       | Auto-reconnect with exponential backoff    |
+| Offline sync conflicts             | Medium   | Medium     | Manual resolution for financial data       |
+| Real-time latency (Mumbai region)  | Low      | High       | Acceptable for this use case               |
 
 ### 12.2 Business Risks
 
-| Risk | Severity | Likelihood | Mitigation |
-|------|----------|------------|------------|
-| Data loss from backup failure | Critical | Medium | Test restore procedure quarterly, dual backup |
-| Single local backup copy | High | High | Document risk, recommend second copy |
-| Founder unavailability blocking approvals | Medium | Medium | Make approval thresholds configurable |
-| Permission misconfiguration | Medium | Low | Audit log, regular permission review |
-| Profit share calculation errors | High | Low | Manual review before distribution, audit trail |
+| Risk                                      | Severity | Likelihood | Mitigation                                     |
+| ----------------------------------------- | -------- | ---------- | ---------------------------------------------- |
+| Data loss from backup failure             | Critical | Medium     | Test restore procedure quarterly, dual backup  |
+| Single local backup copy                  | High     | High       | Document risk, recommend second copy           |
+| Founder unavailability blocking approvals | Medium   | Medium     | Make approval thresholds configurable          |
+| Permission misconfiguration               | Medium   | Low        | Audit log, regular permission review           |
+| Profit share calculation errors           | High     | Low        | Manual review before distribution, audit trail |
 
 ### 12.3 Security Risks
 
-| Risk | Severity | Likelihood | Mitigation |
-|------|----------|------------|------------|
-| Account takeover (credential stuffing) | High | Medium | Strong password policy, rate limiting |
-| Unauthorized financial data access | Critical | Low | Server-side permission checks, audit log |
-| Data injection attacks | High | Low | Parameterized queries, input validation |
-| Session hijacking | Medium | Low | Secure cookies, session timeout |
-| Audit log tampering | High | Low | Append-only logs, external logging |
+| Risk                                   | Severity | Likelihood | Mitigation                               |
+| -------------------------------------- | -------- | ---------- | ---------------------------------------- |
+| Account takeover (credential stuffing) | High     | Medium     | Strong password policy, rate limiting    |
+| Unauthorized financial data access     | Critical | Low        | Server-side permission checks, audit log |
+| Data injection attacks                 | High     | Low        | Parameterized queries, input validation  |
+| Session hijacking                      | Medium   | Low        | Secure cookies, session timeout          |
+| Audit log tampering                    | High     | Low        | Append-only logs, external logging       |
 
 ### 12.4 User Experience Risks
 
-| Risk | Severity | Likelihood | Mitigation |
-|------|----------|------------|------------|
-| No iOS push notifications | Medium | High | In-app notifications, document limitation |
-| Cold start delays (1-2s) | Low | High | Acceptable for internal app |
-| Offline sync complexity | Medium | Medium | Clear UI indicators, simple resolution |
-| Mobile performance on slower devices | Low | Medium | Optimize bundle size, lazy loading |
+| Risk                                 | Severity | Likelihood | Mitigation                                |
+| ------------------------------------ | -------- | ---------- | ----------------------------------------- |
+| No iOS push notifications            | Medium   | High       | In-app notifications, document limitation |
+| Cold start delays (1-2s)             | Low      | High       | Acceptable for internal app               |
+| Offline sync complexity              | Medium   | Medium     | Clear UI indicators, simple resolution    |
+| Mobile performance on slower devices | Low      | Medium     | Optimize bundle size, lazy loading        |
 
 ### 12.5 Recommendations
 

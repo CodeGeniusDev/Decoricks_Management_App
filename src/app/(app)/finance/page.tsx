@@ -1,36 +1,36 @@
-'use client';
+'use client'
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { useRealtimeSync } from '@/lib/sync/useRealtime';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { PageTransition } from '@/components/PageTransition';
-import { PageHeader, Metric, MetricGrid } from '@/components/layout/Page';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { ErrorState } from '@/components/ui/ErrorState';
-import { Input } from '@/components/ui/Input';
-import { Toast } from '@/components/ui/Toast';
-import { apiJson, ApiError } from '@/lib/api-client';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { can } from '@/lib/permissions-client';
-import { ENTRY_TYPE_LABELS } from '@/lib/finance';
-import { formatKarachiDate } from '@/lib/date';
-import { formatPaisa } from '@/lib/money';
-import { ReverseModal } from '@/modules/finance/ReverseModal';
+import React, { useCallback, useEffect, useState } from 'react'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { PageTransition } from '@/components/PageTransition'
+import { PageHeader, Metric, MetricGrid } from '@/components/layout/Page'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { Input } from '@/components/ui/Input'
+import { Toast } from '@/components/ui/Toast'
+import { apiJson, ApiError } from '@/lib/api-client'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { can } from '@/lib/permissions-client'
+import { ENTRY_TYPE_LABELS } from '@/lib/finance'
+import { formatKarachiDate } from '@/lib/date'
+import { formatPaisa } from '@/lib/money'
+import { ReverseModal } from '@/modules/finance/ReverseModal'
 import {
   TYPE_BADGE_VARIANT,
   toKarachiInputDate,
   type OverviewView,
-} from '@/modules/finance/finance-ui';
+} from '@/modules/finance/finance-ui'
 
 const entryAccountLabel = (entry: OverviewView['recentTransactions'][number]): string =>
   entry.type === 'transfer'
     ? `${entry.fromAccountName ?? '?'} → ${entry.toAccountName ?? '?'}`
-    : (entry.accountName ?? '—');
+    : (entry.accountName ?? '—')
 
 /**
  * Finance overview — the front door of the Phase 3 ledger.
@@ -41,125 +41,125 @@ const entryAccountLabel = (entry: OverviewView['recentTransactions'][number]): s
  * entries. Everything is one `/api/finance/overview` read.
  */
 export default function FinanceOverviewPage() {
-  const router = useRouter();
-  const { user } = useAuth();
-  const canCreate = user ? can({ role: user.role }, 'finance', 'create') : false;
-  const canApprove = user ? can({ role: user.role }, 'finance', 'approve') : false;
+  const router = useRouter()
+  const { user } = useAuth()
+  const canCreate = user ? can({ role: user.role }, 'finance', 'create') : false
+  const canApprove = user ? can({ role: user.role }, 'finance', 'approve') : false
 
-  const [data, setData] = useState<OverviewView | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [data, setData] = useState<OverviewView | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   const [reverseTarget, setReverseTarget] = useState<
     OverviewView['recentTransactions'][number] | null
-  >(null);
+  >(null)
 
   // Withdrawal lock editor (Founder only). The draft mirrors the stored value
   // once loaded, so the date input never shows a stale or blank state and an
   // empty draft genuinely means "clear the lock".
-  const [lockDraft, setLockDraft] = useState('');
-  const [lockSaving, setLockSaving] = useState(false);
-  const lockSubmittingRef = React.useRef(false);
+  const [lockDraft, setLockDraft] = useState('')
+  const [lockSaving, setLockSaving] = useState(false)
+  const lockSubmittingRef = React.useRef(false)
 
   useEffect(() => {
-    setLockDraft(data?.withdrawalLockedUntil ? toKarachiInputDate(data.withdrawalLockedUntil) : '');
-  }, [data?.withdrawalLockedUntil]);
+    setLockDraft(data?.withdrawalLockedUntil ? toKarachiInputDate(data.withdrawalLockedUntil) : '')
+  }, [data?.withdrawalLockedUntil])
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
-      setData(await apiJson<OverviewView>('/api/finance/overview'));
+      setData(await apiJson<OverviewView>('/api/finance/overview'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load finance overview');
+      setError(err instanceof Error ? err.message : 'Failed to load finance overview')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, []);
+  }, [])
 
   // Background refresh for the live signal: swaps `data` in place without the
   // `loading` toggle, so an incoming change never blanks the screen. On failure
   // it keeps the current view (a blip is not a reason to show an error).
   const silentRefresh = useCallback(async () => {
     try {
-      setData(await apiJson<OverviewView>('/api/finance/overview'));
-      setError(null);
+      setData(await apiJson<OverviewView>('/api/finance/overview'))
+      setError(null)
     } catch {
       /* keep the current view */
     }
-  }, []);
+  }, [])
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load()
+  }, [load])
 
   // Live cross-device refresh of the ledger. Paused while the reverse-entry
   // modal is open or the withdrawal lock is saving, so a remote change can never
   // clobber an in-flight entry; applied once the editor closes.
-  const financeModalOpen = reverseTarget !== null || lockSaving;
-  const remoteDirtyRef = React.useRef(false);
+  const financeModalOpen = reverseTarget !== null || lockSaving
+  const remoteDirtyRef = React.useRef(false)
   useRealtimeSync(
     'finance',
     () => {
       if (financeModalOpen) {
-        remoteDirtyRef.current = true;
-        return;
+        remoteDirtyRef.current = true
+        return
       }
-      void silentRefresh();
+      void silentRefresh()
     },
     user != null
-  );
+  )
   useEffect(() => {
     if (!financeModalOpen && remoteDirtyRef.current) {
-      remoteDirtyRef.current = false;
-      void silentRefresh();
+      remoteDirtyRef.current = false
+      void silentRefresh()
     }
-  }, [financeModalOpen, silentRefresh]);
+  }, [financeModalOpen, silentRefresh])
 
   const saveLock = async () => {
-    if (lockSubmittingRef.current) return;
-    lockSubmittingRef.current = true;
-    setLockSaving(true);
+    if (lockSubmittingRef.current) return
+    lockSubmittingRef.current = true
+    setLockSaving(true)
     try {
       await apiJson('/api/finance/settings', {
         method: 'PATCH',
         body: JSON.stringify({ withdrawalLockedUntil: lockDraft || null }),
-      });
+      })
       setToast({
         type: 'success',
         message: lockDraft ? `Withdrawals locked until ${lockDraft}` : 'Withdrawal lock cleared',
-      });
-      await load();
+      })
+      await load()
     } catch (err) {
       setToast({
         type: 'error',
         message: err instanceof ApiError ? err.message : 'Could not update the withdrawal lock',
-      });
+      })
     } finally {
-      lockSubmittingRef.current = false;
-      setLockSaving(false);
+      lockSubmittingRef.current = false
+      setLockSaving(false)
     }
-  };
+  }
 
   const clearLock = async () => {
-    if (lockSubmittingRef.current) return;
-    lockSubmittingRef.current = true;
-    setLockSaving(true);
+    if (lockSubmittingRef.current) return
+    lockSubmittingRef.current = true
+    setLockSaving(true)
     try {
       await apiJson('/api/finance/settings', {
         method: 'PATCH',
         body: JSON.stringify({ withdrawalLockedUntil: null }),
-      });
-      setToast({ type: 'success', message: 'Withdrawal lock cleared' });
-      await load();
+      })
+      setToast({ type: 'success', message: 'Withdrawal lock cleared' })
+      await load()
     } catch {
-      setToast({ type: 'error', message: 'Could not clear the lock' });
+      setToast({ type: 'error', message: 'Could not clear the lock' })
     } finally {
-      lockSubmittingRef.current = false;
-      setLockSaving(false);
+      lockSubmittingRef.current = false
+      setLockSaving(false)
     }
-  };
+  }
 
   if (loading) {
     return (
@@ -173,7 +173,7 @@ export default function FinanceOverviewPage() {
         <Skeleton variant="rect" className="mt-4 h-40" />
         <Skeleton variant="rect" className="mt-4 h-64" />
       </PageTransition>
-    );
+    )
   }
 
   if (error || !data) {
@@ -188,10 +188,10 @@ export default function FinanceOverviewPage() {
           />
         </Card>
       </PageTransition>
-    );
+    )
   }
 
-  const { overall, periods } = data;
+  const { overall, periods } = data
 
   return (
     <PageTransition>
@@ -473,10 +473,10 @@ export default function FinanceOverviewPage() {
         entry={reverseTarget}
         onClose={() => setReverseTarget(null)}
         onReversed={() => {
-          setToast({ type: 'success', message: 'Reversal posted.' });
-          void load();
+          setToast({ type: 'success', message: 'Reversal posted.' })
+          void load()
         }}
       />
     </PageTransition>
-  );
+  )
 }
