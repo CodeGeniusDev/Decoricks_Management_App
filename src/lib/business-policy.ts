@@ -15,6 +15,18 @@ export const SPEC_DEFAULT_CHARITY_PERCENTAGE = 20
 export const SPEC_DEFAULT_PARTNER_PERCENTAGE = 20
 export const SPEC_DEFAULT_BUDGET_THRESHOLDS: BudgetThresholds = { warning: 80, critical: 100 }
 
+/**
+ * Phase 8 (METRICS.md §A.7): the unconfigured advertising/marketing category set
+ * used to split advertising spend out of operating expenses. These mirror the
+ * SPEC Appendix A / seed marketing slugs; the Founder can override them on the
+ * business settings. They are configuration, not invented business data.
+ */
+export const SPEC_DEFAULT_ADVERTISING_CATEGORIES: string[] = [
+  'meta_ads',
+  'flyers_printing',
+  'content_production',
+]
+
 /** Partners listed in Appendix A; only names, never invented money. */
 export const SPEC_DEFAULT_PARTNERS: Pick<ProfitSharePartner, 'name'>[] = [
   { name: 'Abdullah' },
@@ -27,6 +39,8 @@ export interface ResolvedPolicy {
   partners: ProfitSharePartner[]
   charityPercentage: number
   budgetThresholds: BudgetThresholds
+  /** Category slugs the dashboard treats as advertising spend (METRICS §A.7). */
+  advertisingCategories: string[]
   /** True once the Founder (or the seed) has written a real configuration. */
   configured: boolean
 }
@@ -34,6 +48,8 @@ export interface ResolvedPolicy {
 export function resolveBusinessPolicy(
   settings: BusinessSettings | null | undefined
 ): ResolvedPolicy {
+  const advertisingCategories =
+    settings?.advertisingCategories ?? SPEC_DEFAULT_ADVERTISING_CATEGORIES
   const sharing = settings?.profitSharing
   if (!sharing || sharing.partners.length === 0) {
     return {
@@ -44,6 +60,7 @@ export function resolveBusinessPolicy(
       })),
       charityPercentage: SPEC_DEFAULT_CHARITY_PERCENTAGE,
       budgetThresholds: SPEC_DEFAULT_BUDGET_THRESHOLDS,
+      advertisingCategories,
       configured: false,
     }
   }
@@ -52,6 +69,7 @@ export function resolveBusinessPolicy(
     partners: sharing.partners,
     charityPercentage: sharing.charityPercentage,
     budgetThresholds: settings?.budgetThresholds ?? SPEC_DEFAULT_BUDGET_THRESHOLDS,
+    advertisingCategories,
     configured: true,
   }
 }

@@ -113,6 +113,13 @@ export interface BusinessSettings {
   }
   budgetThresholds?: BudgetThresholds
   /**
+   * Phase 8 (METRICS.md §A.7): expense category slugs the dashboard classifies
+   * as advertising/marketing spend. Founder-editable under Settings → Business.
+   * When absent, `business-policy.ts` falls back to the SPEC-adjacent marketing
+   * slugs; the metric itself never hardcodes a list.
+   */
+  advertisingCategories?: string[]
+  /**
    * Phase 5 (SPEC Appendix A + brief): stock writes normally refuse to drive
    * a location negative. The Founder can explicitly lift that guard; every
    * other reader of stock math treats `false`/absent as "block".
