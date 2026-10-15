@@ -13,7 +13,12 @@ import {
 } from '@/lib/models/User'
 // Re-exported for existing call sites; the values themselves live in `roles.ts`
 // so client components can import them without dragging in mongodb.
-export { LAHORE_STOCK_ROLES, SALES_FULL_EDIT_ROLES, SCOPED_LAHORE_STOCK_PERMISSION, SCOPED_SALES_FULL_EDIT } from '@/lib/roles'
+export {
+  LAHORE_STOCK_ROLES,
+  SALES_FULL_EDIT_ROLES,
+  SCOPED_LAHORE_STOCK_PERMISSION,
+  SCOPED_SALES_FULL_EDIT,
+} from '@/lib/roles'
 
 import {
   isFounderRole,
@@ -114,7 +119,8 @@ const resolveMeta = async (
     const h = await headers()
     const forwarded = h.get('x-forwarded-for')
     return {
-      ipAddress: options.ipAddress ?? forwarded?.split(',')[0]?.trim() ?? h.get('x-real-ip') ?? undefined,
+      ipAddress:
+        options.ipAddress ?? forwarded?.split(',')[0]?.trim() ?? h.get('x-real-ip') ?? undefined,
       userAgent: options.userAgent ?? h.get('user-agent') ?? undefined,
     }
   } catch {
@@ -305,6 +311,73 @@ export const authorizeAllViews = async (
   )
 }
 
+export interface ViewScopes extends AuthorizationResult {
+  /**
+   * The subset of the requested modules the caller may view. Every aggregate
+   * screen (dashboard, reports) computes ONLY the sections whose module is
+   * present here, so a Partner without `finance.view` never has a financial
+   * figure assembled or serialized — server-side, not just hidden.
+   */
+  viewable: PermissionModule[]
+}
+
+/**
+ * Per-widget authorization for aggregate screens (brief §8).
+ *
+ * `authorizeAllViews` is all-or-nothing: it is right for a single report that
+ * legitimately needs every underlying view, but the dashboard is a mosaic of
+ * independent widgets, each owned by one module. This resolves the session and
+ * role once, then returns the modules the caller can actually view.
+ *
+ * Enforcement is still entirely server-side: a 401 with no session, a 403 (with
+ * the forced-password rule) otherwise, and a genuine denial — 403 plus an audit
+ * entry — when the caller holds NONE of the requested view grants (they are
+ * reaching a screen they have no business reading). Partial access is not a
+ * denial and is not audited, because the disallowed widgets are simply never
+ * computed rather than refused; auditing every absent widget would flood the
+ * log with non-events and blur the real denied-attempt signal.
+ */
+export const resolveViewScopes = async (
+  modules: PermissionModule[],
+  options: AuthorizeOptions = {}
+): Promise<ViewScopes> => {
+  if (modules.length === 0) throw new AuthorizationError('dashboard', 'view')
+
+  const db = await getDatabase()
+  const auth = await getAuthenticatedUser(db)
+  if (!auth) throw new AuthenticationError()
+  assertPasswordChanged(auth)
+
+  const role = await getRole(auth.user.role, db)
+  if (!role) {
+    throw new AuthorizationError('dashboard', 'view', 'Your account has no role assigned')
+  }
+
+  const viewable = modules.filter((module) => hasPermission(role, module, 'view'))
+  if (viewable.length === 0) {
+    const meta = await resolveMeta(options)
+    await recordAuditEntry(db, {
+      userId: auth.user._id,
+      userEmail: auth.user.email,
+      action: 'permission_denied',
+      entityType: 'dashboard',
+      entityId: options.entityId ?? null,
+      details: `No view permission for any of: ${modules.join(', ')}`,
+      newValue: { requested: modules },
+      outcome: 'denied',
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
+    throw new AuthorizationError(
+      'dashboard',
+      'view',
+      'You do not have permission to view any part of this screen'
+    )
+  }
+
+  return { ...auth, role, permissions: role.permissions, viewable }
+}
+
 /**
  * Assert a module permission *and* a scoped grant, as one check.
  *
@@ -371,11 +444,7 @@ export const authorizeScoped = async (
     ipAddress: meta.ipAddress,
     userAgent: meta.userAgent,
   })
-  throw new AuthorizationError(
-    module,
-    action,
-    'You do not have permission to perform this action'
-  )
+  throw new AuthorizationError(module, action, 'You do not have permission to perform this action')
 }
 
 /** Resolves a scoped grant, falling back to the SPEC defaults. */
