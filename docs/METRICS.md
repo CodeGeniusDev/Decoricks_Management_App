@@ -120,13 +120,17 @@ Unless stated, all are computed for the selected `range` from
   (`authorizeAllViews(['finance','sales', …])`).
 - **Traceability / click-through:** the exact income entries in range →
   `/api/finance` filtered `type=income`, `from`, `to`.
-- **SPEC §5.1 wording note (needs your confirmation):** SPEC §5.1 says
-  "Revenue = Sum of all order totals for the period." The **implemented, reconciled**
-  source is the **ledger income** (collected COD), because that is the one number
-  every downstream figure (§5.2 net sales, §5.4 gross, §5.5 net) and the
-  reconciliation panel already agree on. Order `total` (merchandise value,
-  booked at order creation) is shown separately as **A.2 Gross order value**, never
-  blended into net sales. Flagging here so the choice is explicit, not silent.
+- **SPEC §5.1 wording — RESOLVED (Checkpoint 1, founder-approved):** SPEC §5.1
+  literally reads "Revenue = Sum of all order totals for the period." The
+  **authoritative, reconciled** source is the **ledger income** (for COD, posted
+  only when cash is confirmed received), because that is the single number every
+  downstream figure (§5.2 net sales, §5.4 gross, §5.5 net), the cash flow, the
+  distribution engine and the reconciliation panel already agree on. Order
+  `total` (merchandise value, booked at order creation) is reported **separately**
+  as **A.2 Gross order value**, never blended into revenue or net sales. SPEC §5.1
+  has been annotated to state this recognition rule so the two documents agree;
+  the §5.1 worked example (order totals summing to the period's billed value) is
+  unchanged and still holds for fully-collected periods.
 
 ### A.2 Gross order value (merchandise, non-reconciling)
 
@@ -193,14 +197,18 @@ Unless stated, all are computed for the selected `range` from
 - **Definition:** the subset of operating expenses belonging to advertising /
   marketing categories.
 - **Formula:** `Σ expense entries whose category ∈ advertisingCategories`.
-- **Sources resolution (no invented categories):** advertising categories are the
-  Founder-configured expense categories, read from business settings / the
-  `finance_categories` collection and flagged as advertising (the SPEC §5.5
-  example names "Meta Ads"). Phase 8 does **not** hardcode a category list; the
-  set is resolved server-side from stored categories and the exact member list is
-  shown in the metric's "Show calculation" panel. If no advertising categories are
-  configured, the metric is a truthful `PKR 0.00` with an empty-state note, not a
-  guess.
+- **Sources resolution (no invented categories):** advertising categories are a
+  Founder-configurable set stored on the `businessSettings` singleton as
+  `advertisingCategories: string[]` (category slugs, e.g. `meta_ads`,
+  `flyers_printing`, `content_production`). It is resolved through
+  `resolveBusinessPolicy` (`src/lib/business-policy.ts`) exactly like
+  `budgetThresholds`, with the SPEC-adjacent marketing slugs as the unconfigured
+  default and `configured` telling the UI whether a real decision was made. The
+  **metric itself never hardcodes the list** — it reads the resolved set and the
+  "Show calculation" panel prints the exact member categories used, so the
+  classification is visible and auditable. Advertising spend is the sum of the
+  operating-expense ledger effects whose `category` is in that resolved set, so it
+  is a strict subset of A.6 and can never exceed total expenses.
 - **Engine:** derived from the same `ledger` slice used by `computeProfitLoss`
   (reuses `transactionEffect(entry).expense`); no new money arithmetic.
 - **Permission:** `finance.view`.
@@ -438,7 +446,7 @@ balances + Σ all accountDeltas` from the full ledger.
 
 ---
 
-## I. Superseding the Phase-1 dashboard route (decision to confirm)
+## I. Superseding the Phase-1 dashboard route (RESOLVED — founder-approved)
 
 `/api/dashboard/summary` currently reads legacy `income`/`expenses`/`tasks`
 collections, uses server-local day math, and values stock at
@@ -449,7 +457,7 @@ reconciliation panel use. Phase 8 therefore builds the dashboard on a new
 `fetchLedgerRange` + `buildStockSummary` + `computeBudgetActuals` + the Phase-6
 task queries — the identical calls the reports and reconciliation make. The legacy
 route is left in place (not silently deleted) but the dashboard stops using it, so
-"one number, one source" holds. Confirming this at Checkpoint 1.
+"one number, one source" holds. **Approved at Checkpoint 1.**
 
 ---
 
@@ -502,6 +510,7 @@ route is left in place (not silently deleted) but the dashboard stops using it, 
 
 ---
 
-_This file is the contract for Checkpoint 1. Any metric whose resolution path
-above is marked "confirm" or "needs your confirmation" awaits your approval before
-the API layer is built on it._
+_This file is the Checkpoint 1 contract. Both decisions it used to defer
+(§A.1 revenue basis and §I legacy-route supersession) are now **resolved and
+founder-approved**; the API layer is built on the definitions above with no
+further open confirmations._

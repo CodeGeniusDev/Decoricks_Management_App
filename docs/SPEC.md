@@ -1086,6 +1086,15 @@ Revenue = Sum of all order totals for the period
 Revenue = 5,000 + 3,500 + 7,200 = PKR 15,700
 ```
 
+> **Recognition rule (Phase 8 / METRICS.md §A.1).** The reporting engine
+> recognises revenue from the **unified ledger income entries** (for COD, posted
+> when cash is confirmed received), because that is the single figure net sales,
+> gross profit, net profit, cash flow, distribution and the reconciliation panel
+> all agree on. The order-`total` sum above equals ledger revenue for any period
+> whose orders have all been collected. The booked merchandise value of orders
+> whose cash is not yet received is shown separately as **Gross order value**
+> (METRICS.md §A.2) and is never blended into revenue or net sales.
+
 ### 5.2 Net Sales
 
 **Formula:**
