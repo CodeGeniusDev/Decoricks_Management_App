@@ -87,8 +87,18 @@ const Row = ({
   )
 }
 
-const Shell = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
-  <Card className={`p-4 md:p-5 ${className}`}>{children}</Card>
+const Shell = ({
+  children,
+  className = '',
+  widget,
+}: {
+  children: React.ReactNode
+  className?: string
+  widget?: string
+}) => (
+  <Card className={`p-4 md:p-5 ${className}`} {...(widget ? { 'data-widget': widget } : {})}>
+    {children}
+  </Card>
 )
 
 /* -------------------------------------------------------------------------- */
@@ -178,7 +188,7 @@ export const ExpensesWidget = ({ block, range }: WidgetProps & { block: ExpenseB
   const empty = block.total.paisa === 0
   const top = block.byCategory.slice(0, 6)
   return (
-    <Shell>
+    <Shell widget="expenses">
       <Title
         help={{
           definition:

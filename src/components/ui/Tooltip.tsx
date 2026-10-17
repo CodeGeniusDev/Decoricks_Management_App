@@ -48,16 +48,15 @@ export const Tooltip = ({
       onBlurCapture={() => setOpen(false)}
     >
       {children}
-      <span
-        role="tooltip"
-        id={id}
-        aria-hidden={!open}
-        className={`pointer-events-none absolute z-50 whitespace-nowrap rounded bg-decoricks-dark px-2 py-1 text-2xs font-medium text-white shadow-md transition-opacity duration-150 ${positionClasses[position]} ${
-          open ? 'opacity-100' : 'opacity-0'
-        }`}
-      >
-        {content}
-      </span>
+      {open && (
+        <span
+          role="tooltip"
+          id={id}
+          className={`pointer-events-none absolute z-50 whitespace-nowrap rounded bg-decoricks-dark px-2 py-1 text-2xs font-medium text-white shadow-md ${positionClasses[position]}`}
+        >
+          {content}
+        </span>
+      )}
     </span>
   )
 }

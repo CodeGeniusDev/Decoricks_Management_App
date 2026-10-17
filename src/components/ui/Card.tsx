@@ -2,7 +2,7 @@
 
 import React from 'react'
 
-interface CardProps {
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode
   className?: string
   variant?: 'default' | 'dark'
@@ -21,7 +21,13 @@ interface CardProps {
  * colour change) and no enter animation. Interactive cards should be built from
  * a button/link so keyboard and focus behaviour stays correct.
  */
-export const Card = ({ children, className = '', variant = 'default' }: CardProps) => {
+export const Card = ({
+  children,
+  className = '',
+  variant = 'default',
+  animate: _animate,
+  ...rest
+}: CardProps) => {
   const baseStyles = 'rounded-lg border'
 
   const variantStyles = {
@@ -33,6 +39,8 @@ export const Card = ({ children, className = '', variant = 'default' }: CardProp
   }
 
   return (
-    <div className={`${baseStyles} ${variantStyles[variant]} ${className}`}>{children}</div>
+    <div className={`${baseStyles} ${variantStyles[variant]} ${className}`} {...rest}>
+      {children}
+    </div>
   )
 }

@@ -12,8 +12,7 @@ import { FOUNDER_STATE } from './helpers'
  * ledger UI to prove a chart actually paints (not just an empty frame).
  */
 
-const mainHeading = (page: Page) =>
-  page.locator('#main-content').getByRole('heading', { level: 1 })
+const mainHeading = (page: Page) => page.locator('#main-content').getByRole('heading', { level: 1 })
 
 /** Today's Karachi civil date as YYYY-MM-DD, matching the PeriodSelector. */
 const karachiToday = (): string =>
@@ -27,10 +26,7 @@ const karachiToday = (): string =>
 const setNativeValue = async (locator: import('@playwright/test').Locator, value: string) => {
   await locator.evaluate((el, v) => {
     const input = el as HTMLInputElement
-    const setter = Object.getOwnPropertyDescriptor(
-      window.HTMLInputElement.prototype,
-      'value'
-    )?.set
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
     setter?.call(input, v)
     input.dispatchEvent(new Event('input', { bubbles: true }))
   }, value)
@@ -97,15 +93,11 @@ test.describe('phase 8 — central dashboard & charts', () => {
     // Default is This month → the snapshot range equals the Karachi month.
     await expect(page.getByText(/^Period /)).toBeVisible()
 
-    const dayReq = page.waitForRequest((req) =>
-      /\/api\/dashboard\?.*period=day/.test(req.url())
-    )
+    const dayReq = page.waitForRequest((req) => /\/api\/dashboard\?.*period=day/.test(req.url()))
     await page.getByRole('button', { name: 'Today' }).click()
     await dayReq
 
-    const weekReq = page.waitForRequest((req) =>
-      /\/api\/dashboard\?.*period=week/.test(req.url())
-    )
+    const weekReq = page.waitForRequest((req) => /\/api\/dashboard\?.*period=week/.test(req.url()))
     await page.getByRole('button', { name: 'This week' }).click()
     await weekReq
 
@@ -119,21 +111,27 @@ test.describe('phase 8 — central dashboard & charts', () => {
   test('traceability: show calculation panel and ledger click-through', async ({ page }) => {
     guard(page)
     await page.goto('/')
-    const expenses = page.getByRole('heading', { name: 'Expenses', exact: true })
-    await expect(expenses).toBeVisible()
+    const expensesCard = page.locator('[data-widget="expenses"]')
+    await expect(expensesCard.getByRole('heading', { name: 'Expenses' })).toBeVisible()
 
     // "Show calculation" reveals the exact formula the engine applied.
-    const panelToggle = page.getByRole('button', { name: 'Show calculation' }).first()
-    await panelToggle.click()
+    await expensesCard.getByRole('button', { name: 'Show calculation' }).click()
     await expect(
-      page.getByText(/Σ expense entries whose category .*product_purchasing/)
+      expensesCard.getByText(/Σ expense entries whose category .*product_purchasing/)
     ).toBeVisible()
 
     // Click-through lands on the ledger with the filter + Karachi range applied.
-    await page.getByRole('button', { name: /View the expense entries in the ledger/ }).first().click()
-    await expect(page).toHaveURL(/\/finance\/transactions\?.*type=expense/)
-    await expect(page).toHaveURL(/startDate=\d{4}-\d{2}-\d{2}/)
-    await expect(page).toHaveURL(/endDate=\d{4}-\d{2}-\d{2}/)
+    // The transactions screen reads the deep-link into its filter state and then
+    // normalises the URL (history.replaceState) so a reload won't re-apply a
+    // stale link, so the honest assertion is the applied filter, not a URL that
+    // is intentionally wiped on mount.
+    await expensesCard
+      .getByRole('button', { name: /View the expense entries in the ledger/ })
+      .click()
+    await expect(page).toHaveURL(/\/finance\/transactions/)
+    await expect(page.getByLabel('Type')).toHaveValue('expense')
+    await expect(page.getByLabel('From (Karachi date)')).toHaveValue(/\d{4}-\d{2}-\d{2}/)
+    await expect(page.getByLabel('To (Karachi date)')).toHaveValue(/\d{4}-\d{2}-\d{2}/)
   })
 
   test('a recorded expense makes the Sales vs Expenses chart paint an SVG', async ({ page }) => {
