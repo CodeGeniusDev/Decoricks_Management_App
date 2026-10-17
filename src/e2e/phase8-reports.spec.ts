@@ -68,6 +68,9 @@ test.describe('reconciliation (Founder)', () => {
   })
 
   test('the Reconciliation entry is in the Founder nav', async ({ page }) => {
+    // Desktop width: below the `md` breakpoint the nav lives in an off-canvas
+    // drawer, so the persistent `complementary` sidebar is not in the DOM.
+    await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/')
     await expect(NAV(page).getByRole('link', { name: /^Reconciliation$/ })).toBeVisible()
   })
