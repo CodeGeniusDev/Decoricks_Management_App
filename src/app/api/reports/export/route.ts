@@ -5,6 +5,7 @@ import { getDatabase } from '@/lib/mongodb'
 import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
 import { errorResponse } from '@/lib/api-response'
 import { recordAuditEntry } from '@/lib/audit'
+import { toKarachiInputDate } from '@/lib/form-helpers'
 import { buildPeriodReport, resolvePeriodRange } from '@/lib/reports/period-report'
 import { reportToCsv, reportToPdf } from '@/lib/reports/render'
 
@@ -64,7 +65,7 @@ async function __GET(request: NextRequest) {
       userAgent: reqMeta.userAgent,
     })
 
-    const day = report.rangeStart.slice(0, 10)
+    const day = toKarachiInputDate(range.rangeStart.toISOString())
     const filename = `decoricks-${report.period}-report-${day}.${format}`
 
     if (format === 'csv') {
