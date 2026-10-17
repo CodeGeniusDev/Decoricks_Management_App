@@ -142,8 +142,15 @@ export async function reconcile(
     )
   )
 
+  // Balances the dashboard can actually SHOW (only configured accounts) vs every
+  // paisa the ledger moved. `computeAccountBalances` keys a running total for ANY
+  // accountId it meets, but the dashboard cash block lists only the accounts in
+  // `accountHistory` — so money posted to an account that no longer exists would
+  // be invisible on screen while still sitting in the ledger. Comparing the two
+  // sets is what turns "account balances equal the ledger" into a real check that
+  // surfaces an orphaned amount instead of agreeing with itself on both sides.
   const balances = computeAccountBalances(accountHistory, ledger)
-  const balancesTotal = Object.values(balances).reduce((sum, v) => sum + v, 0)
+  const displayedTotal = accountHistory.reduce((sum, a) => sum + (balances[a._id] ?? 0), 0)
   const openingTotal = accountHistory.reduce((sum, a) => sum + a.openingBalance, 0)
   const deltasTotal = ledger.reduce((sum, e) => {
     const fx = transactionEffect(e)
@@ -152,8 +159,8 @@ export async function reconcile(
   checks.push(
     check(
       'balances = opening + Σ all account deltas',
-      'Σ current account balances vs opening balances plus an independent delta walk',
-      balancesTotal,
+      'Σ DISPLAYED account balances vs opening balances plus EVERY ledger delta (catches money outside the account set)',
+      displayedTotal,
       openingTotal + deltasTotal
     )
   )
