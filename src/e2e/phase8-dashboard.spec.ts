@@ -14,15 +14,6 @@ import { FOUNDER_STATE } from './helpers'
 
 const mainHeading = (page: Page) => page.locator('#main-content').getByRole('heading', { level: 1 })
 
-/** Today's Karachi civil date as YYYY-MM-DD, matching the PeriodSelector. */
-const karachiToday = (): string =>
-  new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Karachi',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date())
-
 const setNativeValue = async (locator: import('@playwright/test').Locator, value: string) => {
   await locator.evaluate((el, v) => {
     const input = el as HTMLInputElement
@@ -137,8 +128,12 @@ test.describe('phase 8 — central dashboard & charts', () => {
   test('a recorded expense makes the Sales vs Expenses chart paint an SVG', async ({ page }) => {
     guard(page)
 
-    // Seed one operating expense for today through the real ledger form.
-    const today = karachiToday()
+    // Seed one operating expense on an isolated Karachi civil day that no other
+    // spec touches (they all write to "today"). Querying that exact day means the
+    // figure is attributable to this one entry and stays deterministic even when
+    // the whole suite runs every money-writing spec in parallel against the shared
+    // test database — an absolute "today" total would drift with their writes.
+    const isolatedDay = '2021-03-05'
     await page.goto('/finance/transactions')
     await expect(mainHeading(page)).toBeVisible()
     await page.getByRole('button', { name: 'New transaction' }).first().click()
@@ -146,22 +141,34 @@ test.describe('phase 8 — central dashboard & charts', () => {
     await expect(dialog).toBeVisible()
     await dialog.getByLabel('Type').selectOption('expense')
     await dialog.getByLabel('Amount (PKR)').fill('250')
-    await setNativeValue(dialog.getByLabel('Date'), today)
+    await setNativeValue(dialog.getByLabel('Date'), isolatedDay)
     await dialog.getByLabel('Account').selectOption({ label: 'Cash' })
     await dialog.getByLabel('Category').selectOption('meta_ads')
     await dialog.getByLabel('Note').fill('E2E dashboard chart seed')
     await dialog.getByRole('button', { name: 'Save transaction' }).click()
     await expect(dialog).toHaveCount(0)
 
-    // Dashboard on "Today" must now render the Recharts surface for the trend.
+    // Dashboard on that custom day must render the Recharts trend surface (only
+    // mounted when the block is non-empty) and show exactly the seeded 250.
     await page.goto('/')
-    await page.getByRole('button', { name: 'Today' }).click()
+    await expect(mainHeading(page)).toHaveText('Dashboard')
+    await page.getByRole('button', { name: 'Custom' }).click()
+    const isolatedReq = page.waitForResponse(
+      (r) =>
+        /\/api\/dashboard\?/.test(r.url()) &&
+        r.url().includes('from=2021-03-05') &&
+        r.url().includes('to=2021-03-05') &&
+        r.ok()
+    )
+    await setNativeValue(page.getByLabel('From date'), isolatedDay)
+    await setNativeValue(page.getByLabel('To date'), isolatedDay)
+    await isolatedReq
+
     await expect(
       page.getByRole('heading', { name: 'Sales vs Expenses', exact: true })
     ).toBeVisible()
     await expect(page.locator('.recharts-surface').first()).toBeVisible()
-
-    // The expense figure is traceable end to end: the widget shows the seeded 250.
+    // The seeded expense is traceable end to end: the widget shows exactly 250.
     await expect(page.getByText('PKR 250.00').first()).toBeVisible()
     await noHorizontalScroll(page)
   })
