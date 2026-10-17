@@ -125,9 +125,20 @@ export const ROUTE_PERMISSIONS: Record<string, { module: PermissionModule; actio
   '/settings': [{ module: 'settings', action: 'view' }],
 };
 
+/**
+ * Routes gated on the Founder ROLE rather than any module grant (brief §8 —
+ * only the Founder sees reconciliation). There is no permission module that
+ * models this, so `can()` cannot express it; the check is `isFounderRole`.
+ * The server still enforces it with `requireFounder` (a role check, not a
+ * grant) — hiding the nav item is a convenience, never the control.
+ */
+export const FOUNDER_ONLY_ROUTES = new Set<string>(['/reconciliation']);
+
 /** Every check for a route must pass. */
 export const canAccessRoute = (source: NavPermissionSource, pathname: string): boolean => {
-  const route = normaliseRoute(pathname);
+  const route = normaliseRoute(pathname)
+  // Founder-only screens are decided by the role, before any module lookup.
+  if (FOUNDER_ONLY_ROUTES.has(route)) return isFounderRole(source.role);
   // Detail routes inherit their section's guard via the longest registered
   // prefix: /budgets/<id> is treated as /budgets, /distributions/<id> as
   // /distributions. Routes with no match at all (e.g. /profile) stay open —

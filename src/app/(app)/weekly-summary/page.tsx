@@ -10,6 +10,20 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Toast } from '@/components/ui/Toast'
 import { formatPaisa } from '@/lib/money'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { can } from '@/lib/permissions-client'
+
+/**
+ * Anchor styled to match the outline Button. A file endpoint returns a body
+ * with `Content-Disposition: attachment`, so it must be a real browser
+ * download (`<a>`), not a client-side `next/link` navigation.
+ */
+const exportAnchorClass =
+  'inline-flex h-11 min-h-[44px] items-center justify-center rounded-md border border-line bg-surface-raised px-3 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-sunken hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown md:h-9'
+
+/** The export aggregates every module; a download is only offered when the
+ *  caller can view all of them. This is display-only — the route re-checks. */
+const EXPORT_MODULES = ['finance', 'inventory', 'sales', 'tasks'] as const
 
 interface WeeklySummaryData {
   period: 'week' | 'month'
@@ -82,6 +96,10 @@ const EXPENSE_COLUMNS = [
 ]
 
 export default function WeeklySummaryPage() {
+  const { user } = useAuth()
+  const canExport = user
+    ? EXPORT_MODULES.every((module) => can({ role: user.role }, module, 'view'))
+    : false
   const [data, setData] = useState<WeeklySummaryData | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -139,9 +157,9 @@ export default function WeeklySummaryPage() {
 
   return (
     <PageTransition>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-decoricks-dark">Weekly Summary</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
           <Button
             variant={period === 'week' ? 'primary' : 'outline'}
             size="sm"
@@ -156,6 +174,24 @@ export default function WeeklySummaryPage() {
           >
             This Month
           </Button>
+          {canExport && (
+            <>
+              <a
+                href={`/api/reports/export?period=${period}&format=csv`}
+                className={exportAnchorClass}
+                data-testid="export-csv"
+              >
+                Export CSV
+              </a>
+              <a
+                href={`/api/reports/export?period=${period}&format=pdf`}
+                className={exportAnchorClass}
+                data-testid="export-pdf"
+              >
+                Export PDF
+              </a>
+            </>
+          )}
         </div>
       </div>
 

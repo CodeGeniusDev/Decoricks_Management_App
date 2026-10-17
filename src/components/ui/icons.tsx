@@ -77,6 +77,7 @@ import {
   LuMoveLeft,
   LuRotateCcw,
   LuCalculator,
+  LuScale,
 } from 'react-icons/lu'
 import { MdLogout, MdPersonOutline } from 'react-icons/md'
 
@@ -97,6 +98,7 @@ export const IconDesign = LuPalette
 export const IconProfitLoss = LuTrendingUp
 export const IconCashFlow = LuArrowLeftRight
 export const IconDistribution = LuHandCoins
+export const IconReconciliation = LuScale
 
 /** Chrome and controls. */
 export const IconMenu = HiOutlineBars3
