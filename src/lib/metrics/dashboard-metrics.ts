@@ -9,6 +9,14 @@ import {
   type DateRange,
 } from '@/lib/finance'
 import { computeProfitLoss } from '@/lib/profit-loss'
+import { monthlyProfitSeries, type MonthlyPlPoint } from '@/lib/profit-loss'
+import {
+  buildSalesExpenseSeries,
+  monthsInRange,
+  pickGranularity,
+  type TrendGranularity,
+  type TrendPoint,
+} from '@/lib/metrics/trend'
 import { computeCashFlow, type CashFlow, type ReportPeriod } from '@/lib/cash-flow'
 import { periodCogsInput } from '@/lib/cogs-service'
 import { fetchLedgerRange } from '@/lib/distribution-service'
@@ -150,6 +158,18 @@ export interface AveragesBlock {
   perEntry: MoneyValue
 }
 
+/**
+ * Chart series (METRICS §K). `salesVsExpenses` buckets revenue/opEx by the
+ * granularity that fits the window; `profitTrend` is the existing monthly P&L
+ * series (`monthlyProfitSeries`), so the profit chart and the profit headline
+ * are the same engine reading the same ledger.
+ */
+export interface TrendBlock {
+  granularity: TrendGranularity
+  salesVsExpenses: TrendPoint[]
+  profitTrend: MonthlyPlPoint[]
+}
+
 export interface DashboardMetrics {
   period: ReportPeriod
   range: { start: string; end: string }
@@ -165,6 +185,7 @@ export interface DashboardMetrics {
     budget?: BudgetBlock[]
     tasks?: TasksBlock
     averages?: AveragesBlock
+    trend?: TrendBlock
   }
 }
 
@@ -261,6 +282,18 @@ export async function buildDashboardMetrics(input: DashboardInput): Promise<Dash
       perWeek: money(avg.perWeek),
       perMonth: money(avg.perMonth),
       perEntry: money(avg.perEntry),
+    }
+
+    // ---- Chart series (METRICS §K) ----
+    // Both series read `entriesInRange` — the identical slice the headline P&L
+    // above was built from — so the bars and the figures can never disagree.
+    const granularity = pickGranularity(range)
+    const monthWindows = monthsInRange(range)
+    const cogsPerMonth = await Promise.all(monthWindows.map((m) => periodCogsInput(db, m.range)))
+    blocks.trend = {
+      granularity,
+      salesVsExpenses: buildSalesExpenseSeries(entriesInRange, range, granularity),
+      profitTrend: monthlyProfitSeries(entriesInRange, monthWindows, cogsPerMonth),
     }
   }
 

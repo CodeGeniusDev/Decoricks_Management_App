@@ -484,17 +484,30 @@ route is left in place (not silently deleted) but the dashboard stops using it, 
 
 ---
 
-## K. Charts (definitions only; build at Checkpoint 2)
+## K. Charts (built at Checkpoint 2)
 
-- **Sales vs expenses trend:** per Karachi day (or week/month for long ranges)
-  `revenue` and `operating expenses` from the ledger — same slices as A.1/A.6.
-- **Profit trend:** `monthlyProfitSeries(ledger, monthRanges, cogsPerMonth)`
-  (`src/lib/profit-loss.ts`) — reuses the existing monthly P&L series.
-- **Budget vs actual:** from §E category lines.
-- **Expense breakdown by category:** `pl.operatingLines` (largest first).
-- **Stock value by location:** `buildStockSummary().totals.byLocation`.
+The dashboard emits a `trend` block (behind `finance.view`, alongside the profit
+chain) so every chart bar sums back to the headline figure it sits under — the
+series are bucketed from the _same_ `entriesInRange` slice the P&L is built from
+(`src/lib/metrics/trend.ts`, unit-tested), never a second money formula.
+
+- **Bucket granularity** (`pickGranularity`): daily inside 14 days, weekly inside
+  ~120 days, monthly beyond — so a long custom range never explodes into hundreds
+  of bars. A bucket with no activity is a real `0`, not a gap (§0.5).
+- **Sales vs expenses trend:** per bucket `revenue = sumRevenue` (§A.1) and
+  `operatingExpenses = sumOperatingExpenses` (§A.6) — the identical
+  `transactionEffect` walks the P&L uses. Reserved categories (purchasing,
+  refunds) stay out of the operating line.
+- **Profit trend:** `monthlyProfitSeries(ledger, monthsInRange(range), cogsPerMonth)`
+  (`src/lib/profit-loss.ts`) — reuses the existing monthly P&L series; edge months
+  are clamped to the selection so the series reconciles with the period net profit.
+- **Budget vs actual:** from §E category lines (`blocks.budget[].actuals`).
+- **Expense breakdown by category:** `blocks.expenses.byCategory` (§A.6,
+  largest first).
+- **Stock value by location:** `blocks.inventory.byLocation` (§C.1).
 - Every chart has an accessible text summary, labeled axes, patterns/labels (not
-  colour alone), brand colours, no 3D, and resizes without layout shift.
+  colour alone), brand colours, no 3D, and resizes without layout shift (client-
+  only, `ssr: false` to avoid hydration mismatch).
 
 ---
 

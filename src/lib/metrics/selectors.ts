@@ -22,6 +22,16 @@ export const isOperatingExpense = (entry: LedgerEntryLike): boolean =>
 export const sumOperatingExpenses = (entries: LedgerEntryLike[]): number =>
   entries.filter(isOperatingExpense).reduce((sum, e) => sum + transactionEffect(e).expense, 0)
 
+/**
+ * Revenue over any slice (§A.1): Σ income effects. Identical walk to
+ * `computeProfitLoss`'s revenue line, exposed so the sales-vs-expenses trend can
+ * bucket the SAME money the headline figure reports — never a second formula.
+ */
+export const sumRevenue = (entries: LedgerEntryLike[]): number =>
+  entries
+    .filter((e) => e.type === 'income')
+    .reduce((sum, e) => sum + transactionEffect(e).revenue, 0)
+
 /** Operating spend per category, largest first — the §A.6 breakdown. */
 export const expenseByCategory = (
   entries: LedgerEntryLike[]
