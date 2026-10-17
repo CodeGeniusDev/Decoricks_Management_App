@@ -334,8 +334,14 @@ test.describe('responsive smoke', () => {
         await expect(page.locator('#main-content')).toBeVisible()
 
         // Exactly one h1 in the content area; the header supplies the route name
-        // as a heading too, so scope this to <main>.
-        await expect(page.locator('#main-content h1').first()).toBeVisible()
+        // as a heading too, so scope this to <main>. The route is auth-gated, so
+        // <main> first shows RequireAuth's "Loading…" and only hydrates the heading
+        // once /api/auth/me resolves — the first cold navigation under two workers
+        // on the free tier can run past the default 10s budget. That is a wait
+        // budget, not a broken shell, so let it settle.
+        await expect(page.locator('#main-content h1').first()).toBeVisible({
+          timeout: 30_000,
+        })
       }
     })
   }
