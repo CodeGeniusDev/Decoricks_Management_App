@@ -92,7 +92,19 @@ export default function SalesOrdersPage() {
     canWriteStockLocation({ role: user?.role ?? '' }, 'sheikhupura') ||
     canWriteStockLocation({ role: user?.role ?? '' }, 'lahore')
 
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
+  const [filters, setFilters] = useState<Filters>(() => {
+    // Honour a dashboard traceability deep-link (…?from=YYYY-MM-DD&to=YYYY-MM-DD)
+    // by seeding the filters from the URL on the very first render, so the first
+    // load is already the filtered query (no double fetch, no unfiltered flash).
+    if (typeof window === 'undefined') return EMPTY_FILTERS
+    const q = new URLSearchParams(window.location.search)
+    const seeded = { ...EMPTY_FILTERS }
+    for (const key of ['search', 'status', 'paymentStatus', 'channel', 'from', 'to'] as const) {
+      const v = q.get(key)
+      if (v) seeded[key] = v
+    }
+    return seeded
+  })
   const [page, setPage] = useState(1)
   const [data, setData] = useState<OrdersView | null>(null)
   const [loading, setLoading] = useState(true)
