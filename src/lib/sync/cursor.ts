@@ -1,9 +1,11 @@
 import type { Collection, Db, Document } from 'mongodb'
+import { ObjectId } from 'mongodb'
 import { getTaskDocCollection } from '@/lib/models/Tasks'
 import { getMessageCollection } from '@/lib/models/Chat'
 import { getOrderCollection, getReturnCollection } from '@/lib/models/Sales'
 import { getProductCollection, getStockCollection } from '@/lib/models/Product'
 import { getLedgerCollection } from '@/lib/models/Ledger'
+import { getNotificationCollection } from '@/lib/models/Notifications'
 import type { SyncCursor, SyncModule } from './types'
 
 /**
@@ -22,7 +24,7 @@ type Source = {
   filter?: Document
 }
 
-const SOURCES: Record<SyncModule, Source[]> = {
+const SOURCES: Record<Exclude<SyncModule, 'notifications'>, Source[]> = {
   tasks: [
     // Rides the existing `{ isArchived: 1, updatedAt: -1 }` compound index.
     {
@@ -63,6 +65,13 @@ const SOURCES: Record<SyncModule, Source[]> = {
 }
 
 /**
+ * The user-scoped modules are NOT in `SOURCES` (whose filters are static).
+ * `notifications` is per-user, so its cursor is computed from the caller's own
+ * id in `computeCursor` below rather than a global collection high-water mark.
+ */
+const USER_SCOPED_MODULES: SyncModule[] = ['notifications']
+
+/**
  * Indexes that make the cursor reads O(log n). Only the descending-timestamp
  * indexes the cursor needs and that aren't already created by the module's own
  * `ensureXIndexes` are added here. Every `createIndex` is idempotent, so this
@@ -82,6 +91,11 @@ export function ensureSyncIndexes(db: Db): Promise<void> {
           getProductCollection(db).createIndex({ updatedAt: -1 }),
           getStockCollection(db).createIndex({ updatedAt: -1 }),
           getLedgerCollection(db).createIndex({ updatedAt: -1 }),
+          // Per-user notifications cursor: newest of the caller's own rows.
+          getNotificationCollection(db).createIndex(
+            { userId: 1, createdAt: -1 },
+            { name: 'notifications_user_created' }
+          ),
         ])
       } catch (error) {
         // Never let an index hiccup break reads; the cursor degrades to a
@@ -107,11 +121,34 @@ async function maxTimestamp(source: Source, db: Db): Promise<number> {
   return value instanceof Date ? value.getTime() : 0
 }
 
-/** Newest timestamp per requested module. Modules with no data return `0`. */
-export async function computeCursor(db: Db, modules: SyncModule[]): Promise<SyncCursor> {
+/**
+ * Newest timestamp per requested module. Modules with no data return `0`.
+ *
+ * `userId` is required to answer the user-scoped `notifications` module; when
+ * absent that module is simply omitted (never a guess, never another user's
+ * timestamp). All other modules are global collection high-water marks.
+ */
+export async function computeCursor(
+  db: Db,
+  modules: SyncModule[],
+  userId?: string
+): Promise<SyncCursor> {
   const cursor: SyncCursor = {}
   await Promise.all(
     modules.map(async (module) => {
+      if (module === 'notifications') {
+        if (!userId) return
+        // Rides `{ userId: 1, createdAt: -1 }`: the caller's newest notification
+        // only, so the poll answer leaks nothing beyond "you have something newer".
+        const doc = await getNotificationCollection(db)
+          .find({ userId: new ObjectId(userId) })
+          .sort({ createdAt: -1 })
+          .limit(1)
+          .project<{ createdAt?: Date }>({ createdAt: 1, _id: 0 })
+          .next()
+        cursor.notifications = doc?.createdAt instanceof Date ? doc.createdAt.getTime() : 0
+        return
+      }
       const sources = SOURCES[module]
       if (!sources) return
       const marks = await Promise.all(sources.map((s) => maxTimestamp(s, db)))
@@ -121,4 +158,7 @@ export async function computeCursor(db: Db, modules: SyncModule[]): Promise<Sync
   return cursor
 }
 
-export const SYNC_MODULES = Object.keys(SOURCES) as SyncModule[]
+export const SYNC_MODULES = [
+  ...(Object.keys(SOURCES) as SyncModule[]),
+  ...USER_SCOPED_MODULES,
+]

@@ -39,6 +39,16 @@ const envSchema = z.object({
    * Unset in every deployed environment.
    */
   MONGODB_TEST_DB: z.string().min(1).optional(),
+
+  /**
+   * Phase 9 Web Push (VAPID). All OPTIONAL: when any is missing, `deliverPush`
+   * is a silent no-op and the app falls back to in-app + browser notifications
+   * while open (design §10). The private key and subject are server-only; the
+   * public key is exposed to the client through a dedicated `/api/push/vapid-public-key`
+   * route, never via `NEXT_PUBLIC_*` (so a dev leak cannot expose secrets).
+   */
+  VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+  VAPID_SUBJECT: z.string().min(1).optional(),
 })
 
 // Validate environment variables at runtime (not build time)
@@ -60,6 +70,8 @@ export const getEnv = () => {
       PASSWORD_MIN_LENGTH: process.env.PASSWORD_MIN_LENGTH,
       BCRYPT_COST: process.env.BCRYPT_COST,
       MONGODB_TEST_DB: process.env.MONGODB_TEST_DB,
+      VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,
+      VAPID_SUBJECT: process.env.VAPID_SUBJECT,
     })
     return _env
   } catch (error) {

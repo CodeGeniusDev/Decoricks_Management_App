@@ -1,5 +1,6 @@
 import { Collection, Db } from 'mongodb'
 import { ObjectId } from 'mongodb'
+import type { NotificationType } from '@/lib/notifications/types'
 
 /**
  * Role permissions exactly as SPEC.md §4.2 / Appendix A.
@@ -60,6 +61,15 @@ export interface User {
   lastLoginAt?: Date
   /** Bumped on deactivate/reactivate/reset so live sessions can be revoked. */
   sessionVersion: number
+  /**
+   * Phase 9 per-user notification preferences: which event types the user wants
+   * to receive. Optional on the document — pre-Phase-9 users have none, and
+   * `resolveNotificationPrefs` fills defaults at read time so a missing key is
+   * never a crash and a newly-added type is enabled for everyone by default.
+   * Stored on `users` (not a separate collection) because it is one small,
+   * always-read-with-the-user map with no independent query need.
+   */
+  notificationPrefs?: Partial<Record<NotificationType, { enabled: boolean }>>
 }
 
 export interface Role {

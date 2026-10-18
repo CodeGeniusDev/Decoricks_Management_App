@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server'
-import { authorize } from '@/lib/authorization'
+import { authorize, requireAuth } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { handleRouteError } from '@/lib/http'
-import { errorResponse } from '@/lib/api-response'
 import { computeCursor, ensureSyncIndexes, SYNC_MODULES } from '@/lib/sync/cursor'
 import type { SyncModule } from '@/lib/sync/types'
 import type { PermissionModule } from '@/lib/models/User'
@@ -41,7 +40,7 @@ export const dynamic = 'force-dynamic'
 
 const HEARTBEAT_MS = 20_000
 
-const PERMISSION: Record<SyncModule, [PermissionModule, string]> = {
+const PERMISSION: Record<Exclude<SyncModule, 'notifications'>, [PermissionModule, string]> = {
   tasks: ['tasks', 'view'],
   chat: ['chat', 'view'],
   sales: ['sales', 'view'],
@@ -63,8 +62,18 @@ async function __GET(request: NextRequest): Promise<Response> {
   // --- Resolve the caller and their per-module view scope BEFORE opening the
   // stream. A missing session throws AuthenticationError → 401 (never a stream),
   // which is exactly the "unauthenticated connection rejected" contract.
+  const auth = await requireAuth()
+  const callerId = auth.user._id?.toString()
+
   const permitted = new Set<SyncModule>()
   for (const mod of SYNC_MODULES) {
+    // `notifications` is user-scoped, not module-gated: any authenticated user
+    // may subscribe because its cursor/signal can only ever describe *their own*
+    // newest notification (see §2.6 of the design doc).
+    if (mod === 'notifications') {
+      permitted.add(mod)
+      continue
+    }
     const [permModule, action] = PERMISSION[mod]
     try {
       await authorize(permModule, action)
@@ -74,11 +83,11 @@ async function __GET(request: NextRequest): Promise<Response> {
     }
   }
 
-  // A session whose every module was refused is treated as unauthenticated for
-  // this endpoint so we never hand an empty-but-open stream to a bad actor.
-  if (permitted.size === 0) {
-    return errorResponse('You have no modules available for live updates', 403, 'FORBIDDEN')
-  }
+  // A `notifications` signal must reach ONLY its recipient's streams — it is
+  // fanned in-process to every connection, so we filter by the caller here. Any
+  // other module is a global per-collection mark gated by the view grant.
+  const canDeliver = (signal: RealtimeSignal): boolean =>
+    signal.module === 'notifications' ? signal.userId === callerId : permitted.has(signal.module)
 
   const db = await getDatabase()
   await ensureSyncIndexes(db)
@@ -103,7 +112,7 @@ async function __GET(request: NextRequest): Promise<Response> {
 
       // Baseline cursor so the coordinator adopts silently instead of firing a
       // refetch for changes that happened before this tab connected.
-      void computeCursor(db, [...permitted])
+      void computeCursor(db, [...permitted], callerId)
         .then((cursor) => safeEnqueue(frame('cursor', cursor)))
         .catch(() => safeEnqueue(frame('reconcile', { reason: 'cursor-unavailable' })))
 
@@ -115,7 +124,7 @@ async function __GET(request: NextRequest): Promise<Response> {
           safeEnqueue(frame('reconcile', { reason: 'resume-window-expired' }))
         } else {
           for (const signal of signals) {
-            if (permitted.has(signal.module)) {
+            if (canDeliver(signal)) {
               safeEnqueue(frame('change', { module: signal.module, ts: signal.ts }, signal.id))
             }
           }
@@ -123,7 +132,7 @@ async function __GET(request: NextRequest): Promise<Response> {
       }
 
       const onSignal = (signal: RealtimeSignal) => {
-        if (!permitted.has(signal.module)) return
+        if (!canDeliver(signal)) return
         safeEnqueue(frame('change', { module: signal.module, ts: signal.ts }, signal.id))
       }
       const unsubscribe = realtimeBus.subscribe(onSignal)

@@ -136,6 +136,14 @@ export interface BusinessSettings {
    * Founder-editable under Settings → Business.
    */
   commentEditWindowMinutes?: number
+  /**
+   * Phase 9 (design D6): an expense of at least this many paisa fires a
+   * `financial_event` (large_expense) notification to the Founder. Founder-
+   * editable under Settings → Business. `undefined`/absent or a non-positive
+   * value means the event is DISABLED — there is no invented default threshold,
+   * exactly like the withdrawal lock: the alert only exists once configured.
+   */
+  largeExpenseThresholdPkr?: number
   createdAt: Date
   updatedAt: Date
   updatedBy?: ObjectId

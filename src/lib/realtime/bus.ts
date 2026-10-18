@@ -34,16 +34,19 @@ export class RealtimeBus {
     return String(this.seq)
   }
 
-  publish(module: SyncModule, ts: number): RealtimeSignal {
+  publish(module: SyncModule, ts: number, userId?: string): RealtimeSignal {
     const last = this.buffer[this.buffer.length - 1]
-    // Same module, still newest → advance its ts in place, do not grow the tail.
-    if (last && last.module === module) {
+    // Same module (and same user, for the user-scoped `notifications` stream)
+    // still newest → advance its ts in place, do not grow the tail. Two users'
+    // notifications must never collapse into one bumped signal, so the user id
+    // is part of the coalescing key for that module.
+    if (last && last.module === module && last.userId === userId) {
       const bumped: RealtimeSignal = { ...last, ts: Math.max(last.ts, ts) }
       this.buffer[this.buffer.length - 1] = bumped
       this.emit(bumped)
       return bumped
     }
-    const signal: RealtimeSignal = { id: String(++this.seq), module, ts }
+    const signal: RealtimeSignal = { id: String(++this.seq), module, ts, userId }
     this.buffer.push(signal)
     if (this.buffer.length > this.maxBuffer) this.buffer.shift()
     this.emit(signal)

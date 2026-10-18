@@ -14,7 +14,7 @@
  * normal permission-checked endpoints.
  */
 
-export type SyncModule = 'tasks' | 'chat' | 'sales' | 'inventory' | 'finance'
+export type SyncModule = 'tasks' | 'chat' | 'sales' | 'inventory' | 'finance' | 'notifications'
 
 /** Epoch-millisecond high-water marks, one per module the caller may view. */
 export type SyncCursor = Partial<Record<SyncModule, number>>

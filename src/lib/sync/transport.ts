@@ -20,7 +20,14 @@ import type { SyncCursor, SyncModule, SyncTransport } from './types'
  *     inactivity timeout — an idle tab must not keep a session alive forever.
  */
 
-const ALL_MODULES: SyncModule[] = ['tasks', 'chat', 'sales', 'inventory', 'finance']
+const ALL_MODULES: SyncModule[] = [
+  'tasks',
+  'chat',
+  'sales',
+  'inventory',
+  'finance',
+  'notifications',
+]
 
 export function createPollingTransport(options: { intervalMs?: number } = {}): SyncTransport {
   // Floor at 3s: frequent enough to feel live, rare enough that the indexed

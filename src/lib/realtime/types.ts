@@ -21,6 +21,14 @@ export interface RealtimeSignal {
   module: SyncModule
   /** Epoch-ms high-water mark to adopt for the module. */
   ts: number
+  /**
+   * Set ONLY for the user-scoped `notifications` module: the recipient's user id.
+   * The `notifications` cursor is per-user, so a signal must reach only that
+   * user's open streams — the SSE route drops any notifications signal whose
+   * `userId` is not the connection's caller. Every other module is a global
+   * per-collection timestamp and leaves this undefined.
+   */
+  userId?: string
 }
 
 /** Mongo collection name → the sync module a write to it should refresh. */

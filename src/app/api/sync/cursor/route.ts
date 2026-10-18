@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { handleRouteError, withAuth } from '@/lib/http'
-import { authorize } from '@/lib/authorization'
+import { authorize, requireAuth } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { successResponse } from '@/lib/api-response'
 import { computeCursor, ensureSyncIndexes, SYNC_MODULES } from '@/lib/sync/cursor'
@@ -26,7 +26,7 @@ import type { PermissionModule } from '@/lib/models/User'
  * with this endpoint does not extend the rolling inactivity timeout.
  */
 
-const PERMISSION: Record<SyncModule, [module: PermissionModule, action: string]> = {
+const PERMISSION: Record<Exclude<SyncModule, 'notifications'>, [module: PermissionModule, action: string]> = {
   tasks: ['tasks', 'view'],
   chat: ['chat', 'view'],
   sales: ['sales', 'view'],
@@ -36,6 +36,9 @@ const PERMISSION: Record<SyncModule, [module: PermissionModule, action: string]>
 
 async function __GET(request: NextRequest) {
   try {
+    const caller = await requireAuth()
+    const callerId = caller.user._id?.toString()
+
     const raw = new URL(request.url).searchParams
       .get('modules')
       ?.split(',')
@@ -54,6 +57,12 @@ async function __GET(request: NextRequest) {
     // Keep only the modules this caller is actually allowed to view.
     const permitted: SyncModule[] = []
     for (const mod of requested) {
+      // `notifications` is user-scoped: any authenticated caller may ask for it,
+      // because computeCursor answers it with only *their own* newest timestamp.
+      if (mod === 'notifications') {
+        permitted.push(mod)
+        continue
+      }
       const [permModule, action] = PERMISSION[mod]
       try {
         await authorize(permModule, action)
@@ -63,7 +72,7 @@ async function __GET(request: NextRequest) {
       }
     }
 
-    const cursor = await computeCursor(db, permitted)
+    const cursor = await computeCursor(db, permitted, callerId)
     const res = successResponse(cursor)
     res.headers.set('Cache-Control', 'no-store')
     return res
