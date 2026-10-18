@@ -1,10 +1,14 @@
 /**
- * Phase 7 SSE endpoint (/api/events) authorization tests.
+ * Phase 7 SSE endpoint (/api/events) authorization tests, updated for Phase 9.
  *
- * These lock the two realtime-security guarantees the brief names — an
- * unauthenticated connection is *rejected* (never handed an open stream) and a
- * user is never subscribed to an event type they lack permission for — plus the
- * resume-gap signal the client needs to fall back to polling.
+ * These lock the realtime-security guarantees the brief names — a user is never
+ * subscribed to a module event type they lack permission for, and the
+ * resume-gap signal the client needs to fall back to polling. Phase 9 added the
+ * user-scoped `notifications` module: it is delivered to any authenticated
+ * caller (its signals are filtered by recipient id), so an authenticated user
+ * always has at least that channel — the guarantee is now that NO *module*
+ * signal leaks to a caller without its grant, not that a module-less caller is
+ * refused outright.
  *
  * The change-stream watcher is mocked out (mem-mongo has no `db.watch()`); the
  * per-module `authorize` mock is the lever that decides what scope is served.
@@ -99,12 +103,24 @@ beforeEach(() => {
 })
 
 describe('GET /api/events', () => {
-  it('refuses a session with no permitted module — a 403 JSON, never an open stream', async () => {
-    grantAllBut(['tasks', 'chat', 'sales', 'inventory', 'finance']) // everything denied
+  it('gives a caller denied EVERY module grant a stream scoped to their own notifications only', async () => {
+    // Phase 9 changed this contract: `notifications` is user-scoped, not
+    // module-gated, so an authenticated caller always has at least that channel
+    // (their signals are filtered by recipient id). There is therefore no longer
+    // a "zero permitted modules" state to 403 on — the security property is that
+    // NO module leaks through while the own-data notifications channel remains.
+    grantAllBut(['tasks', 'chat', 'sales', 'inventory', 'finance']) // every module denied
     const { req, ctrl } = makeRequest()
     const res = await GET(req)
-    expect(res.status).toBe(403)
-    expect(res.headers.get('Content-Type')).toContain('application/json')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toContain('text/event-stream')
+
+    const text = await readUntilStreamEnds(res, ctrl, 'event: hello')
+    const hello = text
+      .split('\n')
+      .find((line) => line.startsWith('data: ') && line.includes('"modules"'))!
+    const payload = JSON.parse(hello.slice('data: '.length)) as { modules: string[] }
+    expect(payload.modules).toEqual(['notifications']) // nothing else is advertised
     ctrl.abort()
   })
 
