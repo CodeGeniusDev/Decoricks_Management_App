@@ -7,6 +7,9 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/Textarea';
 import { ApiError, apiJson } from '@/lib/api-client';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { enqueueCreate } from '@/lib/offline/browser';
+import type { FinanceCreatePayload } from '@/lib/offline/types';
 import { ENTRY_TYPE_LABELS, LEDGER_ENTRY_TYPES, SINGLE_ACCOUNT_TYPES } from '@/lib/finance';
 import type { LedgerEntryType } from '@/lib/finance';
 import {
@@ -34,6 +37,8 @@ interface EntryFormModalProps {
   lockedUntilDisplay: string | null;
   initialType?: LedgerEntryType;
   onCreated: (entry: EntryView, replayed: boolean) => void;
+  /** Entry stored in the offline queue instead of the server (design §6.1). */
+  onQueued?: () => void;
 }
 
 /**
@@ -56,7 +61,9 @@ export const EntryFormModal = ({
   lockedUntilDisplay,
   initialType = 'income',
   onCreated,
+  onQueued,
 }: EntryFormModalProps) => {
+  const { user } = useAuth();
   const [type, setType] = useState<LedgerEntryType>(initialType);
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
@@ -173,7 +180,27 @@ export const EntryFormModal = ({
     setSubmitting(true);
     setFormError(null);
 
+    // Offline path (design §6.1): the entry goes to the local queue instead,
+    // carrying the key this modal session already minted — an online attempt
+    // that died mid-network and this queued row share ONE key, so the server
+    // can only ever produce one entry. No queue row without a signed-in user.
+    const queueCurrentEntry = async (): Promise<boolean> => {
+      if (!user?._id) return false;
+      await enqueueCreate({
+        userId: user._id,
+        operation: 'create_finance',
+        payload: payload as unknown as FinanceCreatePayload,
+        idempotencyKey: idempotencyKeyRef.current,
+      });
+      onQueued?.();
+      onClose();
+      return true;
+    };
+
     try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        if (await queueCurrentEntry()) return;
+      }
       const entry = await apiJson<EntryView>('/api/finance/transactions', {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -194,6 +221,11 @@ export const EntryFormModal = ({
               ? 'You do not have permission to create transactions here.'
               : error.message || 'Could not save the transaction.'
         );
+      } else if (await queueCurrentEntry()) {
+        // Connection blip after we thought we were online: queue the draft
+        // rather than drop it ("never lose an entry" §6). The engine retries
+        // it on reconnect exactly like a genuinely offline entry.
+        return;
       } else {
         setFormError(
           'Could not reach the server. Your entry was not saved — press Save again to retry.'

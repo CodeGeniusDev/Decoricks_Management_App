@@ -15,6 +15,8 @@ import { Table } from '@/components/ui/Table';
 import { Toast } from '@/components/ui/Toast';
 import { IconPlus } from '@/components/ui/icons';
 import { apiJson, ApiError } from '@/lib/api-client';
+import { enqueueCreate } from '@/lib/offline/browser';
+import type { BudgetCreatePayload } from '@/lib/offline/types';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { can } from '@/lib/permissions-client';
 import { formatPaisa } from '@/lib/money';
@@ -130,7 +132,36 @@ export default function BudgetsPage() {
     };
     if (values.periodKind !== 'auto') body.periodKind = values.periodKind;
 
-    await apiJson('/api/budgets', { method: 'POST', body: JSON.stringify(body) });
+    // Offline create (design §6.1): queued with the key this form session
+    // already minted, so a blipped online attempt and the queued replay can
+    // never produce two budgets. Non-ApiError failures (network) queue too —
+    // a draft is never dropped on a connectivity blip.
+    const queueOffline = async (): Promise<boolean> => {
+      if (!user?._id) return false;
+      await enqueueCreate({
+        userId: user._id,
+        operation: 'create_budget',
+        payload: body as unknown as BudgetCreatePayload,
+        idempotencyKey: idempotencyKeyRef.current,
+      });
+      setModalOpen(false);
+      setToast({
+        type: 'success',
+        message: `Budget "${values.name}" saved offline — it will sync when you are back online.`,
+      });
+      return true;
+    };
+
+    try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        if (await queueOffline()) return;
+      }
+      await apiJson('/api/budgets', { method: 'POST', body: JSON.stringify(body) });
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      if (await queueOffline()) return;
+      throw err;
+    }
     setModalOpen(false);
     setToast({ type: 'success', message: `Budget "${values.name}" created as a draft.` });
     await load();

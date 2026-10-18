@@ -562,6 +562,12 @@ export default function FinanceTransactionsPage() {
         withdrawalsLocked={withdrawalsLocked}
         lockedUntilDisplay={lockedUntilDisplay}
         onCreated={handleCreated}
+        onQueued={() =>
+          setToast({
+            type: 'success',
+            message: 'Saved offline — view and manage it in your Sync queue.',
+          })
+        }
       />
 
       <ReverseModal
