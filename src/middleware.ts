@@ -80,5 +80,15 @@ function withCsrfRequirement(request: NextRequest): NextResponse {
 
 export const config = {
   // Everything except Next internals and static assets.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
+  //
+  // The PWA assets are served verbatim from `public/` and are fetched by the
+  // browser (and the service-worker machinery) before any session exists. If
+  // middleware gated them, an anonymous `GET /manifest.webmanifest` would be
+  // redirected to the `/login` HTML and parsed as JSON — the browser's
+  // "Manifest: Line 1, column 1, Syntax error". `sw.js` and `offline.html`
+  // must likewise be reachable without a session. This is a usability gate, not
+  // the security boundary (authorization stays in `src/lib/authorization.ts`),
+  // so letting unauthenticated *static files* through is safe.
+  matcher:
+    ['/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|offline.html|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest)$).*)'],
 }

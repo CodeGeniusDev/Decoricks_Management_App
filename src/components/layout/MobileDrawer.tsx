@@ -38,7 +38,9 @@ export const MobileDrawer = () => {
 
   // Same Founder-only filtering as the desktop rail, so the two never disagree.
   const visibleItems = user
-    ? navItems.filter((item) => canAccessRoute({ role: user.role }, item.href))
+    ? navItems.filter((item) =>
+        canAccessRoute({ role: user.role, permissions: user.permissions }, item.href)
+      )
     : navItems
 
   const triggerRef = useRef<HTMLElement | null>(null)

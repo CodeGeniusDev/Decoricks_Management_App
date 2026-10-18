@@ -4,6 +4,7 @@ import { getDatabase } from '@/lib/mongodb'
 import { getUserCollection, requiresPasswordChange } from '@/lib/models/User'
 import { successResponse, validationError, errorResponse } from '@/lib/api-response'
 import { getRequestMeta, handleRouteError } from '@/lib/http'
+import { getRole } from '@/lib/authorization'
 import { verifyPassword } from '@/lib/auth/password'
 import { createSession, writeSessionCookies } from '@/lib/auth/session'
 import {
@@ -119,6 +120,11 @@ export async function POST(request: Request) {
 
     await writeSessionCookies(session.tokenHash, session.csrfToken)
 
+    // Effective permissions travel with the login response so the shell renders
+    // the correct navigation immediately instead of falling back to defaults
+    // until the next `/api/auth/me`. Display data only; the API still enforces.
+    const role = await getRole(user.role, db)
+
     return successResponse({
       user: {
         _id: user._id?.toString(),
@@ -128,6 +134,7 @@ export async function POST(request: Request) {
         // The client uses this to force the change-password screen.
         mustChangePassword: requiresPasswordChange(user),
       },
+      permissions: role?.permissions ?? {},
       mustChangePassword: requiresPasswordChange(user),
     })
   } catch (error) {

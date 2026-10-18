@@ -3,7 +3,7 @@ import { getDatabase } from '@/lib/mongodb'
 import { getUserCollection, userToJSON, requiresPasswordChange } from '@/lib/models/User'
 import { successResponse, validationError, notFoundError } from '@/lib/api-response'
 import { getRequestMeta, handleRouteError } from '@/lib/http'
-import { requireAuth } from '@/lib/authorization'
+import { getRole, requireAuth } from '@/lib/authorization'
 import { recordAuditEntry } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
@@ -11,13 +11,24 @@ export const dynamic = 'force-dynamic'
 /**
  * Current session identity. The client calls this on load to decide whether to
  * render the app, the login screen, or force a password change.
+ *
+ * It also returns the caller's *effective* permissions, read from the
+ * authoritative `roles` collection (via the same cache the API enforces with,
+ * which `PUT /api/roles/[id]` invalidates on every write). Without this the
+ * client had to fall back to the hardcoded SPEC defaults, so a Founder's
+ * customised grant or revocation was invisible to the member's own UI — the
+ * screen looked unchanged even though the server had already applied it. This
+ * is display data only; enforcement stays server-side.
  */
 export async function GET() {
   try {
     const auth = await requireAuth()
+    const db = await getDatabase()
+    const role = await getRole(auth.user.role, db)
 
     return successResponse({
       user: userToJSON(auth.user),
+      permissions: role?.permissions ?? {},
       mustChangePassword: requiresPasswordChange(auth.user),
       session: {
         expiresAt: auth.session.expiresAt,

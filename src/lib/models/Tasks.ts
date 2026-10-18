@@ -270,6 +270,32 @@ export const taskLabelToJSON = (l: TaskLabel) => ({
 let taskIndexesPromise: Promise<void> | null = null
 
 /**
+ * MongoDB codes raised when an index already exists for the requested key
+ * pattern but under a different name (85, IndexOptionsConflict) or with
+ * different options under the same name (86, IndexKeySpecsConflict). Both mean
+ * "there is already an index here" — not a condition to retry.
+ */
+const INDEX_ALREADY_EXISTS_CODES = new Set([85, 86])
+
+/**
+ * Runs `createIndex`, treating an already-existing equivalent index as success.
+ *
+ * Without this, one such index rejected the whole `Promise.all`; because
+ * `ensureTaskIndexes` resets its memo whenever the batch throws, every board and
+ * task request then rebuilt the entire index set and re-logged the same raw
+ * driver error — a retry storm on an already-correct database. A legacy index
+ * that carries the right keys but the wrong options (e.g. a non-unique
+ * `taskNumber_1` where a unique index is intended) is reconciled by an explicit,
+ * approved one-time migration, not silently dropped from a request path.
+ */
+const createIndexTolerant = (operation: Promise<unknown>): Promise<void> =>
+  operation.then(() => undefined).catch((error: unknown) => {
+    const code = (error as { code?: number } | null)?.code
+    if (typeof code === 'number' && INDEX_ALREADY_EXISTS_CODES.has(code)) return
+    throw error
+  })
+
+/**
  * Idempotent per-process. Failures are logged rather than thrown so read-only
  * deployments (and read paths during a permissions hiccups) keep working —
  * matches the ensureInventoryIndexes convention.
@@ -280,66 +306,107 @@ export function ensureTaskIndexes(db: Db): Promise<void> {
       try {
         await Promise.all([
           // boards
-          getBoardCollection(db).createIndex(
-            { isActive: 1, updatedAt: -1 },
-            { name: 'boards_active_updated' }
+          createIndexTolerant(
+            getBoardCollection(db).createIndex(
+              { isActive: 1, updatedAt: -1 },
+              { name: 'boards_active_updated' }
+            )
           ),
 
           // columns
-          getColumnCollection(db).createIndex(
-            { boardId: 1, position: 1 },
-            { name: 'columns_board_position' }
+          createIndexTolerant(
+            getColumnCollection(db).createIndex(
+              { boardId: 1, position: 1 },
+              { name: 'columns_board_position' }
+            )
           ),
-          getColumnCollection(db).createIndex(
-            { boardId: 1, isDoneColumn: 1 },
-            { name: 'columns_board_done' }
+          createIndexTolerant(
+            getColumnCollection(db).createIndex(
+              { boardId: 1, isDoneColumn: 1 },
+              { name: 'columns_board_done' }
+            )
           ),
 
           // tasks
-          getTaskDocCollection(db).createIndex(
-            { boardId: 1, columnId: 1, position: 1 },
-            { name: 'tasks_board_column_position' }
+          createIndexTolerant(
+            getTaskDocCollection(db).createIndex(
+              { boardId: 1, columnId: 1, position: 1 },
+              { name: 'tasks_board_column_position' }
+            )
           ),
-          getTaskDocCollection(db).createIndex({ assigneeIds: 1 }, { name: 'tasks_assignees' }),
-          getTaskDocCollection(db).createIndex({ dueDate: 1 }, { name: 'tasks_due' }),
-          getTaskDocCollection(db).createIndex({ priority: 1 }, { name: 'tasks_priority' }),
-          getTaskDocCollection(db).createIndex(
-            { isArchived: 1, updatedAt: -1 },
-            { name: 'tasks_archived_updated' }
+          createIndexTolerant(
+            getTaskDocCollection(db).createIndex({ assigneeIds: 1 }, { name: 'tasks_assignees' })
           ),
-          getTaskDocCollection(db).createIndex(
-            { taskNumber: 1 },
-            { unique: true, sparse: true, name: 'tasks_number_unique' }
+          createIndexTolerant(
+            getTaskDocCollection(db).createIndex({ dueDate: 1 }, { name: 'tasks_due' })
           ),
-          getTaskDocCollection(db).createIndex(
-            { idempotencyKey: 1 },
-            { unique: true, sparse: true, name: 'tasks_idempotency_unique' }
+          createIndexTolerant(
+            getTaskDocCollection(db).createIndex({ priority: 1 }, { name: 'tasks_priority' })
+          ),
+          createIndexTolerant(
+            getTaskDocCollection(db).createIndex(
+              { isArchived: 1, updatedAt: -1 },
+              { name: 'tasks_archived_updated' }
+            )
+          ),
+          createIndexTolerant(
+            getTaskDocCollection(db).createIndex(
+              { taskNumber: 1 },
+              { unique: true, sparse: true, name: 'tasks_number_unique' }
+            )
+          ),
+          createIndexTolerant(
+            getTaskDocCollection(db).createIndex(
+              { idempotencyKey: 1 },
+              {
+                unique: true,
+                // A partial index on the *type*, not `sparse`. `sparse` still
+                // indexes documents that store the field as an explicit `null`,
+                // and legacy keyless cards do exactly that — two of them then
+                // collide on the unique key and the whole index build fails
+                // (E11000), silently leaving task idempotency unenforced. Only
+                // string keys participate, so null/absent cards are excluded and
+                // no destructive data cleanup is needed on an existing database.
+                partialFilterExpression: { idempotencyKey: { $type: 'string' } },
+                name: 'tasks_idempotency_unique',
+              }
+            )
           ),
 
           // comments
-          getTaskCommentCollection(db).createIndex(
-            { taskId: 1, createdAt: 1 },
-            { name: 'taskComments_task_created' }
+          createIndexTolerant(
+            getTaskCommentCollection(db).createIndex(
+              { taskId: 1, createdAt: 1 },
+              { name: 'taskComments_task_created' }
+            )
           ),
-          getTaskCommentCollection(db).createIndex(
-            { authorId: 1 },
-            { name: 'taskComments_author' }
+          createIndexTolerant(
+            getTaskCommentCollection(db).createIndex(
+              { authorId: 1 },
+              { name: 'taskComments_author' }
+            )
           ),
 
           // activity
-          getTaskActivityCollection(db).createIndex(
-            { taskId: 1, at: -1 },
-            { name: 'taskActivity_task_at' }
+          createIndexTolerant(
+            getTaskActivityCollection(db).createIndex(
+              { taskId: 1, at: -1 },
+              { name: 'taskActivity_task_at' }
+            )
           ),
 
           // labels
-          getTaskLabelCollection(db).createIndex(
-            { name: 1 },
-            { unique: true, name: 'taskLabels_name_unique' }
+          createIndexTolerant(
+            getTaskLabelCollection(db).createIndex(
+              { name: 1 },
+              { unique: true, name: 'taskLabels_name_unique' }
+            )
           ),
-          getTaskLabelCollection(db).createIndex(
-            { isActive: 1 },
-            { name: 'taskLabels_active' }
+          createIndexTolerant(
+            getTaskLabelCollection(db).createIndex(
+              { isActive: 1 },
+              { name: 'taskLabels_active' }
+            )
           ),
         ])
       } catch (error) {

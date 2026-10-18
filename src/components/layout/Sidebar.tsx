@@ -38,7 +38,9 @@ export const Sidebar = () => {
    * Partner typing /settings still gets a 403.
    */
   const visibleItems = user
-    ? navItems.filter((item) => canAccessRoute({ role: user.role }, item.href))
+    ? navItems.filter((item) =>
+        canAccessRoute({ role: user.role, permissions: user.permissions }, item.href)
+      )
     : navItems
 
   return (

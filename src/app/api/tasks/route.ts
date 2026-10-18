@@ -177,7 +177,13 @@ async function __POST(request: NextRequest) {
       version: 1,
       isArchived: false,
       archivedAt: null,
-      idempotencyKey: parsed.data.idempotencyKey,
+      // Only write the field when a key was supplied. A missing key must leave
+      // the field ABSENT, not null: the unique index is a partial/sparse index
+      // that treats an explicit `null` as a real value, so a stored null on every
+      // keyless card collided on the second insert (E11000) and silently stopped
+      // the idempotency index from ever building. Omitting it keeps keyless cards
+      // out of the index entirely, so genuine duplicate keys are still caught.
+      ...(parsed.data.idempotencyKey ? { idempotencyKey: parsed.data.idempotencyKey } : {}),
       createdBy: actor.id,
       createdAt: now,
       updatedAt: now,

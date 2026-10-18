@@ -191,6 +191,9 @@ export default function TasksBoardPage() {
 
   const loadBoards = useCallback(async () => {
     setLoadingBoards(true)
+    // A genuine failure keeps `error`; a successful-but-empty list does not.
+    // Clearing it first means a retry after an outage starts from a clean slate.
+    setError(null)
     try {
       const res = await apiFetch('/api/boards')
       const body = await res.json()
@@ -198,7 +201,6 @@ export default function TasksBoardPage() {
       const list: BoardSummary[] = body.data.boards ?? []
       setBoards(list)
       setBoardId((prev) => prev ?? list[0]?._id ?? null)
-      if (list.length === 0) setError('No boards yet. Ask the Founder to create one.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load boards')
     } finally {
@@ -705,8 +707,18 @@ export default function TasksBoardPage() {
       />
 
       {error && (
-        <div className="mb-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          {error}
+        <div className="mb-3 flex items-start justify-between gap-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setError(null)
+              void loadBoards()
+            }}
+            className="shrink-0 font-medium underline underline-offset-2 focus-visible:outline-none"
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -790,7 +802,12 @@ export default function TasksBoardPage() {
       )}
 
       {view === 'board' ? (
-        loadingBoard || !detail ? (
+        error && boards.length === 0 ? null : !loadingBoards && boards.length === 0 ? (
+          <EmptyState
+            title="No boards yet"
+            description="The Founder can create the first board to start tracking tasks here."
+          />
+        ) : loadingBoard || !detail ? (
           <div className="grid gap-3 md:grid-cols-4">
             <Skeleton className="h-64" />
             <Skeleton className="h-64" />

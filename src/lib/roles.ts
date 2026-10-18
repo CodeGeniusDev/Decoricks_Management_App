@@ -246,6 +246,21 @@ export const PERMISSION_MODULES: PermissionModule[] = [
 export const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete', 'approve'] as const
 
 /**
+ * Phase 6 task-board actions. These live only on the `tasks` module (see
+ * TASKS_PARTNER / TASKS_FOUNDER above and `PermissionAction` in
+ * `src/lib/models/User.ts`). A role document legitimately stores them, so the
+ * permissions-write endpoint must accept them or every save of a role that has
+ * a `tasks` object is rejected.
+ */
+export const TASK_BOARD_ACTIONS = ['editOthers', 'deleteOthers', 'comment', 'manage'] as const
+
+/** Every action key a stored role may legitimately contain, across all modules. */
+export const ALL_PERMISSION_ACTIONS = [
+  ...PERMISSION_ACTIONS,
+  ...TASK_BOARD_ACTIONS,
+] as const
+
+/**
  * Human labels used by the permissions matrix screen.
  *
  * Kept here (not in the component) so the Founder can read the same wording the

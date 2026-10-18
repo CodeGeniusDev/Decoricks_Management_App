@@ -31,17 +31,43 @@ export interface NavPermissionSource {
   permissions?: PermissionSet;
 }
 
+/**
+ * The signed-in caller's live permission matrix, held so every display check
+ * reads the authoritative matrix delivered by `/api/auth/me` rather than the
+ * hardcoded SPEC defaults.
+ *
+ * Without this a screen could hide a button the Founder had just granted (or
+ * show one they had just revoked) even though the API had already applied the
+ * change — the same "granted but not received" gap only expressed at button
+ * level. Call sites that already pass an explicit `permissions` win; this is
+ * the fallback for the many checks that only pass a role. It never widens what
+ * the server enforces — enforcement is always server-side in
+ * `src/lib/authorization.ts`.
+ */
+let livePermissions: PermissionSet | null = null
+
+export const setLivePermissions = (permissions?: PermissionSet | null): void => {
+  livePermissions = permissions ?? null
+}
+
+/** Explicit source permissions, else the live session matrix, else undefined. */
+const resolvePermissions = (
+  source: NavPermissionSource,
+): PermissionSet | undefined => source.permissions ?? livePermissions ?? undefined
+
 export const can = (source: NavPermissionSource, module: string, action: string): boolean => {
   // The Founder is the root of the trust model and always passes.
   if (isFounderRole(source.role)) return true;
 
-  if (source.permissions) {
-    const modulePermissions = source.permissions[module];
+  const permissions = resolvePermissions(source);
+  if (permissions) {
+    const modulePermissions = permissions[module];
     if (!modulePermissions) return false;
     return modulePermissions[action] === true;
   }
 
-  // Fall back to the SPEC defaults when no stored matrix was supplied.
+  // Fall back to the SPEC defaults when neither an explicit matrix nor a live
+  // session matrix is available.
   return SPEC_DEFAULT_MATRIX[source.role]?.[module]?.[action] === true;
 };
 
@@ -177,7 +203,7 @@ export const canWriteStockLocation = (
   if (can(source, 'inventory', 'create')) return true;
   if (location.toLowerCase() !== 'lahore') return false;
 
-  const scoped = source.permissions?.[SCOPED_LAHORE_STOCK_PERMISSION];
+  const scoped = resolvePermissions(source)?.[SCOPED_LAHORE_STOCK_PERMISSION];
   if (scoped && typeof scoped.create === 'boolean') return scoped.create;
   return LAHORE_STOCK_ROLES[source.role] === true;
 };
@@ -189,7 +215,7 @@ export const canWriteStockLocation = (
  */
 export const canFullEditOrder = (source: NavPermissionSource): boolean => {
   if (isFounderRole(source.role)) return true;
-  const scoped = source.permissions?.[SCOPED_SALES_FULL_EDIT];
+  const scoped = resolvePermissions(source)?.[SCOPED_SALES_FULL_EDIT];
   if (scoped && typeof scoped.create === 'boolean') return scoped.create;
   return SALES_FULL_EDIT_ROLES[source.role] === true;
 };

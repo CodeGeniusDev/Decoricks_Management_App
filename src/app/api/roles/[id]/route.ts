@@ -6,7 +6,7 @@ import { successResponse, validationError, notFoundError } from '@/lib/api-respo
 import { getRequestMeta, handleRouteError } from '@/lib/http'
 import { invalidateRoleCache, requireFounder } from '@/lib/authorization'
 import {
-  PERMISSION_ACTIONS,
+  ALL_PERMISSION_ACTIONS,
   PERMISSION_MODULES,
   SCOPED_LAHORE_STOCK_PERMISSION,
   SCOPED_SALES_FULL_EDIT,
@@ -37,7 +37,12 @@ const updatePermissionsSchema = z
   .object({
     permissions: z.record(
       z.enum(KNOWN_MODULES as [string, ...string[]]),
-      z.record(z.enum(PERMISSION_ACTIONS as unknown as [string, ...string[]]), z.boolean())
+      // The board-specific actions (`editOthers` …) are part of a stored role's
+      // `tasks` object; validating only the five generic actions made every save
+      // of a role that owns a `tasks` matrix fail with a 400, so no permission
+      // change ever reached MongoDB. `ALL_PERMISSION_ACTIONS` is the exact key
+      // set the model permits — this is not a widening of what is enforceable.
+      z.record(z.enum(ALL_PERMISSION_ACTIONS as unknown as [string, ...string[]]), z.boolean())
     ),
   })
   .strict()

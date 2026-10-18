@@ -9,6 +9,8 @@ import React, {
   useState,
 } from 'react'
 import { apiFetch } from '@/lib/api-client'
+import type { PermissionSet } from '@/lib/models/User'
+import { setLivePermissions } from '@/lib/permissions-client'
 
 /**
  * Client-side session state.
@@ -33,6 +35,13 @@ export interface SessionUser {
   partnerId?: string
   isActive: boolean
   mustChangePassword: boolean
+  /**
+   * The caller's effective permission matrix, read from the authoritative roles
+   * collection by `/api/auth/me` and `/api/auth/login`. Optional: a nav check
+   * without it falls back to the SPEC defaults, so a stale or absent copy never
+   * silently changes what the server enforces (which is always server-side).
+   */
+  permissions?: PermissionSet
 }
 
 interface AuthContextValue {
@@ -52,6 +61,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const applyUser = useCallback((next: SessionUser | null) => {
     setUser(next)
+    // Keep the module-level display cache in step with the session so every
+    // `can()` / nav check reads the authoritative matrix returned by the API.
+    // Signing out (next = null) clears it, so a subsequent session never reuses
+    // a stale grant. This is display state only; the server re-checks per request.
+    setLivePermissions(next?.permissions ?? null)
   }, [])
 
   const refresh = useCallback(async () => {
@@ -71,7 +85,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) return
 
       const body = await res.json().catch(() => null)
-      applyUser((body?.data?.user as SessionUser | undefined) ?? null)
+      const user = body?.data?.user as SessionUser | undefined
+      // Merge the authoritative permissions returned alongside the user so the
+      // shell reflects the live role matrix, not just the hardcoded defaults.
+      applyUser(user ? { ...user, permissions: body?.data?.permissions } : null)
     } catch {
       // Network failure: keep whatever the last verified state was.
     } finally {
@@ -99,7 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const loggedInUser = (body?.data?.user ?? null) as SessionUser | null
       if (!loggedInUser) throw new Error('Login failed')
-      applyUser(loggedInUser)
+      applyUser({ ...loggedInUser, permissions: body?.data?.permissions })
       return loggedInUser
     },
     [applyUser]

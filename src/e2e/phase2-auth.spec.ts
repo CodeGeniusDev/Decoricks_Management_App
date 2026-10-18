@@ -81,29 +81,73 @@ test.describe('Founder-granted permission is effective on the next request', () 
     expect(rolesResponse.ok()).toBeTruthy()
     const roles = (
       (await rolesResponse.json()) as {
-        data: { roles: Array<{ _id: string; name: string }> }
+        data: {
+          roles: Array<{
+            _id: string
+            name: string
+            permissions?: Record<string, Record<string, boolean>>
+          }>
+        }
       }
     ).data.roles
     const afnanRole = roles.find((role) => role.name === 'partner_afnan')
     expect(afnanRole).toBeTruthy()
 
-    const setUsersView = (view: boolean) =>
+    // Snapshot Afnan's real board permissions so the mutation below can be
+    // undone exactly, leaving the shared test role no driftier than it started.
+    const originalTasks = afnanRole!.permissions?.tasks ?? {}
+
+    // The Phase 1 regression: the settings screen PUTs the FULL stored matrix,
+    // and `tasks` legitimately carries the board-only actions (editOthers,
+    // deleteOthers, comment, manage). The write schema used to validate only the
+    // five generic actions, so a payload like this returned 400 and nothing
+    // persisted — the "granted but not received" bug. A `users.view`-only save
+    // (below) never touched that path, which is why the original test passed
+    // against the broken code. Saving board actions must now return 200.
+    const withBoardActions = {
+      users: { view: true },
+      tasks: { ...originalTasks, manage: true, editOthers: true },
+    }
+    const restore = () =>
       founder.put(`/api/roles/${afnanRole!._id}`, {
         headers: { [CSRF_HEADER]: csrf },
-        data: { permissions: { users: { view } } },
+        data: { permissions: { users: { view: false }, tasks: originalTasks } },
       })
 
+    const grant = await founder.put(`/api/roles/${afnanRole!._id}`, {
+      headers: { [CSRF_HEADER]: csrf },
+      data: { permissions: withBoardActions },
+    })
+
     try {
-      const grant = await setUsersView(true)
       expect(grant.status()).toBe(200)
+
+      // The board grant is not just acknowledged — it is stored. Read it back.
+      const reread = await founder.get('/api/roles')
+      const storedTasks = (
+        (
+          (await reread.json()) as {
+            data: {
+              roles: Array<{
+                name: string
+                permissions?: Record<string, Record<string, boolean>>
+              }>
+            }
+          }
+        ).data.roles.find((role) => role.name === 'partner_afnan')?.permissions?.tasks ?? {}
+      )
+      expect(storedTasks.manage).toBe(true)
+      expect(storedTasks.editOthers).toBe(true)
+
+      // users.view grant is effective on the very next request.
       expect((await partner.get('/api/users')).status()).toBe(200)
 
-      const revoke = await setUsersView(false)
+      const revoke = await restore()
       expect(revoke.status()).toBe(200)
       // Effective immediately: the very next request is denied.
       expect((await partner.get('/api/users')).status()).toBe(403)
     } finally {
-      await setUsersView(false)
+      await restore()
       await founder.dispose()
       await partner.dispose()
     }

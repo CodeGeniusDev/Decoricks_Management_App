@@ -21,6 +21,11 @@ import {
   type FinanceCategory,
 } from '../src/lib/models/Ledger'
 import { ensureAuthIndexes, type Role, type User } from '../src/lib/models/User'
+import {
+  SPEC_EXPENSE_CATEGORIES,
+  SPEC_INCOME_CATEGORIES,
+  SPEC_ACCOUNTS,
+} from '../src/lib/finance-defaults'
 
 /**
  * Seeds the things Phase 2 and 3 cannot work without:
@@ -65,32 +70,9 @@ const FOUNDER_EMAIL = process.env.FOUNDER_EMAIL
 const FOUNDER_NAME = process.env.FOUNDER_NAME
 const FOUNDER_PASSWORD = process.env.FOUNDER_PASSWORD
 
-/** SPEC Appendix A expense categories — names are the stable slugs. */
-const SPEC_EXPENSE_CATEGORIES: Array<[name: string, label: string]> = [
-  ['meta_ads', 'Meta Ads'],
-  ['shopify_subscription', 'Shopify Subscription'],
-  ['flyers_printing', 'Flyers Printing'],
-  ['product_purchasing', 'Product Purchasing'],
-  ['shipping_courier', 'Shipping & Courier'],
-  ['packaging', 'Packaging'],
-  ['refunds_return_costs', 'Refunds & Return Costs'],
-  ['platform_fees', 'Platform Fees'],
-  ['content_production', 'Content Production'],
-  ['miscellaneous', 'Miscellaneous'],
-]
-
-/** Income categories so the ledger's category validation has an income side. */
-const SPEC_INCOME_CATEGORIES: Array<[name: string, label: string]> = [
-  ['sales_revenue', 'Sales Revenue'],
-  ['other_income', 'Other Income'],
-]
-
-/** Starter manual accounts — no bank integration, opening balance is 0. */
-const SPEC_ACCOUNTS: Array<[name: string, kind: Account['kind']]> = [
-  ['Cash', 'cash'],
-  ['Bank Account', 'bank'],
-  ['Wallet', 'wallet'],
-]
+// SPEC category/account defaults live in `src/lib/finance-defaults.ts` — the
+// same source the runtime self-healing backfill reads — so the seed and a fresh
+// deployment can never drift.
 
 /** SPEC Appendix A: withdrawals are locked until 2027-02-04 (Karachi). */
 const WITHDRAWAL_LOCK = karachiMidnight(2027, 2, 4)

@@ -8,12 +8,18 @@ import { successResponse, validationError } from '@/lib/api-response'
 import { categoryCreateSchema } from '@/lib/schemas/finance'
 import { getFinanceCategoryCollection, type FinanceCategory } from '@/lib/models/Ledger'
 import { serializeCategory } from '@/lib/finance-serializers'
+import { ensureFinanceDefaults } from '@/lib/finance-defaults'
 
 /** GET /api/finance/categories — every category (active and inactive). */
 async function __GET() {
   try {
-    await authorize('finance', 'view')
+    const auth = await authorize('finance', 'view')
     const db = await getDatabase()
+    // Self-heal an unseeded deployment: backfill the SPEC default categories the
+    // first time this process reads them, so the transaction form's dropdown is
+    // never blank on a fresh database. Idempotent ($setOnInsert) — it never
+    // duplicates or overwrites a category the Founder has since edited.
+    await ensureFinanceDefaults(db, auth.user._id as ObjectId)
     const categories = await getFinanceCategoryCollection(db)
       .find({})
       .sort({ type: 1, label: 1 })

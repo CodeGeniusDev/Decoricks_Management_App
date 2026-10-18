@@ -9,12 +9,16 @@ import { accountCreateSchema } from '@/lib/schemas/finance'
 import { getAccountBalances } from '@/lib/finance-ledger'
 import { getAccountCollection, type Account } from '@/lib/models/Ledger'
 import { serializeAccount } from '@/lib/finance-serializers'
+import { ensureFinanceDefaults } from '@/lib/finance-defaults'
 
 
 async function __GET() {
   try {
-    await authorize('finance', 'view')
+    const auth = await authorize('finance', 'view')
     const db = await getDatabase()
+    // Backfill the SPEC starter accounts on an unseeded deployment so the
+    // transaction form always has an account to land money in. Idempotent.
+    await ensureFinanceDefaults(db, auth.user._id as ObjectId)
     const { accounts, balances } = await getAccountBalances(db)
     return successResponse({
       accounts: accounts.map((account) => serializeAccount(account, balances[account._id!.toString()] ?? 0)),
