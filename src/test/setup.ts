@@ -20,8 +20,6 @@ import { beforeAll, afterAll, vi } from 'vitest'
 // Mock environment variables for tests
 process.env.MONGODB_URI = 'mongodb://localhost:27017/test'
 process.env.SESSION_SECRET = 'test-session-secret-0123456789'
-process.env.NEXTAUTH_SECRET = 'test-secret'
-process.env.NEXTAUTH_URL = 'http://localhost:3000'
 
 vi.mock('@/lib/authorization', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/authorization')>()

@@ -11,7 +11,8 @@
       "Exec(awk)",
       "Exec(cat)",
       "Exec(grep)",
-      "Exec(lsof)"
+      "Exec(lsof)",
+      "Exec(xargs kill)"
     ]
   }
 }

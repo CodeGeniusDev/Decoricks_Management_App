@@ -66,7 +66,6 @@ export async function emitNotification(db: Db, input: EmitInput): Promise<EmitRe
       { _id: userId },
       { projection: { _id: 1, isActive: 1, role: 1, notificationPrefs: 1 } }
     )
-    .catch(() => null)
 
   if (!user || user.isActive !== true) return { created: false }
 
@@ -181,7 +180,6 @@ export async function emitToUsers(
 export async function getFounderUserIds(db: Db): Promise<string[]> {
   const founders = await getUserCollection(db)
     .find({ role: 'founder', isActive: true })
-    .project<{ _id: ObjectId }>({ _id: 1 })
     .toArray()
   return founders.map((f) => f._id.toString())
 }

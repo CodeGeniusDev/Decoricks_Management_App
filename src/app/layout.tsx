@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import '@/app/globals.css'
 import { AuthProvider } from '@/components/auth/AuthProvider'
 
@@ -20,7 +20,6 @@ export const metadata: Metadata = {
   // brand colours; the service worker itself is registered lazily only when a
   // user enables push, never on load — so the worker is opt-in, not implied.
   manifest: '/manifest.webmanifest',
-  themeColor: '#2b2b2b',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
@@ -33,6 +32,10 @@ export const metadata: Metadata = {
     ],
     apple: '/favicon.ico',
   },
+}
+
+export const viewport: Viewport = {
+  themeColor: '#2b2b2b',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
