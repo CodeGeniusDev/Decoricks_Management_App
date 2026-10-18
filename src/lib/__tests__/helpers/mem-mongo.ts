@@ -232,6 +232,13 @@ class MemCursor {
 export interface MemCollectionOptions {
   /** Field names enforced unique (sparse: undefined/absent values always pass). */
   unique?: string[]
+  /**
+   * Composite unique keys — arrays of field names that must be unique TOGETHER.
+   * The notifications collection uses `['userId', 'dedupeKey']`: the same
+   * `dedupeKey` may exist for two different recipients (a broadcast event), but
+   * never twice for the SAME user. A single-field `unique` cannot express that.
+   */
+  uniqueComposite?: string[][]
 }
 
 export class MemCollection {
@@ -239,9 +246,11 @@ export class MemCollection {
   updateCount = 0
   insertCount = 0
   private unique: string[]
+  private uniqueComposite: string[][]
 
   constructor(options: MemCollectionOptions = {}) {
     this.unique = options.unique ?? []
+    this.uniqueComposite = options.uniqueComposite ?? []
   }
 
   reset(rows: Doc[] = []): void {
@@ -289,6 +298,21 @@ export class MemCollection {
       if (this.docs.some((existing) => existing[key] !== undefined && same(existing[key], value))) {
         throw new DuplicateKeyError(key)
       }
+    }
+    // Composite unique: every field in the tuple must match an existing row to
+    // collide. A missing (undefined/null) field in either doc makes the tuple
+    // non-applicable, mirroring a sparse compound index.
+    for (const tuple of this.uniqueComposite) {
+      if (tuple.some((field) => doc[field] === undefined || doc[field] === null)) continue
+      const collision = this.docs.some((existing) =>
+        tuple.every(
+          (field) =>
+            existing[field] !== undefined &&
+            existing[field] !== null &&
+            same(existing[field], doc[field])
+        )
+      )
+      if (collision) throw new DuplicateKeyError(tuple.join('_'))
     }
     const stored = { ...doc, _id }
     this.docs.push(stored)
@@ -511,6 +535,16 @@ export interface MemDb {
  * Builds a fake `Db`. Collections are created on demand so a route reading a
  * name nobody registered still gets a working (empty) collection.
  */
+/**
+ * Composite unique indexes applied to every `createMemDb()` instance by default,
+ * keyed by collection name. Notifications' `{ userId, dedupeKey }` is THE dedup
+ * mechanism in production (see `@/lib/models/Notifications`), so the fake must
+ * enforce it to make dedupe tests meaningful.
+ */
+const COMPOSITE_UNIQUE: Record<string, string[][]> = {
+  notifications: [['userId', 'dedupeKey']],
+}
+
 export const createMemDb = (
   uniqueByCollection: Record<string, string[]> = {
     stockMovements: ['idempotencyKey'],
@@ -527,7 +561,10 @@ export const createMemDb = (
   const collection = (name: string): MemCollection => {
     let col = registry.get(name)
     if (!col) {
-      col = new MemCollection({ unique: uniqueByCollection[name] ?? [] })
+      col = new MemCollection({
+        unique: uniqueByCollection[name] ?? [],
+        uniqueComposite: COMPOSITE_UNIQUE[name] ?? [],
+      })
       registry.set(name, col)
     }
     return col
