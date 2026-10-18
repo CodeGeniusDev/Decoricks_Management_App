@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useShellLayout } from './ShellLayoutContext'
 import { useAuth } from '@/components/auth/AuthProvider'
+import { NotificationBell } from '@/components/notifications/NotificationBell'
 import {
   IconChevronDown,
   IconLogout,
@@ -137,6 +138,9 @@ export const Header = () => {
               Offline
             </span>
           )}
+
+          {/* In-app notification center (Phase 9). Only for a signed-in session. */}
+          {user && <NotificationBell />}
 
           {/* Account menu: profile, permissions (Founder), sign out. */}
           <div className="relative" ref={menuRef}>

@@ -1,30 +1,50 @@
 'use client'
 
+import { Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { UsersTab } from '@/components/settings/UsersTab'
 import { PermissionsTab } from '@/components/settings/PermissionsTab'
 import { AuditLogTab } from '@/components/settings/AuditLogTab'
 import { BusinessSettingsTab } from '@/components/settings/BusinessSettingsTab'
+import { NotificationPreferences } from '@/components/notifications/NotificationPreferences'
 import { PageTransition } from '@/components/PageTransition'
 import { Card } from '@/components/ui/Card'
 import { Tabs } from '@/components/ui/Tabs'
 import { ExportLink } from '@/components/ui/ExportLink'
 
+const TABS = [
+  { id: 'business', label: 'Business Settings' },
+  { id: 'users', label: 'Users & Roles' },
+  { id: 'permissions', label: 'Permissions' },
+  { id: 'notifications', label: 'Notifications' },
+  { id: 'audit', label: 'Audit Log' },
+  { id: 'export', label: 'Data Export' },
+]
+
+const TAB_IDS = new Set(TABS.map((t) => t.id))
+
 export default function SettingsPage() {
+  // Wrapped in Suspense because the inner view reads `?tab=` via
+  // `useSearchParams`; the bell deep-links to `/settings?tab=notifications` so
+  // any user — not just a Founder — lands straight on their own switches.
+  return (
+    <Suspense fallback={null}>
+      <SettingsInner />
+    </Suspense>
+  )
+}
+
+function SettingsInner() {
+  const searchParams = useSearchParams()
+  const requested = searchParams.get('tab')
+  const defaultTab = requested && TAB_IDS.has(requested) ? requested : 'business'
+
   return (
     <PageTransition>
       <h1 className="text-2xl font-bold text-decoricks-dark mb-6">Settings</h1>
 
-      <Tabs
-        tabs={[
-          { id: 'business', label: 'Business Settings' },
-          { id: 'users', label: 'Users & Roles' },
-          { id: 'permissions', label: 'Permissions' },
-          { id: 'audit', label: 'Audit Log' },
-          { id: 'export', label: 'Data Export' },
-        ]}
-        defaultTab="business"
-      >
+      <Tabs tabs={TABS} defaultTab={defaultTab}>
         {(tab) => {
           switch (tab) {
             case 'business':
@@ -35,6 +55,9 @@ export default function SettingsPage() {
 
             case 'permissions':
               return <PermissionsTab />
+
+            case 'notifications':
+              return <NotificationPreferences />
 
             case 'audit':
               return <AuditLogTab />
