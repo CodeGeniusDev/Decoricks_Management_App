@@ -7,9 +7,10 @@ collections), and integrates with the Phase 7 real-time layer documented in
 divergences are listed up front in **§0** and every one is flagged as a
 decision for you, the product owner.
 
-Nothing here is built yet. This is Checkpoint 1 — I stop after this document
-for your approval, and specifically for your answers to the six **DECISION**
-boxes in §0 and §10.
+This is Checkpoint 1. Decisions received (18 Oct 2026): **D1** Finance+budget
+only; **D2** No server queue; **D3** Sequential; **D5** reorderLevel; **D6** Add
+largeExpenseThresholdPkr; **D7 Web Push (VAPID) INCLUDED in Phase 9 Step 2.**
+Proceeding to Step 2 (Notifications + Push).
 
 ---
 
