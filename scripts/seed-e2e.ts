@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { MongoClient, type Db } from 'mongodb';
+import { MongoClient, ObjectId, type Db } from 'mongodb';
 import { getEnv } from '../src/lib/env';
 import {
   SPEC_ROLES,
@@ -25,6 +25,7 @@ import {
   SPEC_DEFAULT_PARTNER_PERCENTAGE,
   SPEC_DEFAULT_PARTNERS,
 } from '../src/lib/business-policy';
+import { ensureNotificationIndexes, getNotificationCollection } from '../src/lib/models/Notifications';
 
 /**
  * E2E bootstrap for the isolated test database (`decoricks_test` by default).
@@ -219,6 +220,33 @@ const seedFinance = async (db: Db, founderId: User['_id']): Promise<void> => {
   await ensureLedgerIndexes(db);
 };
 
+/**
+ * A single, idempotent notification for the Founder so the bell always has a
+ * stable unread item to render, regardless of what the parallel write specs
+ * happen to trigger. Keyed on `{ userId, dedupeKey }` (the production dedupe
+ * index), so re-running the seed never stacks duplicates.
+ */
+const seedNotifications = async (db: Db, founderId: User['_id']): Promise<void> => {
+  await ensureNotificationIndexes(db);
+  const dedupeKey = 'e2e:bell-seed';
+  await getNotificationCollection(db).updateOne(
+    { userId: founderId as ObjectId, dedupeKey },
+    {
+      $setOnInsert: {
+        userId: founderId as ObjectId,
+        type: 'low_stock',
+        dedupeKey,
+        title: 'E2E bell notification',
+        message: 'Seeded so the notification unread badge is non-zero and stable.',
+        data: { entityType: 'product', entityId: 'e2e-product', link: '/inventory' },
+        isRead: false,
+        createdAt: new Date(),
+      },
+    },
+    { upsert: true }
+  );
+};
+
 const main = async () => {
   const env = getEnv();
   const client = new MongoClient(env.MONGODB_URI);
@@ -233,6 +261,7 @@ const main = async () => {
     const founderId = await upsertE2EUser(db, FOUNDER_EMAIL, 'E2E Founder', 'founder', passwordHash);
     await upsertE2EUser(db, AFNAN_EMAIL, 'E2E Afnan', 'partner_afnan', passwordHash);
     await seedFinance(db, founderId);
+    await seedNotifications(db, founderId);
 
     console.log(
       `E2E database "${E2E_DB}" ready: ${roleCount} roles, founder ${FOUNDER_EMAIL}, partner ${AFNAN_EMAIL}, finance configuration.`
