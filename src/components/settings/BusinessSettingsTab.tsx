@@ -58,6 +58,8 @@ interface SettingsView {
   postingAccounts: { purchasingAccountId: string | null; salesIncomeAccountId: string | null }
   /** Phase 6: how long a comment author may still edit or delete a comment. */
   taskComments: { editWindowMinutes: number; editWindowConfigured: boolean }
+  /** Phase 9 (D6): large-expense alert threshold in whole PKR, or null = off. */
+  financialAlerts: { largeExpenseThresholdPkr: number | null }
   accountOptions: Array<{ id: string; name: string; kind: string }>
 }
 
@@ -96,6 +98,9 @@ export function BusinessSettingsTab() {
   // Phase 6: comment edit window (minutes). Kept as a string so an empty
   // input cleanly means "clear the override, fall back to the default".
   const [commentWindow, setCommentWindow] = useState('')
+  // Phase 9 (D6): large-expense alert threshold in whole PKR. Empty means the
+  // alert is disabled — there is no default, so an empty field is a real state.
+  const [largeExpense, setLargeExpense] = useState('')
   const [issues, setIssues] = useState<Record<string, string>>({})
 
   const seed = useCallback((next: SettingsView) => {
@@ -114,6 +119,13 @@ export function BusinessSettingsTab() {
     // value — otherwise pressing Save would silently persist an override.
     setCommentWindow(
       next.taskComments?.editWindowConfigured ? String(next.taskComments.editWindowMinutes) : ''
+    )
+    // Phase 9 (D6): a null threshold means the alert is off, so the input is
+    // left empty rather than seeded with a fake number.
+    setLargeExpense(
+      typeof next.financialAlerts?.largeExpenseThresholdPkr === 'number'
+        ? String(next.financialAlerts.largeExpenseThresholdPkr)
+        : ''
     )
     setIssues({})
   }, [])
@@ -214,6 +226,15 @@ export function BusinessSettingsTab() {
         errors.commentEditWindowMinutes = 'Whole number 0–1440 (minutes), or leave empty for 15'
       }
     }
+    // Phase 9 (D6): large-expense threshold. Empty means "alert off"; any
+    // other value must be a whole positive number of rupees.
+    const trimmedThreshold = largeExpense.trim()
+    if (trimmedThreshold !== '') {
+      const parsed = Number(trimmedThreshold)
+      if (!/^\d+$/.test(trimmedThreshold) || !Number.isInteger(parsed) || parsed < 1) {
+        errors.largeExpenseThresholdPkr = 'Whole rupees above 0, or leave empty to disable'
+      }
+    }
     return errors
   }
 
@@ -253,6 +274,9 @@ export function BusinessSettingsTab() {
           // Phase 6: `null` clears the override back to the code default.
           commentEditWindowMinutes:
             commentWindow.trim() === '' ? null : Number.parseInt(commentWindow, 10),
+          // Phase 9 (D6): empty disables the large-expense alert (no default).
+          largeExpenseThresholdPkr:
+            largeExpense.trim() === '' ? null : Number.parseInt(largeExpense, 10),
         }),
       })
       setView(updated)
@@ -473,6 +497,43 @@ export function BusinessSettingsTab() {
             error={issues.critical}
           />
         </div>
+      </Card>
+
+      <Card className="p-4 sm:p-6">
+        <h2 className="mb-1 text-lg font-semibold text-decoricks-dark">Financial alerts</h2>
+        <p className="mb-4 text-sm text-ink-secondary">
+          When an expense is recorded at or above this amount, the Founder gets a large-expense
+          notification. Leave it empty to keep the alert off — there is no built-in threshold, so
+          nothing fires until you set one here.
+        </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="sm:w-64">
+            <Input
+              label="Large-expense threshold (PKR)"
+              inputMode="numeric"
+              type="number"
+              min={1}
+              placeholder="Empty = alert off"
+              value={largeExpense}
+              readOnly={!canWrite}
+              onChange={(e) => setLargeExpense(e.target.value)}
+              error={issues.largeExpenseThresholdPkr}
+            />
+          </div>
+          <div className="pb-2">
+            {view.financialAlerts?.largeExpenseThresholdPkr ? (
+              <Badge variant="success">
+                Alert on at PKR {view.financialAlerts.largeExpenseThresholdPkr.toLocaleString('en-US')}
+              </Badge>
+            ) : (
+              <Badge variant="warning">Large-expense alert off</Badge>
+            )}
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-ink-muted">
+          Amounts are whole Pakistani Rupees. The ledger stores paisa; the comparison is done
+          server-side against the exact expense that was just posted.
+        </p>
       </Card>
 
       <Card className="p-4 sm:p-6">

@@ -64,6 +64,19 @@ function settingsPayload(settings: BusinessSettings | null) {
         Number.isInteger(settings.commentEditWindowMinutes) &&
         settings.commentEditWindowMinutes >= 0,
     },
+    /*
+     * Phase 9 (design D6): the Founder-configurable large-expense alert
+     * threshold, surfaced raw in whole PKR. `null` means the alert is DISABLED
+     * (never configured or explicitly cleared) — there is no invented default,
+     * exactly like the withdrawal lock, so the UI can say so honestly.
+     */
+    financialAlerts: {
+      largeExpenseThresholdPkr:
+        typeof settings?.largeExpenseThresholdPkr === 'number' &&
+        settings.largeExpenseThresholdPkr > 0
+          ? settings.largeExpenseThresholdPkr
+          : null,
+    },
   }
 }
 
@@ -250,6 +263,18 @@ async function __PATCH(request: NextRequest) {
       // `undefined` under $set drops the key entirely — matches the pattern
       // used by the other optional writers in this file.
     }
+    /*
+     * Phase 9 (design D6): `null` / empty clears the threshold, which disables
+     * the large-expense alert (no invented default). A positive integer stores
+     * the whole-PKR amount the emit service compares against.
+     */
+    if (parsed.data.largeExpenseThresholdPkr !== undefined) {
+      set.largeExpenseThresholdPkr =
+        parsed.data.largeExpenseThresholdPkr === '' ||
+        parsed.data.largeExpenseThresholdPkr === null
+          ? undefined
+          : parsed.data.largeExpenseThresholdPkr
+    }
 
     await collection.updateOne(
       { key: 'business' },
@@ -273,6 +298,7 @@ async function __PATCH(request: NextRequest) {
         budgetThresholds: before.budgetThresholds,
         inventory: before.inventory,
         postingAccounts: before.postingAccounts,
+        financialAlerts: before.financialAlerts,
       },
       newValue: {
         withdrawalLockedUntil: after.withdrawalLockedUntil,
@@ -280,6 +306,7 @@ async function __PATCH(request: NextRequest) {
         budgetThresholds: after.budgetThresholds,
         inventory: after.inventory,
         postingAccounts: after.postingAccounts,
+        financialAlerts: after.financialAlerts,
       },
       details: [
         next

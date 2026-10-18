@@ -266,6 +266,16 @@ export const businessSettingsUpdateSchema = z.object({
   commentEditWindowMinutes: z
     .union([z.number().int().min(0).max(1440), z.literal(null), z.literal('')])
     .optional(),
+  /*
+   * Phase 9 (design D6): the whole-PKR amount at or above which an expense
+   * fires a `financial_event` (large_expense) alert to the Founder. `null` or
+   * `''` clears it, which DISABLES the alert — there is deliberately no
+   * invented default threshold, mirroring the withdrawal lock. A positive
+   * integer enables it. Stored raw in PKR; the emit service converts to paisa.
+   */
+  largeExpenseThresholdPkr: z
+    .union([z.number().int().min(1).max(1_000_000_000), z.literal(null), z.literal('')])
+    .optional(),
 })
 
 export const transactionQuerySchema = z.object({
