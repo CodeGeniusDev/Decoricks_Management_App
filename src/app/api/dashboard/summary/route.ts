@@ -4,6 +4,7 @@ import { getDatabase, withMongoRetry } from '@/lib/mongodb'
 import { formatPaisa } from '@/lib/money'
 import { getKarachiDate } from '@/lib/date'
 import { errorResponse, successResponse } from '@/lib/api-response'
+import { maybeRunNotificationSweep } from '@/lib/notifications/sweep'
 
 /**
  * GET /api/dashboard/summary
@@ -19,6 +20,14 @@ import { errorResponse, successResponse } from '@/lib/api-response'
 async function __GET() {
   try {
     await authorizeAllViews(['finance', 'inventory', 'sales', 'tasks'])
+
+    // Fire-and-forget the lazy time-sweep so overdue / due-soon / low-stock catch
+    // up on a normal dashboard load, not only when the bell is opened. Deliberately
+    // NOT awaited here — it must never add latency to the dashboard, and the live
+    // signal updates the bell the moment the new rows land. Never rejects.
+    void getDatabase()
+      .then((db) => maybeRunNotificationSweep(db))
+      .catch(() => undefined)
 
     const now = getKarachiDate()
 

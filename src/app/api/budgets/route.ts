@@ -8,6 +8,7 @@ import {
   ensureOperationsIndexes,
   getBudgetCollection,
 } from '@/lib/models/Operations'
+import { notifyPendingApproval } from '@/lib/notifications/events'
 import { budgetSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
 import { getActor } from '@/lib/current-user'
@@ -195,6 +196,20 @@ async function __POST(request: NextRequest) {
           ipAddress: meta.ipAddress,
           userAgent: meta.userAgent,
         })
+
+        // Phase 9: a budget created in `draft` is awaiting the Founder's approval
+        // — a pending-approval event. Active budgets need none. Best-effort.
+        if (parsed.data.status === 'draft') {
+          try {
+            await notifyPendingApproval(db, {
+              entityType: 'budget',
+              entityId: result.insertedId.toString(),
+              label: `Budget ${budgetNumber} (${created.name})`,
+            })
+          } catch (notifyError) {
+            console.error('POST /api/budgets notification failed:', notifyError)
+          }
+        }
 
         return successResponse(budgetToJSON(created as Budget), 201)
       } catch (error) {

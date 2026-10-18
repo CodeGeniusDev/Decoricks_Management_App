@@ -11,6 +11,7 @@ import { notFoundError, successResponse, validationError } from '@/lib/api-respo
 import { recordAuditEntry } from '@/lib/audit'
 import { LOCATION_LABELS } from '@/lib/stock-math'
 import { getAllowNegativeStock, postMovement, runInTransaction } from '@/lib/stock-service'
+import { notifyLowStockForProduct } from '@/lib/notifications/events'
 
 /**
  * POST /api/stock/damage
@@ -78,6 +79,15 @@ async function __POST(request: NextRequest) {
         ipAddress: meta.ipAddress,
         userAgent: meta.userAgent,
       })
+
+      // Phase 9: damage / write-off reduce sellable stock, so re-check this
+      // product against its reorder level through the shared stock summary. Best-
+      // effort and swallowed — the movement is already committed and audited.
+      try {
+        await notifyLowStockForProduct(db, productId)
+      } catch (notifyError) {
+        console.error('POST /api/stock/damage notification failed:', notifyError)
+      }
     }
 
     return successResponse({ movement: result.movement, replay: !result.created })

@@ -7,6 +7,7 @@ import { errorResponse, notFoundError, successResponse, validationError } from '
 import { recordAuditEntry } from '@/lib/audit'
 import { getProfitDistributionCollection } from '@/lib/models/Distribution'
 import { serializeDistribution } from '@/lib/distribution-service'
+import { notifyDistributionLocked } from '@/lib/notifications/events'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -55,6 +56,15 @@ async function __POST(_request: NextRequest, context: RouteContext) {
     )
 
     const updated = await col.findOne({ _id } as never)
+
+    // Phase 9: a locked distribution is an owner-facing financial event. Best-
+    // effort and swallowed — the lock already succeeded and is audited; a failed
+    // alert must not unwind it or fail the request.
+    try {
+      await notifyDistributionLocked(db, id, doc.month)
+    } catch (notifyError) {
+      console.error('POST /api/finance/distributions/[id]/approve notification failed:', notifyError)
+    }
 
     const meta = await getRequestMeta()
     await recordAuditEntry(db, {

@@ -11,6 +11,7 @@ import { recordAuditEntry } from '@/lib/audit'
 import { notFoundError, successResponse, validationError } from '@/lib/api-response'
 import { getAllowNegativeStock, postMovement, runInTransaction } from '@/lib/stock-service'
 import { deriveStock } from '@/lib/stock-math'
+import { notifyLowStockForProduct } from '@/lib/notifications/events'
 
 const isObjectId = (v: string) => /^[0-9a-fA-F]{24}$/.test(v)
 
@@ -160,6 +161,16 @@ async function __POST(request: NextRequest) {
         ipAddress: meta.ipAddress,
         userAgent: meta.userAgent,
       })
+
+      // Phase 9: a downward count can push a product to its reorder level. Recompute
+      // THIS product via the dashboard's own stock summary (never new math) and let
+      // the dedupe key absorb repeats. Best-effort, swallowed — the movement is
+      // already committed and audited.
+      try {
+        await notifyLowStockForProduct(db, productId)
+      } catch (notifyError) {
+        console.error('POST /api/stock notification failed:', notifyError)
+      }
     }
 
     return successResponse({

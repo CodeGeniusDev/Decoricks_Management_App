@@ -7,6 +7,7 @@ import { recordAuditEntry } from '@/lib/audit'
 import { ensureDistributionIndexes, getProfitDistributionCollection } from '@/lib/models/Distribution'
 import { buildDistribution, distributionNumberFor, karachiMonthRangeForMonth, serializeDistribution } from '@/lib/distribution-service'
 import { distributionCreateSchema } from '@/lib/schemas/distribution'
+import { notifyPendingApproval } from '@/lib/notifications/events'
 
 const isDuplicateKeyError = (e: unknown) => (e as { code?: number })?.code === 11000
 
@@ -113,6 +114,18 @@ async function __POST(request: NextRequest) {
         ipAddress: meta.ipAddress,
         userAgent: meta.userAgent,
       })
+
+      // Phase 9: a freshly calculated distribution is now awaiting the Founder's
+      // approval — a pending-approval event. Best-effort, swallowed.
+      try {
+        await notifyPendingApproval(db, {
+          entityType: 'distribution',
+          entityId: result.insertedId.toString(),
+          label: `Distribution ${doc.distributionNumber} for ${month}`,
+        })
+      } catch (notifyError) {
+        console.error('POST /api/finance/distributions notification failed:', notifyError)
+      }
 
       return successResponse(serializeDistribution(inserted!), 201)
     } catch (error) {

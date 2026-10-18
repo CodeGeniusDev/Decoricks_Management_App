@@ -15,6 +15,11 @@ import {
   serializeEntry,
   type ActorContext,
 } from '@/lib/finance-ledger'
+import {
+  maybeNotifyLargeExpense,
+  notifyBudgetCrossingsForExpense,
+  notifyWithdrawalRequest,
+} from '@/lib/notifications/events'
 
 /**
  * GET /api/finance/transactions
@@ -101,6 +106,34 @@ async function __POST(request: NextRequest) {
     }
 
     const { doc, created } = await createLedgerEntry(db, parsed.data, actor)
+
+    // Phase 9 notifications — fired only for a genuinely new entry (a replay of
+    // the same idempotency key returns `created: false`, so an offline retry or
+    // double-click never alerts twice). Awaited so the alert is durably persisted
+    // before the client sees success (tests and the live bell both rely on it),
+    // but fully swallowed: a notification must NEVER turn a saved entry into a
+    // failed request. The emit service already permission/pref/dedupe-gates each.
+    if (created && doc._id) {
+      const txId = doc._id.toString()
+      try {
+        await Promise.all([
+          maybeNotifyLargeExpense(db, {
+            transactionId: txId,
+            type: doc.type,
+            amountPaisa: doc.amount,
+            note: doc.note,
+          }),
+          doc.type === 'partner_withdrawal'
+            ? notifyWithdrawalRequest(db, txId, doc.partnerName)
+            : Promise.resolve(0),
+          doc.type === 'expense' && doc.category
+            ? notifyBudgetCrossingsForExpense(db, doc.category, doc.date)
+            : Promise.resolve(0),
+        ])
+      } catch (notifyError) {
+        console.error('POST /api/finance/transactions notifications failed:', notifyError)
+      }
+    }
 
     const [accounts, categories] = await Promise.all([loadAccounts(db), loadCategories(db)])
     const ctx = buildSerializeContext(accounts, categories)

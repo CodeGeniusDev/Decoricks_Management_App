@@ -9,6 +9,7 @@ import {
   getNotificationCollection,
   notificationToJSON,
 } from '@/lib/models/Notifications'
+import { maybeRunNotificationSweep } from '@/lib/notifications/sweep'
 
 /**
  * GET /api/notifications — the bell list (design §2.5).
@@ -41,6 +42,13 @@ async function __GET(request: NextRequest) {
 
   const db = await getDatabase()
   await ensureNotificationIndexes(db)
+
+  // Lazy time-sweep (design §2.8): the bell is a natural catch-up point. Awaited
+  // (throttled to once per interval, shared across concurrent callers, never
+  // rejects) so any overdue / due-soon / low-stock events that crossed while the
+  // server slept appear in THIS response rather than arriving as a second paint.
+  await maybeRunNotificationSweep(db)
+
   const col = getNotificationCollection(db)
 
   const filter: Record<string, unknown> = { userId }
