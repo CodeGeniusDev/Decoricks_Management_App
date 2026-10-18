@@ -16,6 +16,16 @@ import { AuthProvider } from '@/components/auth/AuthProvider'
 export const metadata: Metadata = {
   title: 'Decoricks Management',
   description: 'Internal management app for Decoricks',
+  // Phase 9 PWA (design §5). The manifest makes the app installable and pins
+  // brand colours; the service worker itself is registered lazily only when a
+  // user enables push, never on load — so the worker is opt-in, not implied.
+  manifest: '/manifest.webmanifest',
+  themeColor: '#2b2b2b',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Decoricks',
+  },
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: '32x32' },
