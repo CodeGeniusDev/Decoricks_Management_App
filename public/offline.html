@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>You're offline — Decoricks</title>
+    <!--
+      Offline fallback page (design §5). Served by the service worker when a
+      navigation can neither reach the network nor its cached copy, so the
+      user always sees a message — never a browser-branded white screen.
+      Self-contained on purpose: no app bundle, no fonts, no build pipeline.
+      Reads the local IndexedDB queue directly to show pending-entry counts;
+      if IndexedDB is unavailable the section simply does not render, which
+      is the correct degradation for a fallback page.
+    -->
+    <style>
+      :root {
+        --ink: #0a0908;
+        --ink-2: #2b2b2b;
+        --muted: #6b7370;
+        --surface: #f2f4f3;
+        --card: #ffffff;
+        --line: #d3d7d4;
+        --brown: #806351;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--surface);
+        color: var(--ink);
+        font: 14px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          sans-serif;
+        padding: 24px;
+      }
+      main {
+        max-width: 420px;
+        width: 100%;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 32px 28px;
+        text-align: center;
+      }
+      .mark {
+        width: 40px;
+        height: 40px;
+        margin: 0 auto 16px;
+        border-radius: 8px;
+        background: var(--ink);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 18px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 20px;
+        letter-spacing: -0.01em;
+      }
+      p {
+        margin: 0 0 8px;
+        color: var(--ink-2);
+      }
+      .queue {
+        margin: 16px 0;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 13px;
+        display: none;
+      }
+      .queue strong {
+        color: var(--ink);
+      }
+      .actions {
+        margin-top: 20px;
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      a,
+      button {
+        display: inline-block;
+        padding: 9px 16px;
+        border-radius: 8px;
+        font-size: 14px;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .primary {
+        background: var(--brown);
+        color: #fff;
+        border: 1px solid var(--brown);
+      }
+      .secondary {
+        background: var(--card);
+        color: var(--ink);
+        border: 1px solid var(--line);
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        main {
+          animation: rise 240ms ease-out;
+        }
+        @keyframes rise {
+          from {
+            opacity: 0;
+            transform: translateY(6px);
+          }
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true">D</div>
+      <h1>You're offline</h1>
+      <p>
+        This page couldn't load without a connection. Anything you saved while
+        offline is safe in your Sync queue and will submit itself as soon as the
+        app is back online.
+      </p>
+      <div class="queue" id="queue-note">
+        <strong id="queue-count">0</strong>
+        <span id="queue-label">entries waiting to sync</span>
+      </div>
+      <div class="actions">
+        <a class="primary" href="/sync">Open Sync queue</a>
+        <button class="secondary" id="retry" onclick="location.reload()">
+          Try again
+        </button>
+      </div>
+    </main>
+    <script>
+      // Raw IndexedDB read — this page ships no dependencies. The queue DB is
+      // the app's own (`decoricks-offline`, store `queue`), read-only here.
+      // CRITICAL: never blind-open it. Opening a non-existent DB at version 1
+      // would create an empty one and block Dexie's own 0→1 schema upgrade.
+      // `indexedDB.databases()` gates the read to an already-created DB; where
+      // that API is unavailable the queue note simply doesn't render.
+      try {
+        if (indexedDB && indexedDB.databases) {
+          indexedDB.databases().then(function (list) {
+            if (!list.some(function (d) { return d.name === 'decoricks-offline' })) return
+            var req = indexedDB.open('decoricks-offline')
+            req.onsuccess = function () {
+              var db = req.result
+              if (!db.objectStoreNames.contains('queue')) {
+                db.close()
+                return
+              }
+              var counts = { pending: 0, failed: 0, conflict: 0 }
+              var tx = db.transaction('queue', 'readonly')
+              tx.objectStore('queue').openCursor().onsuccess = function (e) {
+                var cursor = e.target.result
+                if (cursor) {
+                  if (cursor.value.status in counts) counts[cursor.value.status]++
+                  cursor.continue()
+                }
+              }
+              tx.oncomplete = function () {
+                db.close()
+                var total = counts.pending + counts.failed + counts.conflict
+                if (total === 0) return
+                document.getElementById('queue-count').textContent = String(total)
+                document.getElementById('queue-label').textContent =
+                  total === 1
+                    ? 'entry waiting to sync'
+                    : 'entries waiting to sync (' +
+                      counts.failed +
+                      ' need attention)'
+                document.getElementById('queue-note').style.display = 'block'
+              }
+            }
+          })
+        }
+      } catch (e) {
+        /* IndexedDB unavailable: the page simply shows the generic message. */
+      }
+    </script>
+  </body>
+</html>
