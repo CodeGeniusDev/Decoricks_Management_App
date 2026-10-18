@@ -21,6 +21,7 @@ import { useAuth } from '@/components/auth/AuthProvider';
 import { can } from '@/lib/permissions-client';
 import { formatPaisa } from '@/lib/money';
 import { formatKarachiDate } from '@/lib/date';
+import { paisaToInputValue } from '@/lib/form-helpers';
 import { toKarachiInputDate, type CategoryView } from '@/modules/finance/finance-ui';
 import { BudgetFormModal, type BudgetFormValues } from '@/modules/budget/BudgetFormModal';
 import {
@@ -63,6 +64,40 @@ export default function BudgetsPage() {
 
   const [categories, setCategories] = useState<CategoryView[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
+  // "Edit & resubmit" handoff from the Sync screen (§7): payload staged in
+  // sessionStorage by the queue, consumed exactly once on mount. The queue
+  // stores allocations in paisa; the form wants them typed back in PKR.
+  const [resubmitDraft, setResubmitDraft] = useState<
+    Partial<{
+      name: string;
+      periodStart: string;
+      periodEnd: string;
+      categories: { category: string; amount: string }[];
+    }> | null
+  >(null);
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('decoricks:offline:resubmit');
+      if (!raw) return;
+      sessionStorage.removeItem('decoricks:offline:resubmit');
+      const staged = JSON.parse(raw) as { operation?: string; payload?: BudgetCreatePayload };
+      if (staged.operation === 'create_budget' && staged.payload) {
+        const payload = staged.payload;
+        setResubmitDraft({
+          name: payload.name,
+          periodStart: payload.periodStart,
+          periodEnd: payload.periodEnd,
+          categories: (payload.categories ?? []).map((c) => ({
+            category: c.category,
+            amount: paisaToInputValue(c.budgeted),
+          })),
+        });
+        setModalOpen(true);
+      }
+    } catch {
+      // A corrupt handoff is simply no handoff.
+    }
+  }, []);
   // One key per form session, minted when the dialog opens.
   const idempotencyKeyRef = useRef('');
 
@@ -118,6 +153,8 @@ export default function BudgetsPage() {
   );
 
   const openCreate = () => {
+    // A manual create must never inherit a resubmit draft.
+    setResubmitDraft(null);
     idempotencyKeyRef.current = newIdempotencyKey();
     setModalOpen(true);
   };
@@ -382,7 +419,11 @@ export default function BudgetsPage() {
         isOpen={modalOpen}
         mode="create"
         categoryOptions={categoryOptions}
-        onClose={() => setModalOpen(false)}
+        initial={resubmitDraft ?? undefined}
+        onClose={() => {
+          setModalOpen(false);
+          setResubmitDraft(null);
+        }}
         onSubmit={createBudget}
       />
     </PageTransition>

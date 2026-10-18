@@ -17,6 +17,7 @@ import {
   fieldIssues,
   karachiToday,
   newIdempotencyKey,
+  paisaToInputValue,
   parsePkrAmount,
   type AccountView,
   type CategoryView,
@@ -36,6 +37,12 @@ interface EntryFormModalProps {
   withdrawalsLocked: boolean;
   lockedUntilDisplay: string | null;
   initialType?: LedgerEntryType;
+  /**
+   * Payload of a discarded queue row handed back by "Edit & resubmit" (§7).
+   * Seeds the fields on open; a FRESH idempotency key is always minted, since
+   * the resubmit is a new intended write by definition.
+   */
+  initialDraft?: Record<string, unknown> | null;
   onCreated: (entry: EntryView, replayed: boolean) => void;
   /** Entry stored in the offline queue instead of the server (design §6.1). */
   onQueued?: () => void;
@@ -60,6 +67,7 @@ export const EntryFormModal = ({
   withdrawalsLocked,
   lockedUntilDisplay,
   initialType = 'income',
+  initialDraft = null,
   onCreated,
   onQueued,
 }: EntryFormModalProps) => {
@@ -83,22 +91,26 @@ export const EntryFormModal = ({
   const idempotencyKeyRef = useRef<string>('');
 
   // Reset the session whenever the modal opens: fresh fields, fresh key.
+  // An `initialDraft` from the Sync screen pre-seeds instead of blanks.
   useEffect(() => {
     if (!isOpen) return;
-    setType(initialType);
-    setAmount('');
-    setDate(karachiToday());
-    setAccountId('');
-    setFromAccountId('');
-    setToAccountId('');
-    setCategory('');
-    setPartnerId('');
-    setPaymentMethod('');
-    setNote('');
+    const draft = (initialDraft ?? {}) as Partial<FinanceCreatePayload> &
+      Record<string, unknown>;
+    setType((draft.type as LedgerEntryType) ?? initialType);
+    setAmount(typeof draft.amount === 'number' ? paisaToInputValue(draft.amount) : '');
+    setDate(typeof draft.date === 'string' && draft.date ? draft.date : karachiToday());
+    setAccountId(typeof draft.accountId === 'string' ? draft.accountId : '');
+    setFromAccountId(typeof draft.fromAccountId === 'string' ? draft.fromAccountId : '');
+    setToAccountId(typeof draft.toAccountId === 'string' ? draft.toAccountId : '');
+    setCategory(typeof draft.category === 'string' ? draft.category : '');
+    setPartnerId(typeof draft.partnerId === 'string' ? draft.partnerId : '');
+    setPaymentMethod(typeof draft.paymentMethod === 'string' ? draft.paymentMethod : '');
+    setNote(typeof draft.note === 'string' ? draft.note : '');
     setErrors({});
     setFormError(null);
     idempotencyKeyRef.current = newIdempotencyKey();
-  }, [isOpen, initialType]);
+    // Deliberately NOT consumed here — the parent clears it after mounting.
+  }, [isOpen, initialType, initialDraft]);
 
   const needsSingleAccount = SINGLE_ACCOUNT_TYPES.has(type);
   const needsCategory = type === 'income' || type === 'expense';

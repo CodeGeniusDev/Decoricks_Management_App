@@ -127,6 +127,23 @@ export default function FinanceTransactionsPage() {
   const [lockedUntilDisplay, setLockedUntilDisplay] = useState<string | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
+  // "Edit & resubmit" handoff from the Sync screen (§7): payload staged in
+  // sessionStorage by the queue, consumed exactly once on mount.
+  const [resubmitDraft, setResubmitDraft] = useState<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('decoricks:offline:resubmit');
+      if (!raw) return;
+      sessionStorage.removeItem('decoricks:offline:resubmit');
+      const staged = JSON.parse(raw) as { operation?: string; payload?: Record<string, unknown> };
+      if (staged.operation === 'create_finance' && staged.payload) {
+        setResubmitDraft(staged.payload);
+        setFormOpen(true);
+      }
+    } catch {
+      // A corrupt handoff is simply no handoff.
+    }
+  }, []);
   const [reverseTarget, setReverseTarget] = useState<EntryView | null>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -554,7 +571,11 @@ export default function FinanceTransactionsPage() {
 
       <EntryFormModal
         isOpen={formOpen}
-        onClose={() => setFormOpen(false)}
+        onClose={() => {
+          setFormOpen(false);
+          setResubmitDraft(null);
+        }}
+        initialDraft={resubmitDraft}
         accounts={accounts}
         categories={categories}
         partners={partners}

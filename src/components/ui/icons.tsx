@@ -78,6 +78,7 @@ import {
   LuRotateCcw,
   LuCalculator,
   LuScale,
+  LuCloudUpload,
 } from 'react-icons/lu'
 import { MdLogout, MdPersonOutline } from 'react-icons/md'
 
@@ -99,6 +100,7 @@ export const IconProfitLoss = LuTrendingUp
 export const IconCashFlow = LuArrowLeftRight
 export const IconDistribution = LuHandCoins
 export const IconReconciliation = LuScale
+export const IconSync = LuCloudUpload
 
 /** Chrome and controls. */
 export const IconMenu = HiOutlineBars3

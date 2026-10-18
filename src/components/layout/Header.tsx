@@ -6,6 +6,8 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useShellLayout } from './ShellLayoutContext'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
+import { SignOutModal } from '@/components/offline/SignOutModal'
+import { useOfflineQueueStats } from '@/hooks/useOfflineQueue'
 import {
   IconChevronDown,
   IconLogout,
@@ -33,6 +35,10 @@ export const Header = () => {
   const [isOnline, setIsOnline] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
+  const [signOutModalOpen, setSignOutModalOpen] = useState(false)
+  // Offline queue badge + the §8 logout warning trigger. Live, cross-tab aware.
+  const { stats } = useOfflineQueueStats(user?._id)
+  const unresolved = stats.pending + stats.needsAction
 
   const menuRef = useRef<HTMLDivElement>(null)
   const logoutRef = useRef<HTMLButtonElement>(null)
@@ -79,8 +85,13 @@ export const Header = () => {
 
   const handleSignOut = async () => {
     if (signingOut) return
-    setSigningOut(true)
     setMenuOpen(false)
+    // Unsynced entries? Never silently destroy or silently keep (§8) — ask.
+    if (unresolved > 0) {
+      setSignOutModalOpen(true)
+      return
+    }
+    setSigningOut(true)
     try {
       await signOut()
       router.replace('/login')
@@ -117,6 +128,23 @@ export const Header = () => {
         </h1>
 
         <div className="flex items-center gap-3">
+          {/* Offline queue badge: only when there is something to look at. */}
+          {unresolved > 0 && (
+            <Link
+              href="/sync"
+              className="flex items-center gap-1.5 rounded-full border border-status-warning bg-status-warning-bg px-2.5 py-1 text-2xs font-medium text-status-warning transition-colors hover:bg-surface-sunken"
+              aria-label={`${unresolved} offline entries pending sync`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  stats.needsAction > 0 ? 'bg-status-danger' : 'bg-status-warning'
+                }`}
+                aria-hidden="true"
+              />
+              {unresolved} pending
+            </Link>
+          )}
+
           {/* Connectivity is genuinely useful for an app with financial entry. */}
           <span
             className="hidden items-center gap-1.5 text-xs text-ink-muted sm:flex"
@@ -227,6 +255,9 @@ export const Header = () => {
           </div>
         </div>
       </div>
+
+      {/* Queue-aware sign-out choices (Phase 9 §8), rendered outside the menu. */}
+      <SignOutModal isOpen={signOutModalOpen} onClose={() => setSignOutModalOpen(false)} />
     </header>
   )
 }

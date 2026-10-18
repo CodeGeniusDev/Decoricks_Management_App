@@ -13,6 +13,7 @@ import {
   IconSettings,
   IconSuppliers,
   IconSummary,
+  IconSync,
   IconTasks,
 } from '@/components/ui/icons'
 
@@ -50,6 +51,7 @@ export const navItems: NavItem[] = [
   { name: 'Chat', href: '/chat', icon: <IconChat size={20} /> },
   { name: 'Suppliers', href: '/suppliers', icon: <IconSuppliers size={20} /> },
   { name: 'Weekly Summary', href: '/weekly-summary', icon: <IconSummary size={20} /> },
+  { name: 'Sync', href: '/sync', icon: <IconSync size={20} /> },
   { name: 'Settings', href: '/settings', icon: <IconSettings size={20} /> },
 ]
 

@@ -14,6 +14,8 @@ import {
 import { usePageEnter, useRevealOnMount } from '@/lib/gsap'
 import { roleLabel } from '@/lib/roles'
 import { can } from '@/lib/permissions-client'
+import { SignOutModal } from '@/components/offline/SignOutModal'
+import { useOfflineQueueStats } from '@/hooks/useOfflineQueue'
 
 /**
  * My profile — read-only identity plus the actions a user can take on their own
@@ -39,6 +41,10 @@ const MODULE_LABELS: Record<string, string> = {
 export default function ProfilePage() {
   const { user, signOut } = useAuth()
   const [signingOut, setSigningOut] = useState(false)
+  const [signOutModalOpen, setSignOutModalOpen] = useState(false)
+  // Unsynced offline entries change what "sign out" means (§8) — ask first.
+  const { stats } = useOfflineQueueStats(user?._id)
+  const unresolved = stats.pending + stats.needsAction
   const scope = useRef<HTMLDivElement>(null)
   const cardRef = useRef<HTMLDivElement>(null)
 
@@ -53,6 +59,10 @@ export default function ProfilePage() {
 
   const handleSignOut = async () => {
     if (signingOut) return
+    if (unresolved > 0) {
+      setSignOutModalOpen(true)
+      return
+    }
     setSigningOut(true)
     try {
       await signOut()
@@ -137,6 +147,8 @@ export default function ProfilePage() {
         </p>
         <PermissionSummary role={user.role} />
       </section>
+
+      <SignOutModal isOpen={signOutModalOpen} onClose={() => setSignOutModalOpen(false)} />
     </div>
   )
 }
