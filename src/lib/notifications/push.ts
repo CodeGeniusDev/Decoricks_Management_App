@@ -35,13 +35,23 @@ export interface PushPayload {
 let configured = false
 let configUnavailable = false
 
+/**
+ * The public VAPID key the client needs to subscribe, or null when push is not
+ * configured. Read in ONE place so the `/api/push/vapid-public-key` route and the
+ * server-side `ensureConfigured` never disagree about whether push is enabled.
+ * This is the only VAPID value ever exposed to the browser — the private key and
+ * subject stay server-side.
+ */
+export const getVapidPublicKey = (): string | null =>
+  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || null
+
 /** Lazily configure `web-push` with VAPID; returns false when unconfigured. */
 async function ensureConfigured(): Promise<boolean> {
   if (configured) return true
   if (configUnavailable) return false
 
   const { VAPID_PRIVATE_KEY, VAPID_SUBJECT } = getEnv()
-  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+  const publicKey = getVapidPublicKey()
   if (!VAPID_PRIVATE_KEY || !VAPID_SUBJECT || !publicKey) {
     configUnavailable = true
     return false
