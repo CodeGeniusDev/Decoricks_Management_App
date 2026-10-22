@@ -11,9 +11,10 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { PeriodSelector } from '@/components/dashboard/PeriodSelector'
 import type { DashboardPeriod } from '@/lib/dashboard/useDashboard'
-import { apiFetch } from '@/lib/api-client'
+import { apiJsonMeta } from '@/lib/api-client'
 import { formatPaisa } from '@/lib/money'
 import { formatKarachiDate } from '@/lib/date'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { isFounder } from '@/lib/permissions-client'
 import type { ReconciliationReport } from '@/lib/metrics/reconciliation'
@@ -63,26 +64,40 @@ export default function ReconciliationPage() {
     return params.toString()
   }, [period, customFrom, customTo])
 
+  /*
+   * One reconciliation report is simultaneously a read of `finance` and of
+   * `sales`, so it announces itself to both subscriptions. Without that, each
+   * module's first snapshot fired its own re-read beside the mount request — the
+   * `×3` the Phase 6 perf probe counted on this route (one real read plus two
+   * duplicates that returned the numbers already on their way).
+   */
+  const financeSync = useRealtimeSync('finance', () => {
+    if (founder) void load()
+  })
+  const salesSync = useRealtimeSync('sales', () => {
+    if (founder) void load()
+  })
+
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
+    financeSync.begin()
+    salesSync.begin()
     try {
-      const res = await apiFetch(`/api/dashboard/reconciliation?${rangeQuery}`)
-      const body = (await res.json()) as {
-        success: boolean
-        data?: ReconciliationReport
-        error?: { message?: string }
-      }
-      if (!res.ok || !body.success) {
-        throw new Error(body.error?.message ?? `Request failed (${res.status})`)
-      }
-      setReport(body.data ?? null)
+      const { data, serverTime, durationMs } = await apiJsonMeta<ReconciliationReport>(
+        `/api/dashboard/reconciliation?${rangeQuery}`
+      )
+      financeSync.settle(serverTime, durationMs)
+      salesSync.settle(serverTime, durationMs)
+      setReport(data ?? null)
     } catch (err) {
+      financeSync.abandon()
+      salesSync.abandon()
       setError(err instanceof Error ? err.message : 'Failed to load reconciliation')
     } finally {
       setLoading(false)
     }
-  }, [rangeQuery])
+  }, [rangeQuery, financeSync, salesSync])
 
   useEffect(() => {
     if (founder) void load()
@@ -140,7 +155,6 @@ export default function ReconciliationPage() {
           <Skeleton variant="rect" className="h-64" />
         </div>
       )}
-
       {!firstPaint && error && !report && (
         <ErrorState
           title="Couldn’t load reconciliation"
@@ -172,30 +186,82 @@ export default function ReconciliationPage() {
             )}
           </Card>
 
-          <Table
-            columns={COLUMNS}
-            data={report.checks.map((c) => ({
-              name: (
-                <div className="min-w-0">
-                  <p className="font-medium text-ink">{c.name}</p>
-                  <p className="text-xs text-ink-muted">{c.description}</p>
+          {/* Desktop: the dense comparison table. Mobile: the same rows as cards,
+              because seven columns of paisa never fit without horizontal scroll. */}
+          <div className="hidden md:block">
+            <Table
+              columns={COLUMNS}
+              data={report.checks.map((c) => ({
+                name: (
+                  <div className="min-w-0">
+                    <p className="font-medium text-ink">{c.name}</p>
+                    <p className="text-xs text-ink-muted">{c.description}</p>
+                  </div>
+                ),
+                a: <span className="tabular-nums">{formatPaisa(c.a)}</span>,
+                b: <span className="tabular-nums">{formatPaisa(c.b)}</span>,
+                difference: (
+                  <span
+                    className={`tabular-nums ${c.pass ? 'text-ink-muted' : 'font-semibold text-status-danger'}`}
+                  >
+                    {formatPaisa(c.difference)}
+                    <span className="ml-1 text-2xs text-ink-muted">({c.difference} paisa)</span>
+                  </span>
+                ),
+                status: c.pass ? (
+                  <Badge variant="success">Pass</Badge>
+                ) : (
+                  <Badge variant="error">Fail</Badge>
+                ),
+              }))}
+            />
+          </div>
+          <ul className="space-y-3 md:hidden">
+            {report.checks.map((c) => (
+              <li
+                key={c.name}
+                className="rounded-lg border border-line-subtle bg-surface-raised px-4 py-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="min-w-0 font-medium text-ink">{c.name}</p>
+                  {c.pass ? (
+                    <Badge variant="success" size="sm">
+                      Pass
+                    </Badge>
+                  ) : (
+                    <Badge variant="error" size="sm">
+                      Fail
+                    </Badge>
+                  )}
                 </div>
-              ),
-              a: <span className="tabular-nums">{formatPaisa(c.a)}</span>,
-              b: <span className="tabular-nums">{formatPaisa(c.b)}</span>,
-              difference: (
-                <span className={`tabular-nums ${c.pass ? 'text-ink-muted' : 'font-semibold text-status-danger'}`}>
-                  {formatPaisa(c.difference)}
-                  <span className="ml-1 text-2xs text-ink-muted">({c.difference} paisa)</span>
-                </span>
-              ),
-              status: c.pass ? (
-                <Badge variant="success">Pass</Badge>
-              ) : (
-                <Badge variant="error">Fail</Badge>
-              ),
-            }))}
-          />
+                <p className="mt-1 text-xs text-ink-muted">{c.description}</p>
+                <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <dt className="text-ink-muted">Recomputed</dt>
+                    <dd className="font-semibold tabular-nums text-decoricks-dark">
+                      {formatPaisa(c.a)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-ink-muted">Against</dt>
+                    <dd className="font-semibold tabular-nums text-decoricks-dark">
+                      {formatPaisa(c.b)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-ink-muted">Difference</dt>
+                    <dd
+                      className={`font-semibold tabular-nums ${
+                        c.pass ? 'text-ink-muted' : 'text-status-danger'
+                      }`}
+                    >
+                      {formatPaisa(c.difference)}
+                    </dd>
+                  </div>
+                </dl>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </PageTransition>

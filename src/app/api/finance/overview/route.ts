@@ -6,14 +6,14 @@ import { formatPaisa } from '@/lib/money'
 import { periodTotals, summarize, type LedgerSummary } from '@/lib/finance'
 import {
   buildSerializeContext,
-  getAccountBalances,
+  computeBalancesFrom,
   getWithdrawalLock,
   loadAccounts,
   loadCategories,
+  loadLedger,
   normalizeEntry,
   serializeEntry,
 } from '@/lib/finance-ledger'
-import { getLedgerCollection } from '@/lib/models/Ledger'
 import { serializeAccount } from '@/lib/finance-serializers'
 
 const withSummaryDisplay = (summary: LedgerSummary) => ({
@@ -41,16 +41,21 @@ async function __GET() {
     await authorize('finance', 'view')
 
     const db = await getDatabase()
-    const [accounts, categories, entries, balancesResult, lock] = await Promise.all([
+    /*
+     * Four reads, each one a document set this response actually needs. It used
+     * to be six: the accounts collection and the entire ledger were both fetched
+     * twice, once directly and once inside `getAccountBalances`. Phase 4 §1
+     * measured that duplication at 211ms of a 346ms request.
+     */
+    const [accounts, categories, entries, lock] = await Promise.all([
       loadAccounts(db),
       loadCategories(db),
-      getLedgerCollection(db).find({}).sort({ date: -1, createdAt: -1 }).toArray(),
-      getAccountBalances(db),
+      loadLedger(db),
       getWithdrawalLock(db),
     ])
 
     const ctx = buildSerializeContext(accounts, categories)
-    const balances = balancesResult.balances
+    const balances = computeBalancesFrom(accounts, entries)
 
     const normalized = entries.map(normalizeEntry)
     const overall = summarize(normalized)

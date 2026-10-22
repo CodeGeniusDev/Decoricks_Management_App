@@ -1,4 +1,5 @@
 import { Db, Collection, ObjectId } from 'mongodb'
+import { createIndexTolerant } from './indexes'
 
 /* ---------------------------------- tasks ---------------------------------- */
 
@@ -50,7 +51,8 @@ export interface Supplier {
   createdBy: ObjectId
 }
 
-export const getSupplierCollection = (db: Db): Collection<Supplier> => db.collection<Supplier>('suppliers')
+export const getSupplierCollection = (db: Db): Collection<Supplier> =>
+  db.collection<Supplier>('suppliers')
 
 export const supplierToJSON = (s: Supplier) => ({
   _id: s._id?.toString(),
@@ -126,7 +128,18 @@ export const getBudgetCollection = (db: Db): Collection<Budget> => db.collection
 /**
  * Guarantees the uniqueness constraints the task/budget write paths rely on.
  * Memoized per process; failures are logged rather than thrown so a
- * permissions-restricted deployment still serves reads.
+ * permissions-restricted deployment still serves reads, and each entry is
+ * individually tolerant so one already-registered index cannot reject the batch
+ * and bury the real failures (Phase 5 §5/§6).
+ *
+ * Every spec here must be the ONE spec for that index. `{ taskNumber: 1 }`
+ * unique+sparse is also declared in `Tasks.ts` as `tasks_number_unique`, and
+ * MongoDB treats the same key pattern under two names as a conflict: with the
+ * default `taskNumber_1` name here, a database seeded through the board path
+ * answered every supplier/budget write with
+ * `ensureOperationsIndexes failed: MongoServerError: Index already exists with a
+ * different name: tasks_number_unique` (code 85) — observed in the Phase 5
+ * production-build Playwright run. One name, one spec, per index.
  */
 let operationsIndexesPromise: Promise<void> | null = null
 
@@ -135,15 +148,24 @@ export function ensureOperationsIndexes(db: Db): Promise<void> {
     operationsIndexesPromise = (async () => {
       try {
         await Promise.all([
-          getTaskCollection(db).createIndex({ taskNumber: 1 }, { unique: true, sparse: true }),
-          getTaskCollection(db).createIndex({ status: 1, createdAt: -1 }),
-          getSupplierCollection(db).createIndex({ name: 1 }, { unique: true }),
-          getSupplierCollection(db).createIndex({ createdAt: -1 }),
-          getBudgetCollection(db).createIndex({ budgetNumber: 1 }, { unique: true, sparse: true }),
-          getBudgetCollection(db).createIndex({ status: 1, periodStart: -1 }),
-          getBudgetCollection(db).createIndex(
-            { idempotencyKey: 1 },
-            { unique: true, sparse: true, name: 'budgets_idempotency_unique' }
+          createIndexTolerant(
+            getTaskCollection(db).createIndex(
+              { taskNumber: 1 },
+              { unique: true, sparse: true, name: 'tasks_number_unique' }
+            )
+          ),
+          createIndexTolerant(getTaskCollection(db).createIndex({ status: 1, createdAt: -1 })),
+          createIndexTolerant(getSupplierCollection(db).createIndex({ name: 1 }, { unique: true })),
+          createIndexTolerant(getSupplierCollection(db).createIndex({ createdAt: -1 })),
+          createIndexTolerant(
+            getBudgetCollection(db).createIndex({ budgetNumber: 1 }, { unique: true, sparse: true })
+          ),
+          createIndexTolerant(getBudgetCollection(db).createIndex({ status: 1, periodStart: -1 })),
+          createIndexTolerant(
+            getBudgetCollection(db).createIndex(
+              { idempotencyKey: 1 },
+              { unique: true, sparse: true, name: 'budgets_idempotency_unique' }
+            )
           ),
         ])
       } catch (error) {

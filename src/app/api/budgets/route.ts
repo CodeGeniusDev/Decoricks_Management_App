@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
@@ -7,11 +7,7 @@ import { budgetSchema } from '@/lib/schemas/operations'
 import { getActor } from '@/lib/current-user'
 import { successResponse, validationError } from '@/lib/api-response'
 import { createBudget } from '@/lib/budget-create'
-import {
-  budgetPeriodRange,
-  computeBudgetActuals,
-  derivePeriodKind,
-} from '@/lib/budget-actuals'
+import { budgetPeriodRange, computeBudgetActuals, derivePeriodKind } from '@/lib/budget-actuals'
 import { fetchLedgerExpenses, loadBudgetThresholds } from '@/lib/budget-queries'
 
 /**
@@ -57,7 +53,7 @@ async function __GET(request: NextRequest) {
 
     return successResponse(withActuals)
   } catch (error) {
-    console.error('GET /api/budgets failed:', error)
+    logRouteFailure('GET /api/budgets', error)
     return handleRouteError(error)
   }
 }
@@ -85,7 +81,7 @@ async function __POST(request: NextRequest) {
 
     const db = await getDatabase()
     const meta = await getRequestMeta()
-    const actor = await getActor()
+    const actor = await getActor(auth)
 
     const { budget, created } = await createBudget(db, parsed.data, {
       id: actor.id,
@@ -97,7 +93,7 @@ async function __POST(request: NextRequest) {
 
     return successResponse(budgetToJSON(budget), created ? 201 : 200)
   } catch (error) {
-    console.error('POST /api/budgets failed:', error)
+    logRouteFailure('POST /api/budgets', error)
     return handleRouteError(error)
   }
 }

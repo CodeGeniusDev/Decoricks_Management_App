@@ -11,7 +11,6 @@ import { getAccountCollection, type Account } from '@/lib/models/Ledger'
 import { serializeAccount } from '@/lib/finance-serializers'
 import { ensureFinanceDefaults } from '@/lib/finance-defaults'
 
-
 async function __GET() {
   try {
     const auth = await authorize('finance', 'view')
@@ -21,7 +20,9 @@ async function __GET() {
     await ensureFinanceDefaults(db, auth.user._id as ObjectId)
     const { accounts, balances } = await getAccountBalances(db)
     return successResponse({
-      accounts: accounts.map((account) => serializeAccount(account, balances[account._id!.toString()] ?? 0)),
+      accounts: accounts.map((account) =>
+        serializeAccount(account, balances[account._id!.toString()] ?? 0)
+      ),
     })
   } catch (error) {
     return handleRouteError(error)

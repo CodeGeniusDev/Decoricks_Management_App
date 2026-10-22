@@ -294,6 +294,14 @@ export const transactionQuerySchema = z.object({
   category: z.string().optional(),
   partnerId: z.string().optional(),
   search: z.string().max(120).optional(),
+  /*
+   * Isolate one entry by id. Phase 3 needs it because a Chat reference must open
+   * the record it points at, not page one of a table — and matching a record by
+   * its note text would be exactly the "copied text that can become outdated"
+   * the reference feature exists to avoid. Validated as an id so a malformed
+   * value is a 400 rather than an `ObjectId()` throw inside the filter builder.
+   */
+  entry: objectIdString('Entry id').optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
 })

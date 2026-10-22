@@ -12,6 +12,7 @@ import { ObjectId, type Collection, type Db } from 'mongodb'
 import { getKarachiDate } from '@/lib/date'
 import { karachiDateInputRange } from '@/lib/finance'
 import { HttpError } from '@/lib/http'
+import { idempotencyField } from '@/lib/idempotency'
 import { recordAuditEntry } from '@/lib/audit'
 import { derivePeriodKind, validatePeriodKind } from '@/lib/budget-actuals'
 import { notifyPendingApproval } from '@/lib/notifications/events'
@@ -130,7 +131,7 @@ export const createBudget = async (
     totalBudgeted: input.categories.reduce((s, c) => s + c.budgeted, 0),
     approvedBy: input.approvedBy || undefined,
     approvedAt: input.status === 'draft' ? undefined : now,
-    idempotencyKey: input.idempotencyKey || undefined,
+    ...idempotencyField(input.idempotencyKey),
     revisions: [],
     createdAt: now,
     updatedAt: now,

@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
 import { authorizeAllViews } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { errorResponse, successResponse } from '@/lib/api-response'
@@ -25,7 +25,7 @@ async function __GET(request: NextRequest) {
     const report = await buildPeriodReport(range)
     return successResponse(report)
   } catch (error) {
-    console.error('GET /api/reports/period failed:', error)
+    logRouteFailure('GET /api/reports/period', error)
     return handleRouteError(error)
   }
 }

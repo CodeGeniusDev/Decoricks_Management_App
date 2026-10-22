@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import type { PermissionModule } from '@/lib/models/User'
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
 import { resolveViewScopes } from '@/lib/authorization'
 import { getDatabase, withMongoRetry } from '@/lib/mongodb'
 import { resolveReportRange } from '@/lib/cash-flow'
@@ -60,7 +60,7 @@ async function __GET(request: NextRequest) {
 
     return successResponse(metrics)
   } catch (error) {
-    console.error('GET /api/dashboard failed:', error)
+    logRouteFailure('GET /api/dashboard', error)
     return handleRouteError(error)
   }
 }

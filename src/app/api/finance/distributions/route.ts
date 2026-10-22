@@ -1,11 +1,20 @@
 import { NextRequest } from 'next/server'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { successResponse, validationError } from '@/lib/api-response'
+import { idempotencyField } from '@/lib/idempotency'
 import { recordAuditEntry } from '@/lib/audit'
-import { ensureDistributionIndexes, getProfitDistributionCollection } from '@/lib/models/Distribution'
-import { buildDistribution, distributionNumberFor, karachiMonthRangeForMonth, serializeDistribution } from '@/lib/distribution-service'
+import {
+  ensureDistributionIndexes,
+  getProfitDistributionCollection,
+} from '@/lib/models/Distribution'
+import {
+  buildDistribution,
+  distributionNumberFor,
+  karachiMonthRangeForMonth,
+  serializeDistribution,
+} from '@/lib/distribution-service'
 import { distributionCreateSchema } from '@/lib/schemas/distribution'
 import { notifyPendingApproval } from '@/lib/notifications/events'
 
@@ -31,7 +40,7 @@ async function __GET() {
 
     return successResponse(docs.map(serializeDistribution))
   } catch (error) {
-    console.error('GET /api/finance/distributions failed:', error)
+    logRouteFailure('GET /api/finance/distributions', error)
     return handleRouteError(error)
   }
 }
@@ -86,7 +95,7 @@ async function __POST(request: NextRequest) {
       ...snapshot,
       distributionNumber: distributionNumberFor(month),
       status: 'calculated' as const,
-      idempotencyKey: parsed.data.idempotencyKey || undefined,
+      ...idempotencyField(parsed.data.idempotencyKey),
       createdBy: auth.user._id!,
       createdAt: now,
       updatedAt: now,
@@ -137,7 +146,7 @@ async function __POST(request: NextRequest) {
       throw error
     }
   } catch (error) {
-    console.error('POST /api/finance/distributions failed:', error)
+    logRouteFailure('POST /api/finance/distributions', error)
     return handleRouteError(error)
   }
 }

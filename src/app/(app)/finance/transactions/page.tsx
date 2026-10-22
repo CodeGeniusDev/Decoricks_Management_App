@@ -1,40 +1,40 @@
-'use client';
+'use client'
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import { PageTransition } from '@/components/PageTransition';
-import { PageHeader } from '@/components/layout/Page';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Select } from '@/components/ui/Select';
-import { Table } from '@/components/ui/Table';
-import { Badge } from '@/components/ui/Badge';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { ErrorState } from '@/components/ui/ErrorState';
-import { ExportLink } from '@/components/ui/ExportLink';
-import { Toast } from '@/components/ui/Toast';
-import { apiJson } from '@/lib/api-client';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { can } from '@/lib/permissions-client';
-import { ENTRY_TYPE_LABELS } from '@/lib/finance';
-import type { LedgerEntryType } from '@/lib/finance';
-import { formatKarachiDate } from '@/lib/date';
-import { formatPaisa } from '@/lib/money';
-import { EntryFormModal } from '@/modules/finance/EntryFormModal';
-import { ReverseModal } from '@/modules/finance/ReverseModal';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { PageTransition } from '@/components/PageTransition'
+import { PageHeader } from '@/components/layout/Page'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
+import { Table } from '@/components/ui/Table'
+import { Badge } from '@/components/ui/Badge'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { ExportLink } from '@/components/ui/ExportLink'
+import { Toast } from '@/components/ui/Toast'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
+import { apiJson, apiJsonMeta } from '@/lib/api-client'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { can } from '@/lib/permissions-client'
+import { ENTRY_TYPE_LABELS } from '@/lib/finance'
+import type { LedgerEntryType } from '@/lib/finance'
+import { formatKarachiDate } from '@/lib/date'
+import { formatPaisa } from '@/lib/money'
+import { EntryFormModal } from '@/modules/finance/EntryFormModal'
+import { ReverseModal } from '@/modules/finance/ReverseModal'
 import {
   TYPE_BADGE_VARIANT,
   type AccountView,
   type CategoryView,
   type EntryView,
-  type OverviewView,
   type PartnerView,
   type TransactionsView,
-} from '@/modules/finance/finance-ui';
+} from '@/modules/finance/finance-ui'
 
-const LIMIT = 25;
+const LIMIT = 25
 
 const EMPTY_FILTERS = {
   type: 'all',
@@ -42,43 +42,47 @@ const EMPTY_FILTERS = {
   category: '',
   partnerId: '',
   search: '',
+  /** Set by an inbound Chat reference chip: isolate one entry by id. */
+  entry: '',
   startDate: '',
   endDate: '',
-};
+}
 
-type Filters = typeof EMPTY_FILTERS;
+type Filters = typeof EMPTY_FILTERS
 
 const buildQuery = (filters: Filters, page: number): string => {
-  const params = new URLSearchParams();
-  if (filters.type && filters.type !== 'all') params.set('type', filters.type);
-  if (filters.accountId) params.set('accountId', filters.accountId);
-  if (filters.category) params.set('category', filters.category);
-  if (filters.partnerId) params.set('partnerId', filters.partnerId);
-  if (filters.search.trim()) params.set('search', filters.search.trim());
-  if (filters.startDate) params.set('startDate', filters.startDate);
-  if (filters.endDate) params.set('endDate', filters.endDate);
-  params.set('page', String(page));
-  params.set('limit', String(LIMIT));
-  return params.toString();
-};
+  const params = new URLSearchParams()
+  if (filters.type && filters.type !== 'all') params.set('type', filters.type)
+  if (filters.accountId) params.set('accountId', filters.accountId)
+  if (filters.category) params.set('category', filters.category)
+  if (filters.partnerId) params.set('partnerId', filters.partnerId)
+  if (filters.search.trim()) params.set('search', filters.search.trim())
+  if (filters.entry) params.set('entry', filters.entry)
+  if (filters.startDate) params.set('startDate', filters.startDate)
+  if (filters.endDate) params.set('endDate', filters.endDate)
+  params.set('page', String(page))
+  params.set('limit', String(LIMIT))
+  return params.toString()
+}
 
 /** Filters minus pagination — used verbatim for the CSV export link. */
 const buildFilterQuery = (filters: Filters): string => {
-  const params = new URLSearchParams();
-  if (filters.type && filters.type !== 'all') params.set('type', filters.type);
-  if (filters.accountId) params.set('accountId', filters.accountId);
-  if (filters.category) params.set('category', filters.category);
-  if (filters.partnerId) params.set('partnerId', filters.partnerId);
-  if (filters.search.trim()) params.set('search', filters.search.trim());
-  if (filters.startDate) params.set('startDate', filters.startDate);
-  if (filters.endDate) params.set('endDate', filters.endDate);
-  return params.toString();
-};
+  const params = new URLSearchParams()
+  if (filters.type && filters.type !== 'all') params.set('type', filters.type)
+  if (filters.accountId) params.set('accountId', filters.accountId)
+  if (filters.category) params.set('category', filters.category)
+  if (filters.partnerId) params.set('partnerId', filters.partnerId)
+  if (filters.search.trim()) params.set('search', filters.search.trim())
+  if (filters.entry) params.set('entry', filters.entry)
+  if (filters.startDate) params.set('startDate', filters.startDate)
+  if (filters.endDate) params.set('endDate', filters.endDate)
+  return params.toString()
+}
 
 const entryAccountLabel = (entry: EntryView): string =>
   entry.type === 'transfer'
     ? `${entry.fromAccountName ?? '?'} → ${entry.toAccountName ?? '?'}`
-    : (entry.accountName ?? '—');
+    : (entry.accountName ?? '—')
 
 /**
  * Colour by economic direction, not the raw string. `amountDisplay` already
@@ -86,12 +90,12 @@ const entryAccountLabel = (entry: EntryView): string =>
  * reversed income renders as a negative, muted figure rather than "green".
  */
 const amountTone = (entry: EntryView): string => {
-  if (entry.isReversal) return 'font-medium text-ink-muted';
+  if (entry.isReversal) return 'font-medium text-ink-muted'
   if (entry.type === 'expense' || entry.type === 'partner_withdrawal') {
-    return 'font-medium text-status-danger';
+    return 'font-medium text-status-danger'
   }
-  return 'font-medium text-decoricks-dark';
-};
+  return 'font-medium text-decoricks-dark'
+}
 
 const statusBadge = (entry: EntryView) =>
   entry.isReversal ? (
@@ -106,122 +110,198 @@ const statusBadge = (entry: EntryView) =>
     <Badge variant="success" size="sm">
       Posted
     </Badge>
-  );
+  )
 
 export default function FinanceTransactionsPage() {
-  const { user } = useAuth();
-  const canCreate = user ? can({ role: user.role }, 'finance', 'create') : false;
-  const canApprove = user ? can({ role: user.role }, 'finance', 'approve') : false;
+  const { user } = useAuth()
+  const canCreate = user ? can({ role: user.role }, 'finance', 'create') : false
+  const canApprove = user ? can({ role: user.role }, 'finance', 'approve') : false
 
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
+  const [page, setPage] = useState(1)
 
-  const [data, setData] = useState<TransactionsView | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<TransactionsView | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const [accounts, setAccounts] = useState<AccountView[]>([]);
-  const [categories, setCategories] = useState<CategoryView[]>([]);
-  const [partners, setPartners] = useState<PartnerView[]>([]);
-  const [withdrawalsLocked, setWithdrawalsLocked] = useState(false);
-  const [lockedUntilDisplay, setLockedUntilDisplay] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<AccountView[]>([])
+  const [categories, setCategories] = useState<CategoryView[]>([])
+  const [partners, setPartners] = useState<PartnerView[]>([])
+  const [withdrawalsLocked, setWithdrawalsLocked] = useState(false)
+  const [lockedUntilDisplay, setLockedUntilDisplay] = useState<string | null>(null)
 
-  const [formOpen, setFormOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false)
   // "Edit & resubmit" handoff from the Sync screen (§7): payload staged in
   // sessionStorage by the queue, consumed exactly once on mount.
-  const [resubmitDraft, setResubmitDraft] = useState<Record<string, unknown> | null>(null);
+  const [resubmitDraft, setResubmitDraft] = useState<Record<string, unknown> | null>(null)
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem('decoricks:offline:resubmit');
-      if (!raw) return;
-      sessionStorage.removeItem('decoricks:offline:resubmit');
-      const staged = JSON.parse(raw) as { operation?: string; payload?: Record<string, unknown> };
+      const raw = sessionStorage.getItem('decoricks:offline:resubmit')
+      if (!raw) return
+      sessionStorage.removeItem('decoricks:offline:resubmit')
+      const staged = JSON.parse(raw) as { operation?: string; payload?: Record<string, unknown> }
       if (staged.operation === 'create_finance' && staged.payload) {
-        setResubmitDraft(staged.payload);
-        setFormOpen(true);
+        setResubmitDraft(staged.payload)
+        setFormOpen(true)
       }
     } catch {
       // A corrupt handoff is simply no handoff.
     }
-  }, []);
-  const [reverseTarget, setReverseTarget] = useState<EntryView | null>(null);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  }, [])
+  const [reverseTarget, setReverseTarget] = useState<EntryView | null>(null)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
+  /*
+   * `reloadTick` re-reads the ledger after a write lands without touching the
+   * filter state. `financeSync` is this subscription's read tracker: telling the
+   * sync layer when a read goes out and what its response proved is how a remote
+   * change that a request already in flight is about to bring back stops being
+   * fetched a second time.
+   */
+  const [reloadTick, setReloadTick] = useState(0)
+  const financeSync = useRealtimeSync('finance', () => {
+    setReloadTick((t) => t + 1)
+  })
+
+  const requestSeq = useRef(0)
   // Guards against out-of-order responses: every fetch takes a sequence number
   // and only the newest one may write state. This is what stops stale data from
   // flashing back in when two filters land close together.
-  const requestSeq = useRef(0);
-  const abortRef = useRef<AbortController | null>(null);
+  /*
+   * Two cancellation slots, one per kind of request, because the two now overlap
+   * deliberately. A single shared `AbortController` meant a realtime tick aborted
+   * the very mount request that was carrying the rows the tick wanted to see: the
+   * ledger was read twice, the skeleton restarted under it, and the network panel
+   * kept a request that never received an answer. Cancelling a superseded *filter*
+   * change is still correct and still happens.
+   */
+  const abortRef = useRef<AbortController | null>(null)
+  const bgAbortRef = useRef<AbortController | null>(null)
 
   const setFilter = (patch: Partial<Filters>) => {
-    setFilters((current) => ({ ...current, ...patch }));
-    setPage(1);
-  };
+    setFilters((current) => ({ ...current, ...patch }))
+    setPage(1)
+  }
 
-  const fetchTransactions = useCallback(async (currentFilters: Filters, currentPage: number) => {
-    const seq = ++requestSeq.current;
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+  const fetchTransactions = useCallback(
+    async (
+      currentFilters: Filters,
+      currentPage: number,
+      options: { background?: boolean } = {}
+    ) => {
+      // Background = "re-read what is already on screen" (a remote change, or our
+      // own write landing). It must not blank the table, so it does not touch
+      // `loading` on the way in — see the `firstPaint`/`refreshing` split below.
+      const background = options.background === true
+      const seq = ++requestSeq.current
+      const slot = background ? bgAbortRef : abortRef
+      slot.current?.abort()
+      const controller = new AbortController()
+      slot.current = controller
+      if (!background) setLoading(true)
+      // Announce the read before it goes out, so a realtime signal that lands
+      // during the round trip is held for this request to answer instead of
+      // starting a second identical one beside it.
+      financeSync.begin()
+      let settled = false
 
-    try {
-      const result = await apiJson<TransactionsView>(
-        `/api/finance/transactions?${buildQuery(currentFilters, currentPage)}`,
-        { signal: controller.signal }
-      );
-      if (seq === requestSeq.current) {
-        setData(result);
-        setError(null);
+      try {
+        const {
+          data: result,
+          serverTime,
+          durationMs,
+        } = await apiJsonMeta<TransactionsView>(
+          `/api/finance/transactions?${buildQuery(currentFilters, currentPage)}`,
+          { signal: controller.signal }
+        )
+        // Evidence for the sync layer: this screen will hold the ledger from a
+        // read that began no later than `serverTime - durationMs`, in server time,
+        // so a baseline cursor no newer than that is a duplicate of what these
+        // rows already contain, not a change to act on.
+        settled = true
+        financeSync.settle(serverTime, durationMs)
+        if (seq === requestSeq.current) {
+          setData(result)
+          setError(null)
+        }
+      } catch (err) {
+        if (!settled) financeSync.abandon()
+        if ((err as Error)?.name === 'AbortError') return
+        if (seq === requestSeq.current) {
+          setError(err instanceof Error ? err.message : 'Failed to load transactions')
+        }
+      } finally {
+        // Only the newest request may clear it: if a background read superseded a
+        // blocking one, the blocking response is already meaningless and must not
+        // end the spinner while its successor is still in flight.
+        if (seq === requestSeq.current) setLoading(false)
       }
-    } catch (err) {
-      if ((err as Error)?.name === 'AbortError') return;
-      if (seq === requestSeq.current) {
-        setError(err instanceof Error ? err.message : 'Failed to load transactions');
-      }
-    } finally {
-      if (seq === requestSeq.current) setLoading(false);
-    }
-  }, []);
+    },
+    // `financeSync` is a stable tracker from `useRealtimeSync`.
+    [financeSync]
+  )
 
-  // Debounced search, immediate for the other controls. `reloadTick` re-fires
-  // this effect after a write without touching the filter state.
-  const [reloadTick, setReloadTick] = useState(0);
+  // Debounced search, immediate for the other controls.
+  const requestRef = useRef<{ filters: Filters; page: number }>({ filters, page })
   useEffect(() => {
-    setLoading(true);
-    const timer = setTimeout(() => fetchTransactions(filters, page), filters.search ? 350 : 0);
-    return () => clearTimeout(timer);
-  }, [filters, page, reloadTick, fetchTransactions]);
+    requestRef.current = { filters, page }
+    setLoading(true)
+    const timer = setTimeout(() => fetchTransactions(filters, page), filters.search ? 350 : 0)
+    return () => clearTimeout(timer)
+  }, [filters, page, fetchTransactions])
+
+  /*
+   * Realtime changes and post-write refreshes re-read the ledger *in place*, kept
+   * out of the effect above on purpose: a colleague posting an entry is not a
+   * reason to grey out the 25 rows someone is reading, nor to cancel the request
+   * already bringing them (Phase 6 §3.1, §5.2).
+   */
+  useEffect(() => {
+    if (reloadTick === 0) return
+    const { filters: f, page: p } = requestRef.current
+    fetchTransactions(f, p, { background: true })
+  }, [reloadTick, fetchTransactions])
 
   // Reference data for the selectors and lock state; loaded once per mount.
   useEffect(() => {
-    let cancelled = false;
+    let cancelled = false
     const load = async () => {
       try {
-        const [accountData, categoryData, partnerData, overviewData] = await Promise.all([
+        const [accountData, categoryData, partnerData, lockData] = await Promise.all([
           apiJson<{ accounts: AccountView[] }>('/api/finance/accounts'),
           apiJson<CategoryView[]>('/api/finance/categories'),
           apiJson<PartnerView[]>('/api/finance/partners'),
-          apiJson<OverviewView>('/api/finance/overview'),
-        ]);
-        if (cancelled) return;
-        setAccounts(accountData.accounts);
-        setCategories(categoryData);
-        setPartners(partnerData);
-        setWithdrawalsLocked(overviewData.withdrawalsLocked);
+          /*
+           * The withdrawal lock, read from the settings document it lives in. This
+           * used to come from `/api/finance/overview`, which scans the whole ledger,
+           * recomputes every account balance and serialises the eight newest entries
+           * — 647ms of server time and tens of kilobytes on the Phase 6 baseline, in
+           * exchange for the two fields this screen actually uses. Same permission
+           * (`finance.view`), one indexed document read.
+           */
+          apiJson<{ withdrawalsLocked: boolean; withdrawalLockedUntil: string | null }>(
+            '/api/finance/settings'
+          ),
+        ])
+        if (cancelled) return
+        setAccounts(accountData.accounts)
+        setCategories(categoryData)
+        setPartners(partnerData)
+        setWithdrawalsLocked(lockData.withdrawalsLocked)
         setLockedUntilDisplay(
-          overviewData.withdrawalLockedUntil
-            ? formatKarachiDate(new Date(overviewData.withdrawalLockedUntil), 'date')
+          lockData.withdrawalLockedUntil
+            ? formatKarachiDate(new Date(lockData.withdrawalLockedUntil), 'date')
             : null
-        );
+        )
       } catch {
         // Reference data is not fatal; the entry form will surface server errors.
       }
-    };
-    load();
+    }
+    load()
     return () => {
-      cancelled = true;
-    };
-  }, []);
+      cancelled = true
+    }
+  }, [])
 
   // Deep links: ?new=1 opens the entry form (from the overview), and the
   // Phase 4 calculation panels pre-fill the filters (?type=&category=&
@@ -230,21 +310,30 @@ export default function FinanceTransactionsPage() {
   // useSearchParams) so the page needs no Suspense boundary; the URL is then
   // cleaned so a reload doesn't re-apply a stale ?new=1.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const openForm = params.get('new') === '1' && canCreate;
-    const patch: Partial<Filters> = {};
-    for (const key of ['type', 'accountId', 'category', 'partnerId', 'search', 'startDate', 'endDate'] as const) {
-      const value = params.get(key);
-      if (value) patch[key] = value;
+    const params = new URLSearchParams(window.location.search)
+    const openForm = params.get('new') === '1' && canCreate
+    const patch: Partial<Filters> = {}
+    for (const key of [
+      'type',
+      'accountId',
+      'category',
+      'partnerId',
+      'search',
+      'entry',
+      'startDate',
+      'endDate',
+    ] as const) {
+      const value = params.get(key)
+      if (value) patch[key] = value
     }
-    if (!openForm && Object.keys(patch).length === 0) return;
-    if (openForm) setFormOpen(true);
+    if (!openForm && Object.keys(patch).length === 0) return
+    if (openForm) setFormOpen(true)
     if (Object.keys(patch).length > 0) {
-      setFilters((current) => ({ ...current, ...patch }));
-      setPage(1);
+      setFilters((current) => ({ ...current, ...patch }))
+      setPage(1)
     }
-    window.history.replaceState(null, '', '/finance/transactions');
-  }, [canCreate]);
+    window.history.replaceState(null, '', '/finance/transactions')
+  }, [canCreate])
 
   const typeOptions = useMemo(
     () => [
@@ -255,26 +344,32 @@ export default function FinanceTransactionsPage() {
       })),
     ],
     []
-  );
+  )
 
   const handleCreated = (entry: EntryView) => {
     setToast({
       type: 'success',
       message: `${ENTRY_TYPE_LABELS[entry.type]} of ${entry.amountDisplay} recorded`,
-    });
-    setPage(1);
-    setReloadTick((t) => t + 1);
-  };
+    })
+    /*
+     * One refresh, whichever way it comes from. Jumping back to page 1 already
+     * re-fires the fetch effect, so bumping the tick as well would read the same
+     * ledger twice — and a new entry is always on page 1, so asking for page 1
+     * when we are already there buys nothing.
+     */
+    if (page === 1) setReloadTick((t: number) => t + 1)
+    else setPage(1)
+  }
 
   const handleReversed = () => {
     setToast({
       type: 'success',
       message: 'Reversal posted. The original stays visible, marked Reversed.',
-    });
-    setReloadTick((t) => t + 1);
-  };
+    })
+    setReloadTick((t: number) => t + 1)
+  }
 
-  const exportHref = `/api/finance/export?${buildFilterQuery(filters)}`;
+  const exportHref = `/api/finance/export?${buildFilterQuery(filters)}`
 
   const columns = [
     { key: 'date', label: 'Date' },
@@ -286,7 +381,7 @@ export default function FinanceTransactionsPage() {
     { key: 'note', label: 'Note' },
     { key: 'status', label: 'Status' },
     ...(canApprove ? [{ key: 'actions', label: 'Actions' }] : []),
-  ];
+  ]
 
   const rows = (data?.items ?? []).map((entry) => ({
     _id: entry._id,
@@ -308,7 +403,16 @@ export default function FinanceTransactionsPage() {
           Reverse
         </Button>
       ) : null,
-  }));
+  }))
+
+  /*
+   * Loading phases (Phase 4 §3). `loading` flips on for every fetch, including the
+   * 350ms debounced search, so using it as the skeleton condition greyed out a
+   * ledger the user was already reading. Skeleton now means "nothing on screen
+   * yet"; a refresh keeps the rows and marks the card busy.
+   */
+  const firstPaint = loading && !data
+  const refreshing = loading && !firstPaint
 
   return (
     <PageTransition>
@@ -326,6 +430,26 @@ export default function FinanceTransactionsPage() {
       {toast && (
         <div className="fixed top-20 right-4 z-50 max-w-[90vw]">
           <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />
+        </div>
+      )}
+
+      {/* A Chat reference chip links here by entry id. Saying so keeps the view
+          honest: one row is not an empty month, it is the record you asked for. */}
+      {filters.entry && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-status-info/30 bg-status-info-bg px-4 py-2.5">
+          <p className="text-sm text-status-info">
+            Showing the single transaction linked from Chat.
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setFilters({ ...EMPTY_FILTERS })
+              setPage(1)
+            }}
+          >
+            Show all transactions
+          </Button>
         </div>
       )}
 
@@ -387,8 +511,8 @@ export default function FinanceTransactionsPage() {
             <Button
               variant="outline"
               onClick={() => {
-                setFilters(EMPTY_FILTERS);
-                setPage(1);
+                setFilters(EMPTY_FILTERS)
+                setPage(1)
               }}
             >
               Clear filters
@@ -428,22 +552,37 @@ export default function FinanceTransactionsPage() {
       )}
 
       {/* List */}
-      <Card>
-        {loading ? (
+      <Card
+        aria-busy={refreshing || undefined}
+        className={refreshing ? 'opacity-60 transition-opacity' : undefined}
+      >
+        {error && data && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line-subtle bg-status-warning/10 px-4 py-2 text-xs text-ink-secondary">
+            Couldn’t refresh — showing the entries from before.
+            <button
+              type="button"
+              onClick={() => void fetchTransactions({ ...filters }, page)}
+              className="font-medium text-decoricks-brown hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {firstPaint ? (
           <div className="p-4">
             {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} variant="rect" className="mb-2 h-12" />
             ))}
           </div>
-        ) : error ? (
+        ) : error && !data ? (
           <ErrorState
             title="Could not load transactions"
             description={error}
             action={{
               label: 'Retry',
               onClick: () => {
-                setLoading(true);
-                void fetchTransactions({ ...filters }, page);
+                setLoading(true)
+                void fetchTransactions({ ...filters }, page)
               },
             }}
           />
@@ -572,8 +711,8 @@ export default function FinanceTransactionsPage() {
       <EntryFormModal
         isOpen={formOpen}
         onClose={() => {
-          setFormOpen(false);
-          setResubmitDraft(null);
+          setFormOpen(false)
+          setResubmitDraft(null)
         }}
         initialDraft={resubmitDraft}
         accounts={accounts}
@@ -597,5 +736,5 @@ export default function FinanceTransactionsPage() {
         onReversed={handleReversed}
       />
     </PageTransition>
-  );
+  )
 }

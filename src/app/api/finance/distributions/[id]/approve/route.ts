@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { errorResponse, notFoundError, successResponse, validationError } from '@/lib/api-response'
@@ -82,7 +82,7 @@ async function __POST(_request: NextRequest, context: RouteContext) {
 
     return successResponse(serializeDistribution(updated!))
   } catch (error) {
-    console.error('POST /api/finance/distributions/[id]/approve failed:', error)
+    logRouteFailure('POST /api/finance/distributions/[id]/approve', error)
     return handleRouteError(error)
   }
 }

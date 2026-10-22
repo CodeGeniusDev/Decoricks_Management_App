@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
 import { authorizeAllViews } from '@/lib/authorization'
 import { getDatabase, withMongoRetry } from '@/lib/mongodb'
 import { formatPaisa } from '@/lib/money'
@@ -195,7 +195,7 @@ async function __GET() {
       lifetimeOrderRevenueDisplay: formatPaisa((ordersAgg[0]?.revenue as number) ?? 0),
     })
   } catch (error) {
-    console.error('GET /api/dashboard/summary failed:', error)
+    logRouteFailure('GET /api/dashboard/summary', error)
     return handleRouteError(error)
   }
 }

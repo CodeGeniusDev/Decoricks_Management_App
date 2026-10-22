@@ -1,5 +1,6 @@
 import { Db, ObjectId } from 'mongodb'
 import { getBusinessSettingsCollection, getLedgerCollection } from '@/lib/models/Ledger'
+import { FIRST_BATCH_SIZE } from '@/lib/mongo-read'
 import {
   DistributionPartnerShare,
   ProfitDistribution,
@@ -42,6 +43,7 @@ export function karachiMonthKey(date: Date): string {
 export async function fetchLedgerRange(db: Db, range: DateRange): Promise<LedgerEntryLike[]> {
   const docs = await getLedgerCollection(db)
     .find({ date: { $gte: range.start, $lte: range.end } })
+    .batchSize(FIRST_BATCH_SIZE)
     .toArray()
   return docs.map(normalizeEntry)
 }
@@ -62,7 +64,10 @@ export interface FreshDistribution {
   charityShare: { percentage: number; amount: number }
   reinvestmentAmount: number
   retainedEarnings: number
-  policySnapshot: { partners: ProfitDistribution['policySnapshot']['partners']; charityPercentage: number }
+  policySnapshot: {
+    partners: ProfitDistribution['policySnapshot']['partners']
+    charityPercentage: number
+  }
   entryCount: number
 }
 

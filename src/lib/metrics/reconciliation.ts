@@ -68,12 +68,35 @@ export async function reconcile(
   now: Date
 ): Promise<ReconciliationReport> {
   const historyEnd = new Date(Math.max(now.getTime(), range.end.getTime()))
-  const ledger = await fetchLedgerRange(db, { start: new Date(0), end: historyEnd })
+
+  /*
+   * Phase 4 §2 — five independent reads issued together instead of in a line.
+   * They were previously awaited one after another across the function, and each
+   * one costs ~65ms of network against this cluster while the queries themselves
+   * stay under ~140ms even at 10,000 ledger rows (`scripts/db-probe.ts`). Only
+   * the scheduling changes: every check below consumes the same inputs, in the
+   * same order, produced by the same engines.
+   */
+  const [ledger, cogs, accounts, stock, budgets] = await Promise.all([
+    fetchLedgerRange(db, { start: new Date(0), end: historyEnd }),
+    // Primary path: exactly what the dashboard / reports render.
+    periodCogsInput(db, range),
+    loadAccounts(db),
+    buildStockSummary(db),
+    getBudgetCollection(db)
+      .find({
+        status: 'active',
+        periodStart: { $lte: range.end },
+        periodEnd: { $gte: range.start },
+      } as never)
+      .sort({ periodStart: -1 })
+      .limit(1)
+      .toArray(),
+  ])
+
   const inRange = ledger.filter((e) => isWithin(new Date(e.date), range))
   const before = ledger.filter((e) => new Date(e.date).getTime() < range.start.getTime())
 
-  // Primary path: exactly what the dashboard / reports render.
-  const cogs = await periodCogsInput(db, range)
   const pl = computeProfitLoss(inRange, { cogs })
 
   // Independent reduces over the same signed effects — no engine reused.
@@ -124,7 +147,6 @@ export async function reconcile(
   ]
 
   // ---- Cash: per-account balances vs the ledger deltas, and the flow identity ----
-  const accounts = await loadAccounts(db)
   const accountHistory = accounts.map((a) => ({
     _id: a._id!.toString(),
     name: a.name,
@@ -166,7 +188,6 @@ export async function reconcile(
   )
 
   // ---- Inventory: reported total vs the sum of its own item rows ----
-  const stock = await buildStockSummary(db)
   const itemsTotal = stock.items.reduce((sum, item) => sum + item.valuation, 0)
   const locationsTotal = stock.totals.byLocation.reduce((sum, loc) => sum + loc.valuation, 0)
   checks.push(
@@ -185,15 +206,6 @@ export async function reconcile(
   )
 
   // ---- Budget actual vs the ledger expense slice for the same category ----
-  const budgets = await getBudgetCollection(db)
-    .find({
-      status: 'active',
-      periodStart: { $lte: range.end },
-      periodEnd: { $gte: range.start },
-    } as never)
-    .sort({ periodStart: -1 })
-    .limit(1)
-    .toArray()
   if (budgets.length > 0) {
     const thresholds = await loadBudgetThresholds(db)
     const budget = budgets[0]

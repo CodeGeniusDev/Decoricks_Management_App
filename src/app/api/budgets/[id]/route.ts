@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
@@ -59,7 +59,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
 
     return successResponse(await detailPayload(db, doc))
   } catch (error) {
-    console.error('GET /api/budgets/[id] failed:', error)
+    logRouteFailure('GET /api/budgets/[id]', error)
     return handleRouteError(error)
   }
 }
@@ -235,7 +235,7 @@ async function __PUT(request: NextRequest, context: RouteContext) {
 
     return successResponse(await detailPayload(db, updated!))
   } catch (error) {
-    console.error('PUT /api/budgets/[id] failed:', error)
+    logRouteFailure('PUT /api/budgets/[id]', error)
     return handleRouteError(error)
   }
 }

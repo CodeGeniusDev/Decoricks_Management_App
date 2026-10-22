@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { notFoundError, successResponse, validationError } from '@/lib/api-response'
@@ -25,7 +25,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
 
     return successResponse(serializeDistribution(doc))
   } catch (error) {
-    console.error('GET /api/finance/distributions/[id] failed:', error)
+    logRouteFailure('GET /api/finance/distributions/[id]', error)
     return handleRouteError(error)
   }
 }

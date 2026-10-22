@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { successResponse, validationError } from '@/lib/api-response'
@@ -69,7 +69,7 @@ async function __GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('GET /api/finance/cash-flow failed:', error)
+    logRouteFailure('GET /api/finance/cash-flow', error)
     return handleRouteError(error)
   }
 }

@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
@@ -94,7 +94,7 @@ async function __POST(request: NextRequest, context: RouteContext) {
 
     return successResponse(budgetToJSON(updated!))
   } catch (error) {
-    console.error('POST /api/budgets/[id]/action failed:', error)
+    logRouteFailure('POST /api/budgets/[id]/action', error)
     return handleRouteError(error)
   }
 }

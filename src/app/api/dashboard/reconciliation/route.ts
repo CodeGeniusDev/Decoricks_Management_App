@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
 import { requireFounder } from '@/lib/authorization'
 import { getDatabase, withMongoRetry } from '@/lib/mongodb'
 import { resolveReportRange } from '@/lib/cash-flow'
@@ -45,7 +45,7 @@ async function __GET(request: NextRequest) {
 
     return successResponse(report)
   } catch (error) {
-    console.error('GET /api/dashboard/reconciliation failed:', error)
+    logRouteFailure('GET /api/dashboard/reconciliation', error)
     return handleRouteError(error)
   }
 }

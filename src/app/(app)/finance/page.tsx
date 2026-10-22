@@ -13,8 +13,10 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Input } from '@/components/ui/Input'
+
+import { Tooltip } from '@/components/ui/Tooltip'
 import { Toast } from '@/components/ui/Toast'
-import { apiJson, ApiError } from '@/lib/api-client'
+import { apiJson, apiJsonMeta, ApiError } from '@/lib/api-client'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { can } from '@/lib/permissions-client'
 import { ENTRY_TYPE_LABELS } from '@/lib/finance'
@@ -31,6 +33,22 @@ const entryAccountLabel = (entry: OverviewView['recentTransactions'][number]): s
   entry.type === 'transfer'
     ? `${entry.fromAccountName ?? '?'} → ${entry.toAccountName ?? '?'}`
     : (entry.accountName ?? '—')
+
+/**
+ * Term — a figure label with a one-line plain-language meaning behind a
+ * tooltip. Focusable, so keyboard readers get the same explanation as pointer
+ * readers; the tooltip renders on focus as well as hover.
+ */
+const Term = ({ label, meaning }: { label: string; meaning: string }) => (
+  <Tooltip content={meaning} position="top">
+    <span
+      tabIndex={0}
+      className="underline decoration-line-subtle decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-decoricks-brown"
+    >
+      {label}
+    </span>
+  </Tooltip>
+)
 
 /**
  * Finance overview — the front door of the Phase 3 ledger.
@@ -66,40 +84,19 @@ export default function FinanceOverviewPage() {
     setLockDraft(data?.withdrawalLockedUntil ? toKarachiInputDate(data.withdrawalLockedUntil) : '')
   }, [data?.withdrawalLockedUntil])
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      setData(await apiJson<OverviewView>('/api/finance/overview'))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load finance overview')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  // Background refresh for the live signal: swaps `data` in place without the
-  // `loading` toggle, so an incoming change never blanks the screen. On failure
-  // it keeps the current view (a blip is not a reason to show an error).
-  const silentRefresh = useCallback(async () => {
-    try {
-      setData(await apiJson<OverviewView>('/api/finance/overview'))
-      setError(null)
-    } catch {
-      /* keep the current view */
-    }
-  }, [])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  // Live cross-device refresh of the ledger. Paused while the reverse-entry
-  // modal is open or the withdrawal lock is saving, so a remote change can never
-  // clobber an in-flight entry; applied once the editor closes.
+  /*
+   * Live cross-device refresh of the ledger. Paused while the reverse-entry
+   * modal is open or the withdrawal lock is saving, so a remote change can never
+   * clobber an in-flight entry; applied once the editor closes.
+   *
+   * Declared above the reads it governs because both of them announce themselves
+   * to it: a signal that lands while `/api/finance/overview` is already on the
+   * wire is held and answered by that request, instead of putting a second
+   * identical overview call beside it (the `×2` the perf probe counted here).
+   */
   const financeModalOpen = reverseTarget !== null || lockSaving
   const remoteDirtyRef = React.useRef(false)
-  useRealtimeSync(
+  const financeSync = useRealtimeSync(
     'finance',
     () => {
       if (financeModalOpen) {
@@ -110,6 +107,45 @@ export default function FinanceOverviewPage() {
     },
     user != null
   )
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    financeSync.begin()
+    try {
+      const { data, serverTime, durationMs } =
+        await apiJsonMeta<OverviewView>('/api/finance/overview')
+      financeSync.settle(serverTime, durationMs)
+      setData(data)
+    } catch (err) {
+      financeSync.abandon()
+      setError(err instanceof Error ? err.message : 'Failed to load finance overview')
+    } finally {
+      setLoading(false)
+    }
+  }, [financeSync])
+
+  // Background refresh for the live signal: swaps `data` in place without the
+  // `loading` toggle, so an incoming change never blanks the screen. On failure
+  // it keeps the current view (a blip is not a reason to show an error).
+  const silentRefresh = useCallback(async () => {
+    financeSync.begin()
+    try {
+      const { data, serverTime, durationMs } =
+        await apiJsonMeta<OverviewView>('/api/finance/overview')
+      financeSync.settle(serverTime, durationMs)
+      setData(data)
+      setError(null)
+    } catch {
+      financeSync.abandon()
+      /* keep the current view */
+    }
+  }, [financeSync])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
   useEffect(() => {
     if (!financeModalOpen && remoteDirtyRef.current) {
       remoteDirtyRef.current = false
@@ -203,7 +239,7 @@ export default function FinanceOverviewPage() {
 
       <PageHeader
         title="Finance"
-        description="Cash position, balances and the append-only ledger. Posted entries are corrected only by linked reversals."
+        description="Your money in one place: what you hold in cash, what came in, what went out and what the business earned."
         actions={
           <>
             <Button variant="outline" onClick={() => router.push('/finance/accounts')}>
@@ -226,7 +262,7 @@ export default function FinanceOverviewPage() {
         <Metric
           label="Total cash"
           value={data.totalCashDisplay}
-          hint="Across all active accounts"
+          hint="Every account, including inactive ones"
         />
         <Metric
           label="Today (Karachi)"
@@ -252,11 +288,16 @@ export default function FinanceOverviewPage() {
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card className="p-4">
           <h2 className="mb-3 text-sm font-semibold text-decoricks-dark">
-            Lifetime operating results
+            Trading results (all time)
           </h2>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
             <div>
-              <dt className="text-xs text-ink-muted">Revenue</dt>
+              <dt className="text-xs text-ink-muted">
+                <Term
+                  label="Revenue"
+                  meaning="Income posted to the ledger — the money the business earned"
+                />
+              </dt>
               <dd className="font-semibold tabular-nums text-status-success">
                 {overall.revenueDisplay}
               </dd>
@@ -268,13 +309,23 @@ export default function FinanceOverviewPage() {
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-ink-muted">Operating profit</dt>
+              <dt className="text-xs text-ink-muted">
+                <Term
+                  label="Operating profit"
+                  meaning="Revenue minus expenses. Capital in, withdrawals and transfers are deliberately not part of it"
+                />
+              </dt>
               <dd className="font-semibold tabular-nums text-decoricks-dark">
                 {overall.netProfitDisplay}
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-ink-muted">Net cash flow</dt>
+              <dt className="text-xs text-ink-muted">
+                <Term
+                  label="Net cash flow"
+                  meaning="Cash in minus cash out — including capital and withdrawals, which are not profit"
+                />
+              </dt>
               <dd className="font-semibold tabular-nums text-decoricks-dark">
                 {overall.netCashFlowDisplay}
               </dd>
@@ -287,28 +338,46 @@ export default function FinanceOverviewPage() {
         </Card>
 
         <Card className="p-4">
-          <h2 className="mb-3 text-sm font-semibold text-decoricks-dark">Partners & equity</h2>
+          <h2 className="mb-3 text-sm font-semibold text-decoricks-dark">Partners &amp; equity</h2>
+          <p className="mb-3 text-xs text-ink-muted">
+            Money that belongs to the partners rather than to trading. None of it is income or an
+            expense.
+          </p>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
             <div>
-              <dt className="text-xs text-ink-muted">Capital contributed</dt>
+              <dt className="text-xs text-ink-muted">
+                <Term label="Capital contributed" meaning="Cash partners put into the business" />
+              </dt>
               <dd className="font-semibold tabular-nums text-decoricks-dark">
                 {overall.capitalDisplay}
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-ink-muted">Withdrawals</dt>
+              <dt className="text-xs text-ink-muted">
+                <Term label="Withdrawals" meaning="Cash partners took out of the business" />
+              </dt>
               <dd className="font-semibold tabular-nums text-decoricks-dark">
                 {overall.withdrawalsDisplay}
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-ink-muted">Reinvested profit</dt>
+              <dt className="text-xs text-ink-muted">
+                <Term
+                  label="Reinvested profit"
+                  meaning="Profit left in the business instead of paid out — a record, not a cash movement"
+                />
+              </dt>
               <dd className="font-semibold tabular-nums text-decoricks-dark">
                 {overall.reinvestmentDisplay}
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-ink-muted">Net equity</dt>
+              <dt className="text-xs text-ink-muted">
+                <Term
+                  label="Net equity"
+                  meaning="Capital in, minus withdrawals, plus reinvested profit"
+                />
+              </dt>
               <dd className="font-semibold tabular-nums text-decoricks-dark">
                 {formatPaisa(overall.equity)}
               </dd>
@@ -331,7 +400,13 @@ export default function FinanceOverviewPage() {
       {/* Account balances */}
       <Card className="mt-4 p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-decoricks-dark">Account balances</h2>
+          <div>
+            <h2 className="text-sm font-semibold text-decoricks-dark">Account balances</h2>
+            <p className="mt-1 text-xs text-ink-muted">
+              Opening balance plus every posted entry. An account marked inactive is still counted
+              in Total cash — it simply cannot receive new transactions.
+            </p>
+          </div>
           <Link
             href="/finance/accounts"
             className="text-xs font-medium text-decoricks-brown hover:underline"
@@ -375,14 +450,15 @@ export default function FinanceOverviewPage() {
         <Card className="mt-4 p-4">
           <h2 className="text-sm font-semibold text-decoricks-dark">Withdrawal lock</h2>
           <p className="mt-1 text-xs text-ink-muted">
-            Partner withdrawals are rejected before this Karachi date. SPEC Appendix A starts the
-            business locked until 2027-02-04.
+            Until the date you set, the server rejects every partner withdrawal — you get back an
+            error if you try to record one. Leave it blank to allow withdrawals again.
           </p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
             <div className="sm:w-48">
               <Input
                 label="Locked until (blank = open)"
                 type="date"
+                hint="A Karachi date. Blank means withdrawals are open."
                 value={lockDraft}
                 onChange={(e) => setLockDraft(e.target.value)}
                 disabled={lockSaving}
@@ -427,45 +503,51 @@ export default function FinanceOverviewPage() {
             }
           />
         ) : (
-          <ul className="divide-y divide-line-subtle">
-            {data.recentTransactions.map((entry) => (
-              <li key={entry._id} className="flex items-center justify-between gap-3 py-2.5">
-                <div className="flex min-w-0 items-center gap-2">
-                  <Badge variant={TYPE_BADGE_VARIANT[entry.type]} size="sm">
-                    {ENTRY_TYPE_LABELS[entry.type]}
-                  </Badge>
-                  <span className="hidden truncate text-sm text-ink-secondary sm:block">
-                    {entryAccountLabel(entry)}
-                    {entry.categoryLabel ? ` · ${entry.categoryLabel}` : ''}
-                    {entry.partnerName ? ` · ${entry.partnerName}` : ''}
-                  </span>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <div className="text-right">
-                    <p
-                      className={`text-sm font-semibold tabular-nums ${
-                        entry.isReversal
-                          ? 'text-ink-muted'
-                          : entry.type === 'expense' || entry.type === 'partner_withdrawal'
-                            ? 'text-status-danger'
-                            : 'text-decoricks-dark'
-                      }`}
-                    >
-                      {entry.amountDisplay}
-                    </p>
-                    <p className="text-xs text-ink-muted">
-                      {formatKarachiDate(new Date(entry.date), 'date')}
-                    </p>
+          <>
+            <ul className="divide-y divide-line-subtle">
+              {data.recentTransactions.map((entry) => (
+                <li key={entry._id} className="flex items-center justify-between gap-3 py-2.5">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Badge variant={TYPE_BADGE_VARIANT[entry.type]} size="sm">
+                      {ENTRY_TYPE_LABELS[entry.type]}
+                    </Badge>
+                    <span className="hidden truncate text-sm text-ink-secondary sm:block">
+                      {entryAccountLabel(entry)}
+                      {entry.categoryLabel ? ` · ${entry.categoryLabel}` : ''}
+                      {entry.partnerName ? ` · ${entry.partnerName}` : ''}
+                    </span>
                   </div>
-                  {canApprove && !entry.isReversal && entry.status === 'posted' && (
-                    <Button variant="ghost" size="sm" onClick={() => setReverseTarget(entry)}>
-                      Reverse
-                    </Button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <div className="text-right">
+                      <p
+                        className={`text-sm font-semibold tabular-nums ${
+                          entry.isReversal
+                            ? 'text-ink-muted'
+                            : entry.type === 'expense' || entry.type === 'partner_withdrawal'
+                              ? 'text-status-danger'
+                              : 'text-decoricks-dark'
+                        }`}
+                      >
+                        {entry.amountDisplay}
+                      </p>
+                      <p className="text-xs text-ink-muted">
+                        {formatKarachiDate(new Date(entry.date), 'date')}
+                      </p>
+                    </div>
+                    {canApprove && !entry.isReversal && entry.status === 'posted' && (
+                      <Button variant="ghost" size="sm" onClick={() => setReverseTarget(entry)}>
+                        Reverse
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 border-t border-line-subtle pt-2 text-xs text-ink-muted">
+              The eight newest entries. A reversal appears as its own line and the entry it
+              cancelled stays visible marked Reversed — the ledger is never rewritten.
+            </p>
+          </>
         )}
       </Card>
 

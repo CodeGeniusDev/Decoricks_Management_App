@@ -250,9 +250,9 @@ export default function DistributionDetailPage() {
         <span className="text-ink-muted">—</span>
       ) : (
         <div className="flex flex-wrap gap-1">
-          {share.adjustments.map((adjustment) => (
+          {share.adjustments.map((adjustment, idx) => (
             <Badge
-              key={`${share.partnerName}:${adjustment.adjustedAt}:${adjustment.amount}`}
+              key={`${share.partnerName}-${idx}-${adjustment.adjustedAt}`}
               size="sm"
               variant={adjustment.amount < 0 ? 'warning' : 'default'}
             >

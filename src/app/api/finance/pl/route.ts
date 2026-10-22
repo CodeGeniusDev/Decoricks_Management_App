@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { successResponse, validationError } from '@/lib/api-response'
@@ -28,7 +28,10 @@ async function __GET(request: NextRequest) {
     const resolved = resolveReportRange(searchParams)
     if (!resolved) {
       return validationError('Invalid period', [
-        { path: 'period', message: 'Provide a valid period with date, or from and to (YYYY-MM-DD)' },
+        {
+          path: 'period',
+          message: 'Provide a valid period with date, or from and to (YYYY-MM-DD)',
+        },
       ])
     }
     const { period, range } = resolved
@@ -46,21 +49,20 @@ async function __GET(request: NextRequest) {
     )
     const windowStart = new Date(Math.min(range.start.getTime(), seriesStart.getTime()))
 
-    const all = await fetchLedgerRange(db, { start: windowStart, end: range.end })
-    const inRange = all.filter(
-      (entry) => new Date(entry.date).getTime() >= range.start.getTime() && new Date(entry.date).getTime() <= range.end.getTime()
-    )
-
-    const suppliedCogs = await periodCogsInput(db, range)
-    const profitLoss = computeProfitLoss(inRange, { cogs: suppliedCogs })
-
+    // The twelve month buckets are derived from the clock alone, so they are
+    // built before anything is read and feed the concurrent COGS fetch below.
     const monthRanges: { month: string; label: string; range: DateRange }[] = []
     let cursor = seriesStart
     for (let i = 0; i < 12; i++) {
       const civil = karachiCivil(cursor)
-      const nextCivilMonth = civil.month === 12 ? { year: civil.year + 1, month: 1 } : { year: civil.year, month: civil.month + 1 }
+      const nextCivilMonth =
+        civil.month === 12
+          ? { year: civil.year + 1, month: 1 }
+          : { year: civil.year, month: civil.month + 1 }
       const start = karachiMidnight(civil.year, civil.month, 1)
-      const end = new Date(karachiMidnight(nextCivilMonth.year, nextCivilMonth.month, 1).getTime() - 1)
+      const end = new Date(
+        karachiMidnight(nextCivilMonth.year, nextCivilMonth.month, 1).getTime() - 1
+      )
       const key = `${civil.year}-${String(civil.month).padStart(2, '0')}`
       monthRanges.push({
         month: key,
@@ -73,7 +75,28 @@ async function __GET(request: NextRequest) {
       })
       cursor = new Date(karachiMidnight(nextCivilMonth.year, nextCivilMonth.month, 1).getTime())
     }
-    const monthly = monthlyProfitSeries(all, monthRanges, await cogsInputsForRanges(db, monthRanges.map((m) => m.range)))
+
+    // Phase 4 §2: the ledger slice, the headline COGS and the per-month COGS
+    // series share no dependency, so they are read together. Each round trip to
+    // this cluster costs ~65ms; issued in a line the three of them dominated the
+    // route's ~800ms response while no individual query was slow.
+    const [all, suppliedCogs, cogsPerMonth] = await Promise.all([
+      fetchLedgerRange(db, { start: windowStart, end: range.end }),
+      periodCogsInput(db, range),
+      cogsInputsForRanges(
+        db,
+        monthRanges.map((m) => m.range)
+      ),
+    ])
+
+    const inRange = all.filter(
+      (entry) =>
+        new Date(entry.date).getTime() >= range.start.getTime() &&
+        new Date(entry.date).getTime() <= range.end.getTime()
+    )
+
+    const profitLoss = computeProfitLoss(inRange, { cogs: suppliedCogs })
+    const monthly = monthlyProfitSeries(all, monthRanges, cogsPerMonth)
 
     return successResponse({
       period,
@@ -91,7 +114,7 @@ async function __GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('GET /api/finance/pl failed:', error)
+    logRouteFailure('GET /api/finance/pl', error)
     return handleRouteError(error)
   }
 }

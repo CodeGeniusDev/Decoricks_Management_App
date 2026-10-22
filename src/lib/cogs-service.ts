@@ -1,5 +1,6 @@
 import type { Db } from 'mongodb'
 import { getStockMovementCollection } from '@/lib/models/Inventory'
+import { FIRST_BATCH_SIZE } from '@/lib/mongo-read'
 import { cogsFromMovements, type MovementLike } from '@/lib/stock-math'
 import type { CogsInput } from '@/lib/profit-loss'
 import type { DateRange } from '@/lib/finance'
@@ -56,14 +57,26 @@ const toLike = (row: MovementRow): MovementLike => ({
  * history at all (pre-Phase 5 data — the caller falls back to provisional).
  */
 export async function periodCogsInput(db: Db, range: DateRange): Promise<CogsInput | null> {
-  if (!(await hasAnyMovements(db))) return null
+  /*
+   * Both reads are issued together. Awaiting the existence guard first made this
+   * path pay two round trips in series for a single answer — 132ms against the
+   * 65ms a lone read costs on this cluster (`scripts/db-probe.ts`), and it paid
+   * both even when the period had no rows. The guard still decides the result
+   * exactly as before; the period read simply no longer waits for it.
+   */
+  const [any, rawRows] = await Promise.all([
+    hasAnyMovements(db),
+    getStockMovementCollection(db)
+      .find({
+        movementType: { $in: COGS_TYPES },
+        date: { $gte: range.start, $lte: range.end },
+      } as never)
+      .batchSize(FIRST_BATCH_SIZE)
+      .toArray(),
+  ])
+  if (!any) return null
 
-  const rows = (await getStockMovementCollection(db)
-    .find({
-      movementType: { $in: COGS_TYPES },
-      date: { $gte: range.start, $lte: range.end },
-    } as never)
-    .toArray()) as unknown as MovementRow[]
+  const rows = rawRows as unknown as MovementRow[]
 
   return {
     amount: cogsFromMovements(rows.map(toLike)),
@@ -82,7 +95,6 @@ export async function cogsInputsForRanges(
   ranges: DateRange[]
 ): Promise<(CogsInput | null)[]> {
   if (ranges.length === 0) return []
-  if (!(await hasAnyMovements(db))) return ranges.map(() => null)
 
   const starts = ranges.map((r) => r.start.getTime())
   const ends = ranges.map((r) => r.end.getTime())
@@ -91,17 +103,24 @@ export async function cogsInputsForRanges(
     end: new Date(Math.max(...ends)),
   }
 
-  const rows = (await getStockMovementCollection(db)
-    .find({
-      movementType: { $in: COGS_TYPES },
-      date: { $gte: window.start, $lte: window.end },
-    } as never)
-    .toArray()) as unknown as MovementRow[]
+  // Same reasoning as `periodCogsInput`: the guard decides the answer, but it no
+  // longer makes the caller wait a whole round trip before the real read starts.
+  const [any, rawRows] = await Promise.all([
+    hasAnyMovements(db),
+    getStockMovementCollection(db)
+      .find({
+        movementType: { $in: COGS_TYPES },
+        date: { $gte: window.start, $lte: window.end },
+      } as never)
+      .batchSize(FIRST_BATCH_SIZE)
+      .toArray(),
+  ])
+  if (!any) return ranges.map(() => null)
+
+  const rows = rawRows as unknown as MovementRow[]
 
   return ranges.map((range) => {
-    const inRange = rows.filter(
-      (row) => row.date >= range.start && row.date <= range.end
-    )
+    const inRange = rows.filter((row) => row.date >= range.start && row.date <= range.end)
     return {
       amount: cogsFromMovements(inRange.map(toLike)),
       provisional: false,

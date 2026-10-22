@@ -9,6 +9,7 @@ import {
   type DateRange,
 } from '@/lib/finance'
 import { computeProfitLoss } from '@/lib/profit-loss'
+import type { CogsInput } from '@/lib/profit-loss'
 import { monthlyProfitSeries, type MonthlyPlPoint } from '@/lib/profit-loss'
 import {
   buildSalesExpenseSeries,
@@ -18,13 +19,14 @@ import {
   type TrendPoint,
 } from '@/lib/metrics/trend'
 import { computeCashFlow, type CashFlow, type ReportPeriod } from '@/lib/cash-flow'
-import { periodCogsInput } from '@/lib/cogs-service'
+import { cogsInputsForRanges } from '@/lib/cogs-service'
 import { fetchLedgerRange } from '@/lib/distribution-service'
 import { loadAccounts } from '@/lib/finance-ledger'
 import { buildStockSummary } from '@/lib/stock-summary'
 import { computeBudgetActuals, type BudgetActuals } from '@/lib/budget-actuals'
 import { loadBudgetThresholds } from '@/lib/budget-queries'
 import { resolveBusinessPolicy } from '@/lib/business-policy'
+import { timeStage } from '@/lib/timing'
 import { LOCATION_LABELS } from '@/lib/stock-math'
 import { formatPaisa } from '@/lib/money'
 import { getBusinessSettingsCollection } from '@/lib/models/Ledger'
@@ -41,7 +43,7 @@ import { advertisingSpend, expenseByCategory, sumOperatingExpenses } from '@/lib
  * produced by the Phase 1–7 engines it calls:
  *
  *   computeProfitLoss  → revenue, net sales, COGS, gross & net profit, expenses
- *   periodCogsInput    → movement-based COGS fed into the P&L above
+ *   cogsInputsForRanges → movement-based COGS fed into the P&L above
  *   computeCashFlow    → cash in / out / per-account positions
  *   computeAccountBalances → current cash balance by account
  *   buildStockSummary  → WAC inventory value by location + low stock
@@ -199,63 +201,196 @@ export async function buildDashboardMetrics(input: DashboardInput): Promise<Dash
   // The ledger is read ONCE, date-bounded, and sliced in memory for every engine.
   // This replaces the old per-widget multiple reads and is the whole money source.
   const historyEnd = new Date(Math.max(now.getTime(), range.end.getTime()))
-  const ledgerUpToNow = await fetchLedgerRange(db, { start: new Date(0), end: historyEnd })
+  const ledgerUpToNow = await timeStage('q:ledger:history', () =>
+    fetchLedgerRange(db, { start: new Date(0), end: historyEnd })
+  )
   const entriesInRange = ledgerUpToNow.filter((e) => isWithin(new Date(e.date), range))
   const entriesBefore = ledgerUpToNow.filter(
     (e) => new Date(e.date).getTime() < range.start.getTime()
   )
 
-  const blocks: DashboardMetrics['blocks'] = {}
+  /*
+   * Phase 4 §2 — the five block groups are gated by *different* module
+   * permissions and read from *different* collections, so no group depends on
+   * another's result. They used to be awaited one after another, and the cost of
+   * that is measured rather than assumed (`scripts/db-probe.ts`): one indexed
+   * round trip against this cluster is ~65ms of network while the data behind it
+   * is trivial (the entire ledger serialises to ~150KB and no individual read in
+   * this composition exceeds ~140ms). Sequential the endpoint answered in ~1.3s;
+   * the same reads issued concurrently answer in ~0.5s.
+   *
+   * Two things are deliberately preserved:
+   *   - the `canView` gate still decides whether a query is *issued at all*, so a
+   *     module the caller cannot view is never read, never assembled and never
+   *     reaches the response — enforcement, not hiding;
+   *   - every engine still consumes the same `ledgerUpToNow` slice above, so the
+   *     figures across blocks stay reconciled.
+   * Concurrent reads are not a snapshot guarantee, but neither were the old
+   * sequential ones — a write landing between two awaits already produced a mixed
+   * board. Fanning out narrows that window instead of widening it.
+   *
+   * Each group is timed under its own stage name (`q:block:*`) because the names
+   * must stay distinct: `timeStage` accumulates a repeated name into one line, so
+   * five groups sharing a name would report a summed wall time larger than the
+   * request itself and hide which block actually dominates the response.
+   */
+  const [financeBlocks, inventoryBlock, ordersBlock, budgetBlocks, tasksBlock] = await Promise.all([
+    canView(viewable, 'finance')
+      ? timeStage('q:block:finance', () =>
+          buildFinanceBlocks({ db, range, viewable, ledgerUpToNow, entriesInRange, entriesBefore })
+        )
+      : Promise.resolve({} as FinanceBlocks),
+    canView(viewable, 'inventory')
+      ? timeStage('q:block:inventory', () => buildInventoryBlock(db))
+      : Promise.resolve(undefined),
+    canView(viewable, 'sales')
+      ? timeStage('q:block:orders', () => buildOrdersBlock(db, range))
+      : Promise.resolve(undefined),
+    canView(viewable, 'budget')
+      ? timeStage('q:block:budget', () => buildBudgetBlocks(db, range, ledgerUpToNow))
+      : Promise.resolve(undefined),
+    canView(viewable, 'tasks')
+      ? timeStage('q:block:tasks', () => buildTasksBlock(db, range, now))
+      : Promise.resolve(undefined),
+  ])
 
-  // ---- Money blocks require finance.view; the profit chain also needs sales ----
-  if (canView(viewable, 'finance')) {
-    const cogs = await periodCogsInput(db, range)
-    const pl = computeProfitLoss(entriesInRange, { cogs })
+  const blocks: DashboardMetrics['blocks'] = {
+    ...financeBlocks,
+    ...(inventoryBlock ? { inventory: inventoryBlock } : {}),
+    ...(ordersBlock ? { orders: ordersBlock } : {}),
+    ...(budgetBlocks ? { budget: budgetBlocks } : {}),
+    ...(tasksBlock ? { tasks: tasksBlock } : {}),
+  }
 
-    if (canView(viewable, 'sales')) {
-      blocks.profit = {
-        revenue: money(pl.revenue),
-        revenueCount: pl.revenueCount,
-        netSales: money(pl.netSales),
-        refunds: money(pl.refunds),
-        cogs: money(pl.cogs),
-        cogsProvisional: pl.cogsProvisional,
-        cogsSource: pl.cogsSource,
-        grossProfit: money(pl.grossProfit),
-        operatingExpenses: money(pl.operatingExpenses),
-        netProfit: money(pl.netProfit),
-        // METRICS §G: numerator is the engine's net profit; divided by calendar
-        // days, rounded once. An empty period yields 0, never NaN.
-        netProfitPerDay: money(Math.round(pl.netProfit / Math.max(1, karachiDayCount(range)))),
-      }
-    }
+  return {
+    period,
+    range: { start: range.start.toISOString(), end: range.end.toISOString() },
+    generatedAt: now.toISOString(),
+    viewable: input.viewable,
+    blocks,
+  }
+}
+
+type LedgerRow = Awaited<ReturnType<typeof fetchLedgerRange>>[number]
+
+interface FinanceBlocks {
+  profit?: ProfitBlock
+  expenses?: ExpenseBlock
+  cash?: CashBlock
+  averages?: AveragesBlock
+  trend?: TrendBlock
+}
+
+/**
+ * Identity for a range, used to collapse duplicates before a batched COGS read.
+ * Milliseconds, not ISO strings: two ranges are the same read only when both
+ * boundaries are exactly the same instants.
+ */
+const rangeKey = (r: DateRange) => `${r.start.getTime()}:${r.end.getTime()}`
+
+/**
+ * COGS for the headline range and the whole month series in one fetch.
+ *
+ * Each was previously its own `periodCogsInput` call, and those calls each pay
+ * for a guard read plus a movement read. A `month` view therefore asked the
+ * cluster twice for the *same* rows — `monthsInRange` clips a one-month range
+ * to exactly that range — and a six-month custom view asked seven times.
+ * `cogsInputsForRanges` already solves this: one fetch of the union window, each
+ * requested range filtered in memory with the same inclusive bounds, the same
+ * `cogsFromMovements` reducer and the same "no movement history at all → null"
+ * guard. The numbers cannot differ; only the round trips do.
+ */
+async function cogsForRanges(
+  db: Db,
+  monthWindows: { range: DateRange }[],
+  range: DateRange
+): Promise<{ cogs: CogsInput | null; cogsPerMonth: (CogsInput | null)[] }> {
+  const unique = new Map<string, DateRange>()
+  for (const r of [...monthWindows.map((m) => m.range), range]) {
+    unique.set(rangeKey(r), r)
+  }
+  const list = [...unique.values()]
+  const values = await cogsInputsForRanges(db, list)
+  const byKey = new Map(list.map((r, i) => [rangeKey(r), values[i] ?? null]))
+  return {
+    cogs: byKey.get(rangeKey(range)) ?? null,
+    cogsPerMonth: monthWindows.map((m) => byKey.get(rangeKey(m.range)) ?? null),
+  }
+}
+
+/**
+ * The finance branch. Identical arithmetic to the sequential version it
+ * replaces — only the independent reads (the batched COGS series, business
+ * policy, accounts) are issued together instead of in a line.
+ */
+async function buildFinanceBlocks(args: {
+  db: Db
+  range: DateRange
+  viewable: Set<PermissionModule>
+  ledgerUpToNow: LedgerRow[]
+  entriesInRange: LedgerRow[]
+  entriesBefore: LedgerRow[]
+}): Promise<FinanceBlocks> {
+  const { db, range, viewable, ledgerUpToNow, entriesInRange, entriesBefore } = args
+  const monthWindows = monthsInRange(range)
+
+  const [cogsPair, settings, accounts] = await Promise.all([
+    cogsForRanges(db, monthWindows, range),
+    getBusinessSettingsCollection(db).findOne({ key: 'business' }),
+    loadAccounts(db),
+  ])
+  const cogs = cogsPair.cogs
+  const cogsPerMonth = cogsPair.cogsPerMonth
+
+  const pl = computeProfitLoss(entriesInRange, { cogs })
+  const policy = resolveBusinessPolicy(settings)
+  const advertising = advertisingSpend(entriesInRange, policy.advertisingCategories)
+  const byCategory = expenseByCategory(entriesInRange)
+
+  const accountHistory = accounts.map((a) => ({
+    _id: a._id!.toString(),
+    name: a.name,
+    kind: a.kind,
+    isActive: a.isActive,
+    openingBalance: a.openingBalance,
+  }))
+  const flow: CashFlow = computeCashFlow(accountHistory, entriesBefore, entriesInRange)
+  const balances = computeAccountBalances(accountHistory, ledgerUpToNow)
+  const avg = computeAverages(entriesInRange, range)
+  const granularity = pickGranularity(range)
+
+  return {
+    // ---- Money blocks require finance.view; the profit chain also needs sales ----
+    ...(canView(viewable, 'sales')
+      ? {
+          profit: {
+            revenue: money(pl.revenue),
+            revenueCount: pl.revenueCount,
+            netSales: money(pl.netSales),
+            refunds: money(pl.refunds),
+            cogs: money(pl.cogs),
+            cogsProvisional: pl.cogsProvisional,
+            cogsSource: pl.cogsSource,
+            grossProfit: money(pl.grossProfit),
+            operatingExpenses: money(pl.operatingExpenses),
+            netProfit: money(pl.netProfit),
+            // METRICS §G: numerator is the engine's net profit; divided by calendar
+            // days, rounded once. An empty period yields 0, never NaN.
+            netProfitPerDay: money(Math.round(pl.netProfit / Math.max(1, karachiDayCount(range)))),
+          } satisfies ProfitBlock,
+        }
+      : {}),
 
     // ---- Expenses + advertising (METRICS §A.6/§A.7) ----
-    const settings = await getBusinessSettingsCollection(db).findOne({ key: 'business' })
-    const policy = resolveBusinessPolicy(settings)
-    const advertising = advertisingSpend(entriesInRange, policy.advertisingCategories)
-    const byCategory = expenseByCategory(entriesInRange)
-
-    blocks.expenses = {
+    expenses: {
       total: money(sumOperatingExpenses(entriesInRange)),
       advertising: money(advertising),
       advertisingCategories: policy.advertisingCategories,
       byCategory: byCategory.map((row) => ({ category: row.category, amount: money(row.paisa) })),
-    }
+    },
 
     // ---- Cash: flow over the period + current balances (METRICS §B) ----
-    const accounts = await loadAccounts(db)
-    const accountHistory = accounts.map((a) => ({
-      _id: a._id!.toString(),
-      name: a.name,
-      kind: a.kind,
-      isActive: a.isActive,
-      openingBalance: a.openingBalance,
-    }))
-    const flow: CashFlow = computeCashFlow(accountHistory, entriesBefore, entriesInRange)
-    const balances = computeAccountBalances(accountHistory, ledgerUpToNow)
-
-    blocks.cash = {
+    cash: {
       cashIn: money(flow.cashIn),
       cashOut: money(flow.cashOut),
       netCashFlow: money(flow.netCashFlow),
@@ -272,131 +407,127 @@ export async function buildDashboardMetrics(input: DashboardInput): Promise<Dash
         kind: a.kind,
         balance: money(balances[a._id] ?? 0),
       })),
-    }
+    },
 
     // ---- Averages over the range (METRICS §G) ----
-    const avg = computeAverages(entriesInRange, range)
-    blocks.averages = {
+    averages: {
       days: Math.max(1, karachiDayCount(range)),
       perDay: money(avg.perDay),
       perWeek: money(avg.perWeek),
       perMonth: money(avg.perMonth),
       perEntry: money(avg.perEntry),
-    }
+    },
 
     // ---- Chart series (METRICS §K) ----
     // Both series read `entriesInRange` — the identical slice the headline P&L
     // above was built from — so the bars and the figures can never disagree.
-    const granularity = pickGranularity(range)
-    const monthWindows = monthsInRange(range)
-    const cogsPerMonth = await Promise.all(monthWindows.map((m) => periodCogsInput(db, m.range)))
-    blocks.trend = {
+    trend: {
       granularity,
       salesVsExpenses: buildSalesExpenseSeries(entriesInRange, range, granularity),
       profitTrend: monthlyProfitSeries(entriesInRange, monthWindows, cogsPerMonth),
-    }
+    },
   }
+}
 
-  // ---- Inventory (METRICS §C) ----
-  if (canView(viewable, 'inventory')) {
-    const summary = await buildStockSummary(db)
-    blocks.inventory = {
-      totalValue: money(summary.totals.totalValuation),
-      lowStockCount: summary.totals.lowStockCount,
-      byLocation: summary.totals.byLocation.map((loc) => ({
-        location: loc.location,
-        label: LOCATION_LABELS[loc.location] ?? loc.location,
-        value: money(loc.valuation),
-      })),
-    }
+/** Inventory (METRICS §C) — inventory.view. */
+async function buildInventoryBlock(db: Db): Promise<InventoryBlock> {
+  const summary = await buildStockSummary(db)
+  return {
+    totalValue: money(summary.totals.totalValuation),
+    lowStockCount: summary.totals.lowStockCount,
+    byLocation: summary.totals.byLocation.map((loc) => ({
+      location: loc.location,
+      label: LOCATION_LABELS[loc.location] ?? loc.location,
+      value: money(loc.valuation),
+    })),
   }
+}
 
-  // ---- Orders / returns (METRICS §D, §A.2) — sales.view, aggregate pipelines ----
-  if (canView(viewable, 'sales')) {
-    const inRange = { $gte: range.start, $lte: range.end }
-    const ordersCol = getOrderCollection(db)
+/**
+ * Orders / returns (METRICS §D, §A.2) — sales.view, aggregate pipelines. The
+ * three pipelines are independent, so they overlap as they already did.
+ */
+async function buildOrdersBlock(db: Db, range: DateRange): Promise<OrdersBlock> {
+  const inRange = { $gte: range.start, $lte: range.end }
+  const ordersCol = getOrderCollection(db)
 
-    const [statusRows, valueRows, returnsAgg] = await Promise.all([
-      ordersCol
-        .aggregate([
-          { $match: { createdAt: inRange } },
-          { $group: { _id: '$orderStatus', count: { $sum: 1 } } },
-        ])
-        .toArray(),
-      ordersCol
-        .aggregate([
-          { $match: { createdAt: inRange, orderStatus: { $ne: 'cancelled' } } },
-          { $group: { _id: null, count: { $sum: 1 }, value: { $sum: '$total' } } },
-        ])
-        .toArray(),
-      getReturnCollection(db)
-        .aggregate([
-          { $match: { createdAt: inRange } },
-          { $group: { _id: null, count: { $sum: 1 }, refundAmount: { $sum: '$refundAmount' } } },
-        ])
-        .toArray(),
-    ])
+  const [statusRows, valueRows, returnsAgg] = await Promise.all([
+    ordersCol
+      .aggregate([
+        { $match: { createdAt: inRange } },
+        { $group: { _id: '$orderStatus', count: { $sum: 1 } } },
+      ])
+      .toArray(),
+    ordersCol
+      .aggregate([
+        { $match: { createdAt: inRange, orderStatus: { $ne: 'cancelled' } } },
+        { $group: { _id: null, count: { $sum: 1 }, value: { $sum: '$total' } } },
+      ])
+      .toArray(),
+    getReturnCollection(db)
+      .aggregate([
+        { $match: { createdAt: inRange } },
+        { $group: { _id: null, count: { $sum: 1 }, refundAmount: { $sum: '$refundAmount' } } },
+      ])
+      .toArray(),
+  ])
 
-    const byStatus: Record<string, number> = {}
-    for (const row of statusRows as Array<{ _id: string | null; count: number }>) {
-      byStatus[row._id ?? 'unknown'] = row.count
-    }
-    const valueRow = (valueRows as Array<{ count?: number; value?: number }>)[0]
-
-    blocks.orders = {
-      count: (valueRow?.count as number) ?? 0,
-      grossOrderValue: money((valueRow?.value as number) ?? 0),
-      byStatus,
-      cancellations: byStatus.cancelled ?? 0,
-      returns: {
-        count: ((returnsAgg as Array<{ count?: number }>)[0]?.count as number) ?? 0,
-        refundAmount: money(
-          ((returnsAgg as Array<{ refundAmount?: number }>)[0]?.refundAmount as number) ?? 0
-        ),
-      },
-    }
+  const byStatus: Record<string, number> = {}
+  for (const row of statusRows as Array<{ _id: string | null; count: number }>) {
+    byStatus[row._id ?? 'unknown'] = row.count
   }
+  const valueRow = (valueRows as Array<{ count?: number; value?: number }>)[0]
 
-  // ---- Budget vs actual (METRICS §E) — budget.view ----
-  if (canView(viewable, 'budget')) {
-    const thresholds = await loadBudgetThresholds(db)
-    const overlapping = await getBudgetCollection(db)
+  return {
+    count: (valueRow?.count as number) ?? 0,
+    grossOrderValue: money((valueRow?.value as number) ?? 0),
+    byStatus,
+    cancellations: byStatus.cancelled ?? 0,
+    returns: {
+      count: ((returnsAgg as Array<{ count?: number }>)[0]?.count as number) ?? 0,
+      refundAmount: money(
+        ((returnsAgg as Array<{ refundAmount?: number }>)[0]?.refundAmount as number) ?? 0
+      ),
+    },
+  }
+}
+
+/**
+ * Budget vs actual (METRICS §E) — budget.view. The thresholds and the
+ * overlapping budgets come from different collections, so they are read
+ * together; the actuals are then computed in memory exactly as before.
+ */
+async function buildBudgetBlocks(
+  db: Db,
+  range: DateRange,
+  ledgerUpToNow: LedgerRow[]
+): Promise<BudgetBlock[]> {
+  const [thresholds, overlapping] = await Promise.all([
+    loadBudgetThresholds(db),
+    getBudgetCollection(db)
       .find({
         status: 'active',
         periodStart: { $lte: range.end },
         periodEnd: { $gte: range.start },
       } as never)
       .sort({ periodStart: -1 })
-      .toArray()
+      .toArray(),
+  ])
 
-    // computeBudgetActuals filters internally to each budget's own period, so the
-    // full ledger array is the correct input; `totalActual` therefore equals the
-    // matching operating-expense slice (asserted by the reconciliation engine).
-    blocks.budget = overlapping.map((b) => ({
-      id: b._id!.toString(),
-      name: b.name,
-      periodStart: b.periodStart.toISOString(),
-      periodEnd: b.periodEnd.toISOString(),
-      actuals: computeBudgetActuals(
-        { categories: b.categories, periodStart: b.periodStart, periodEnd: b.periodEnd },
-        ledgerUpToNow,
-        thresholds
-      ),
-    }))
-  }
-
-  // ---- Tasks (METRICS §F) — tasks.view, reuses the Phase 6 board queries ----
-  if (canView(viewable, 'tasks')) {
-    blocks.tasks = await buildTasksBlock(db, range, now)
-  }
-
-  return {
-    period,
-    range: { start: range.start.toISOString(), end: range.end.toISOString() },
-    generatedAt: now.toISOString(),
-    viewable: input.viewable,
-    blocks,
-  }
+  // computeBudgetActuals filters internally to each budget's own period, so the
+  // full ledger array is the correct input; `totalActual` therefore equals the
+  // matching operating-expense slice (asserted by the reconciliation engine).
+  return overlapping.map((b) => ({
+    id: b._id!.toString(),
+    name: b.name,
+    periodStart: b.periodStart.toISOString(),
+    periodEnd: b.periodEnd.toISOString(),
+    actuals: computeBudgetActuals(
+      { categories: b.categories, periodStart: b.periodStart, periodEnd: b.periodEnd },
+      ledgerUpToNow,
+      thresholds
+    ),
+  }))
 }
 
 /**

@@ -121,8 +121,18 @@ async function __GET() {
   try {
     await authorize('finance', 'view')
     const db = await getDatabase()
-    const settings = await getBusinessSettingsCollection(db).findOne({ key: 'business' })
-    return successResponse(await settingsView(db, settings))
+    /*
+     * Two reads, issued together. They were sequential, and because every read
+     * against this cluster costs a round trip rather than any query work, that
+     * made a single indexed document plus a nine-row account list take 200ms.
+     * The settings document and the Founder's account choices do not depend on
+     * each other, so the response is the same and one trip shorter.
+     */
+    const [settings, accountOptions] = await Promise.all([
+      getBusinessSettingsCollection(db).findOne({ key: 'business' }),
+      postingAccountOptions(db),
+    ])
+    return successResponse({ ...settingsPayload(settings), accountOptions })
   } catch (error) {
     return handleRouteError(error)
   }
@@ -270,8 +280,7 @@ async function __PATCH(request: NextRequest) {
      */
     if (parsed.data.largeExpenseThresholdPkr !== undefined) {
       set.largeExpenseThresholdPkr =
-        parsed.data.largeExpenseThresholdPkr === '' ||
-        parsed.data.largeExpenseThresholdPkr === null
+        parsed.data.largeExpenseThresholdPkr === '' || parsed.data.largeExpenseThresholdPkr === null
           ? undefined
           : parsed.data.largeExpenseThresholdPkr
     }

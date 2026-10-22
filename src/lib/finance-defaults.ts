@@ -1,4 +1,4 @@
-import { type Db, ObjectId } from 'mongodb'
+import { type AnyBulkWriteOperation, type Db, ObjectId } from 'mongodb'
 import {
   ensureLedgerIndexes,
   getAccountCollection,
@@ -6,6 +6,7 @@ import {
   type Account,
   type FinanceCategory,
 } from '@/lib/models/Ledger'
+import { timeStage } from '@/lib/timing'
 
 /**
  * Runtime finance defaults.
@@ -71,43 +72,86 @@ export function ensureFinanceDefaults(db: Db, actorId?: ObjectId): Promise<void>
   if (!financeDefaultsPromise) {
     financeDefaultsPromise = (async () => {
       try {
-        await ensureLedgerIndexes(db)
+        await timeStage('q:financeDefaults', async () => {
+          const now = new Date()
+          const createdBy = actorId ?? new ObjectId()
 
-        const now = new Date()
-        const createdBy = actorId ?? new ObjectId()
+          /*
+           * ONE round trip per collection, not one per document.
+           *
+           * This used to be fifteen sequential `updateOne(..., { upsert: true })`
+           * calls — twelve categories plus three accounts — issued one after
+           * another. Against this cluster a single indexed write costs ~65ms of
+           * network (Phase 4 §1, `scripts/db-probe.ts`), so the cold path paid
+           * ~1.8s of pure round-trip latency before the read it was blocking on
+           * could even start: the first `GET /api/finance/categories` after a
+           * boot measured 1970ms cold versus 197ms warm, and the gap was entirely
+           * these serial upserts. `bulkWrite` keeps the exact `$setOnInsert`
+           * semantics (repeated calls and re-deploys never duplicate, a Founder's
+           * renames survive) while collapsing the fifteen writes into two.
+           */
+          const categoryOps: AnyBulkWriteOperation<FinanceCategory>[] = (
+            [
+              ['expense', SPEC_EXPENSE_CATEGORIES],
+              ['income', SPEC_INCOME_CATEGORIES],
+            ] as const
+          ).flatMap(([type, list]) =>
+            list.map(([name, label]) => ({
+              updateOne: {
+                filter: { name },
+                update: {
+                  $setOnInsert: {
+                    name,
+                    label,
+                    type,
+                    isActive: true,
+                    createdAt: now,
+                    updatedAt: now,
+                    createdBy,
+                  } satisfies Omit<FinanceCategory, '_id'>,
+                },
+                upsert: true,
+              },
+            }))
+          )
 
-        const categories = getFinanceCategoryCollection(db)
-        for (const [type, list] of [
-          ['expense', SPEC_EXPENSE_CATEGORIES],
-          ['income', SPEC_INCOME_CATEGORIES],
-        ] as const) {
-          for (const [name, label] of list) {
-            const doc: Omit<FinanceCategory, '_id'> = {
-              name,
-              label,
-              type,
-              isActive: true,
-              createdAt: now,
-              updatedAt: now,
-              createdBy,
-            }
-            await categories.updateOne({ name }, { $setOnInsert: doc }, { upsert: true })
-          }
-        }
+          const accountOps: AnyBulkWriteOperation<Account>[] = SPEC_ACCOUNTS.map(([name, kind]) => ({
+            updateOne: {
+              filter: { name },
+              update: {
+                $setOnInsert: {
+                  name,
+                  kind,
+                  openingBalance: 0,
+                  isActive: true,
+                  createdAt: now,
+                  updatedAt: now,
+                  createdBy,
+                } satisfies Omit<Account, '_id'>,
+              },
+              upsert: true,
+            },
+          }))
 
-        const accounts = getAccountCollection(db)
-        for (const [name, kind] of SPEC_ACCOUNTS) {
-          const doc: Omit<Account, '_id'> = {
-            name,
-            kind,
-            openingBalance: 0,
-            isActive: true,
-            createdAt: now,
-            updatedAt: now,
-            createdBy,
-          }
-          await accounts.updateOne({ name }, { $setOnInsert: doc }, { upsert: true })
-        }
+          /*
+           * Index creation and the backfill run CONCURRENTLY, not index-then-write.
+           *
+           * `ensureLedgerIndexes` builds fourteen indexes across four collections;
+           * awaiting it first serialised two cold pools' worth of round trips
+           * (~65ms each on this cluster) ahead of the writes that were already
+           * independent of it, which measured as ~946ms of the cold categories
+           * request. The two are independent because the upsert is idempotent by
+           * its OWN `{ name }` filter: the unique `financeCategories_name_unique`
+           * index is a concurrency backstop, not the thing that makes a repeated
+           * call safe. On a single warm process the backfill is a no-op anyway, so
+           * the index build is the only work and it now overlaps it.
+           */
+          await Promise.all([
+            ensureLedgerIndexes(db),
+            getFinanceCategoryCollection(db).bulkWrite(categoryOps, { ordered: false }),
+            getAccountCollection(db).bulkWrite(accountOps, { ordered: false }),
+          ])
+        })
       } catch (error) {
         financeDefaultsPromise = null
         console.error('ensureFinanceDefaults failed:', error)

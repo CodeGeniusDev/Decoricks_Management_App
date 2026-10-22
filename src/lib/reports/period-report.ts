@@ -132,45 +132,100 @@ export async function buildPeriodReport(input: {
   const { period, rangeStart, rangeEnd } = input
   const inRange = { $gte: rangeStart, $lte: rangeEnd }
 
+  /*
+   * Inventory: the stock rows are the movement-maintained projection of available
+   * units; valuation is units × weighted-average cost. Low stock is per product
+   * across BOTH locations against its own reorder level.
+   *
+   * It shares nothing with the aggregation block below — it reads only the stock and
+   * product collections — so it is started first and awaited alongside it (Phase 4
+   * §2: fetch independent data concurrently). Each block keeps its OWN
+   * `withMongoRetry`, so a retry stays scoped to the block that failed; the
+   * dangling-rejection guard is there because if the aggregate throws first, this
+   * promise would otherwise reject with no handler attached.
+   */
+  const inventoryPromise = withMongoRetry(async () => {
+    const db = await getDatabase()
+    const [stockRows, productRows] = await Promise.all([
+      getStockCollection(db).find({}).toArray(),
+      getProductCollection(db)
+        .find({ isActive: true } as never)
+        .toArray(),
+    ])
+    const productById = new Map(productRows.map((p) => [p._id!.toString(), p]))
+
+    let value = 0
+    const perProduct = new Map<string, number>()
+    for (const row of stockRows) {
+      const product = productById.get(String(row.productId))
+      if (!product) continue
+      value += Math.max(row.quantity, 0) * product.cost
+      perProduct.set(
+        String(row.productId),
+        (perProduct.get(String(row.productId)) ?? 0) + row.quantity
+      )
+    }
+
+    const low = [...perProduct.entries()]
+      .filter(([id, qty]) => {
+        const product = productById.get(id)
+        const threshold = product?.reorderLevel ?? LOW_STOCK_FALLBACK
+        return threshold > 0 && qty <= threshold
+      })
+      .map(([id, qty]) => ({
+        id,
+        name: productById.get(id)?.name ?? 'Unknown product',
+        quantity: qty,
+      }))
+      .sort((a, b) => a.quantity - b.quantity)
+      .slice(0, 50)
+
+    return { inventoryValue: value, lowStockItems: low }
+  })
+  inventoryPromise.catch(() => undefined)
+
   const agg = await withMongoRetry(async () => {
     const db = await getDatabase()
-    const [ledgerEntries, suppliedCogs] = await Promise.all([
-      fetchLedgerRange(db, { start: rangeStart, end: rangeEnd }),
-      periodCogsInput(db, { start: rangeStart, end: rangeEnd }),
-    ])
-    const [orderAgg, codAgg, orderRows] = await Promise.all([
-      db
-        .collection('orders')
-        .aggregate([
-          { $match: { createdAt: inRange, orderStatus: { $ne: 'cancelled' } } },
-          { $group: { _id: null, orders: { $sum: 1 }, revenue: { $sum: '$total' } } },
-        ])
-        .toArray(),
-      db
-        .collection('orders')
-        .aggregate([
-          { $match: { createdAt: inRange } },
-          { $group: { _id: '$codOutcome', count: { $sum: 1 } } },
-        ])
-        .toArray(),
-      db
-        .collection('orders')
-        .find({ createdAt: inRange })
-        .sort({ createdAt: -1 })
-        .limit(50)
-        .toArray(),
-    ])
-
-    // Phase 6 board model: a task is "completed in the period" when its
-    // `completedAt` (set when the card entered its board's done column)
-    // falls inside the range, and "overdue" when `dueDate` has passed and
-    // the card is NOT sitting in a done column. The old `status`/single
-    // `assigneeName` fields are gone, so we unwind `assigneeIds` and
-    // resolve names below. A task with no assignee is counted as Unassigned.
-    const doneColumns = await getColumnCollection(db)
-      .find({ isDoneColumn: true } as never)
-      .project<{ _id: ObjectId }>({ _id: 1 })
-      .toArray()
+    // Six independent reads issued together. They used to run in three sequential
+    // stages (ledger + COGS, then the order aggregates, then the done-column
+    // lookup), and against this cluster every stage is a ~65ms network round trip
+    // — the data itself is tiny. `doneColumns` only feeds the task aggregation
+    // below, so it belongs in this batch, not in a later stage.
+    const [ledgerEntries, suppliedCogs, orderAgg, codAgg, orderRows, doneColumns] =
+      await Promise.all([
+        fetchLedgerRange(db, { start: rangeStart, end: rangeEnd }),
+        periodCogsInput(db, { start: rangeStart, end: rangeEnd }),
+        db
+          .collection('orders')
+          .aggregate([
+            { $match: { createdAt: inRange, orderStatus: { $ne: 'cancelled' } } },
+            { $group: { _id: null, orders: { $sum: 1 }, revenue: { $sum: '$total' } } },
+          ])
+          .toArray(),
+        db
+          .collection('orders')
+          .aggregate([
+            { $match: { createdAt: inRange } },
+            { $group: { _id: '$codOutcome', count: { $sum: 1 } } },
+          ])
+          .toArray(),
+        db
+          .collection('orders')
+          .find({ createdAt: inRange })
+          .sort({ createdAt: -1 })
+          .limit(50)
+          .toArray(),
+        // Phase 6 board model: a task is "completed in the period" when its
+        // `completedAt` (set when the card entered its board's done column)
+        // falls inside the range, and "overdue" when `dueDate` has passed and
+        // the card is NOT sitting in a done column. The old `status`/single
+        // `assigneeName` fields are gone, so we unwind `assigneeIds` and
+        // resolve names below. A task with no assignee is counted as Unassigned.
+        getColumnCollection(db)
+          .find({ isDoneColumn: true } as never)
+          .project<{ _id: ObjectId }>({ _id: 1 })
+          .toArray(),
+      ])
     const doneColumnIds = doneColumns.map((c) => c._id)
     const tasksCol = getTaskDocCollection(db)
 
@@ -283,47 +338,9 @@ export async function buildPeriodReport(input: {
   const codRefused = codCounts.get('refused') ?? 0
   const codSettled = codDelivered + codReturned + codRefused
 
-  // Inventory: the stock rows are the movement-maintained projection of
-  // available units; valuation is units × weighted-average cost. Low stock
-  // is per product across BOTH locations against its own reorder level.
-  const { inventoryValue, lowStockItems } = await withMongoRetry(async () => {
-    const db = await getDatabase()
-    const [stockRows, productRows] = await Promise.all([
-      getStockCollection(db).find({}).toArray(),
-      getProductCollection(db)
-        .find({ isActive: true } as never)
-        .toArray(),
-    ])
-    const productById = new Map(productRows.map((p) => [p._id!.toString(), p]))
-
-    let value = 0
-    const perProduct = new Map<string, number>()
-    for (const row of stockRows) {
-      const product = productById.get(String(row.productId))
-      if (!product) continue
-      value += Math.max(row.quantity, 0) * product.cost
-      perProduct.set(
-        String(row.productId),
-        (perProduct.get(String(row.productId)) ?? 0) + row.quantity
-      )
-    }
-
-    const low = [...perProduct.entries()]
-      .filter(([id, qty]) => {
-        const product = productById.get(id)
-        const threshold = product?.reorderLevel ?? LOW_STOCK_FALLBACK
-        return threshold > 0 && qty <= threshold
-      })
-      .map(([id, qty]) => ({
-        id,
-        name: productById.get(id)?.name ?? 'Unknown product',
-        quantity: qty,
-      }))
-      .sort((a, b) => a.quantity - b.quantity)
-      .slice(0, 50)
-
-    return { inventoryValue: value, lowStockItems: low }
-  })
+  // Computed concurrently at the top of this function; by here its read has almost
+  // always already resolved, so this await costs nothing.
+  const { inventoryValue, lowStockItems } = await inventoryPromise
 
   return {
     period,

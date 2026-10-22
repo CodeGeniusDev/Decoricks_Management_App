@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { successResponse, validationError } from '@/lib/api-response'
@@ -89,17 +89,36 @@ async function __GET(request: NextRequest) {
     const { period, range } = resolved
 
     const db = await getDatabase()
-    await ensureInventoryIndexes(db)
-    await ensureOrdersIndexes(db)
+    await Promise.all([ensureInventoryIndexes(db), ensureOrdersIndexes(db)])
 
-    // Valuation always comes from the ledger, never the projection, so it is
-    // the same figure the overview and the stock CSV are built from.
-    const summary = await buildStockSummary(db, { includeArchived: true })
+    /*
+     * Phase 4 §2 — this route reads five independent things: the valuation
+     * summary, the movement ledger, the finance ledger slice for the period, the
+     * P&L's COGS input and the cashed orders. They were awaited at five different
+     * points down the page, so the response was the SUM of five round trips
+     * (~895ms measured) even though no single query took more than ~140ms. They
+     * are issued together now and the panels below consume the same values, from
+     * the same sources, in the same order — only the waiting overlaps.
+     */
+    const [summary, movementDocs, entries, plCogs, cashedOrders] = await Promise.all([
+      // Valuation always comes from the ledger, never the projection, so it is
+      // the same figure the overview and the stock CSV are built from.
+      buildStockSummary(db, { includeArchived: true }),
+      getStockMovementCollection(db)
+        .find({ movementType: { $in: COST_FLOW_TYPES } } as never)
+        .sort({ date: -1, createdAt: -1 })
+        .toArray(),
+      fetchLedgerRange(db, range),
+      periodCogsInput(db, range),
+      getOrderCollection(db)
+        .find({ codCashReceivedAt: { $gte: range.start, $lte: range.end } } as never)
+        .toArray(),
+    ])
 
-    const movements = (await getStockMovementCollection(db)
-      .find({ movementType: { $in: COST_FLOW_TYPES } } as never)
-      .sort({ date: -1, createdAt: -1 })
-      .toArray()) as unknown as (Omit<MovementRow, '_id' | 'date'> & { _id?: ObjectId; date?: Date })[]
+    const movements = movementDocs as unknown as (Omit<MovementRow, '_id' | 'date'> & {
+      _id?: ObjectId
+      date?: Date
+    })[]
 
     const rows: MovementRow[] = movements
       .filter((m) => m.date instanceof Date)
@@ -120,7 +139,10 @@ async function __GET(request: NextRequest) {
     /* ------------------------------ panel 2: COGS ----------------------------- */
 
     const inRange = rows.filter(
-      (m) => m.date >= range.start && m.date <= range.end && (m.movementType === 'sale_out' || m.movementType === 'return_restock')
+      (m) =>
+        m.date >= range.start &&
+        m.date <= range.end &&
+        (m.movementType === 'sale_out' || m.movementType === 'return_restock')
     )
     const nameById = new Map(summary.items.map((item) => [item._id, item.name]))
 
@@ -131,19 +153,17 @@ async function __GET(request: NextRequest) {
       .filter((m) => m.movementType === 'return_restock')
       .reduce((sum, m) => sum + movementCostAmount(m), 0)
 
-    const cogsLines = inRange
-      .slice(0, 200)
-      .map((m) => ({
-        _id: m._id,
-        date: m.date.toISOString(),
-        dateLabel: formatKarachiDate(m.date, 'date'),
-        productId: m.productId,
-        productName: nameById.get(m.productId) ?? 'Unknown product',
-        movementType: m.movementType,
-        quantity: m.quantity,
-        unitCost: m.unitCost ?? 0,
-        amount: movementCostAmount(m),
-      }))
+    const cogsLines = inRange.slice(0, 200).map((m) => ({
+      _id: m._id,
+      date: m.date.toISOString(),
+      dateLabel: formatKarachiDate(m.date, 'date'),
+      productId: m.productId,
+      productName: nameById.get(m.productId) ?? 'Unknown product',
+      movementType: m.movementType,
+      quantity: m.quantity,
+      unitCost: m.unitCost ?? 0,
+      amount: movementCostAmount(m),
+    }))
 
     const cogs: CogsInput = {
       amount: cogsFromMovements(inRange),
@@ -170,7 +190,6 @@ async function __GET(request: NextRequest) {
 
     /* ---------------------------- panel 3: margins ---------------------------- */
 
-    const entries = await fetchLedgerRange(db, range)
     const profitLoss = computeProfitLoss(entries, { cogs })
     const grossMargin =
       profitLoss.netSales === 0 ? null : (profitLoss.grossProfit / profitLoss.netSales) * 100
@@ -218,7 +237,6 @@ async function __GET(request: NextRequest) {
 
     // The P&L derives its own figure from the same ledger; if the two ever
     // disagree, one of them has drifted, and the panel says so plainly.
-    const plCogs = await periodCogsInput(db, range)
 
     /* ------------------ reconciliation 3: income against orders ----------------- */
 
@@ -227,9 +245,6 @@ async function __GET(request: NextRequest) {
       .filter((entry) => entry.type === 'income' && entry.category === incomeCategory)
       .reduce((sum, entry) => sum + transactionEffect(entry).revenue, 0)
 
-    const cashedOrders = await getOrderCollection(db)
-      .find({ codCashReceivedAt: { $gte: range.start, $lte: range.end } } as never)
-      .toArray()
     const orderTotals = cashedOrders.reduce((sum, order) => sum + order.total, 0)
 
     return successResponse({
@@ -252,7 +267,9 @@ async function __GET(request: NextRequest) {
           valuation: row.valuation,
         })),
         rows: summary.items
-          .filter((item) => item.totalAvailable > 0 || item.totalDamaged > 0 || item.totalReturned > 0)
+          .filter(
+            (item) => item.totalAvailable > 0 || item.totalDamaged > 0 || item.totalReturned > 0
+          )
           .map((item) => ({
             _id: item._id,
             sku: item.sku,
@@ -327,7 +344,7 @@ async function __GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('GET /api/reports/inventory-calc failed:', error)
+    logRouteFailure('GET /api/reports/inventory-calc', error)
     return handleRouteError(error)
   }
 }

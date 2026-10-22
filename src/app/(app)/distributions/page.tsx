@@ -1,29 +1,30 @@
-'use client';
+'use client'
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { PageTransition } from '@/components/PageTransition';
-import { PageHeader } from '@/components/layout/Page';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
-import { Input } from '@/components/ui/Input';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { ErrorState } from '@/components/ui/ErrorState';
-import { Table } from '@/components/ui/Table';
-import { Toast } from '@/components/ui/Toast';
-import { apiJson, ApiError } from '@/lib/api-client';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { can } from '@/lib/permissions-client';
-import { formatPaisa } from '@/lib/money';
-import { newIdempotencyKey } from '@/modules/finance/finance-ui';
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { PageTransition } from '@/components/PageTransition'
+import { PageHeader } from '@/components/layout/Page'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Input } from '@/components/ui/Input'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { Table } from '@/components/ui/Table'
+import { Toast } from '@/components/ui/Toast'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
+import { apiJson, apiJsonMeta, ApiError } from '@/lib/api-client'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { can } from '@/lib/permissions-client'
+import { formatPaisa } from '@/lib/money'
+import { newIdempotencyKey } from '@/modules/finance/finance-ui'
 import {
   STATUS_BADGE,
   STATUS_LABEL,
   monthLabelKarachi,
   type DistributionView,
-} from '@/modules/finance/distribution-ui';
+} from '@/modules/finance/distribution-ui'
 
 /**
  * Profit Distribution — list and calculation entry point (Phase 4 brief
@@ -37,58 +38,92 @@ import {
  */
 
 export default function DistributionsPage() {
-  const router = useRouter();
-  const { user } = useAuth();
-  const canApprove = user ? can({ role: user.role }, 'finance', 'approve') : false;
+  const router = useRouter()
+  const { user } = useAuth()
+  const canApprove = user ? can({ role: user.role }, 'finance', 'approve') : false
 
-  const [items, setItems] = useState<DistributionView[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [items, setItems] = useState<DistributionView[]>([])
+  const [loading, setLoading] = useState(true)
+  /*
+   * `items` starts as an empty array, which is also what "no distributions have
+   * ever been calculated" looks like — so the skeleton cannot be gated on its
+   * length. This says only that at least one list has been painted, which is what
+   * distinguishes a first load from a refresh.
+   */
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
-  const [month, setMonth] = useState('');
-  const [calculating, setCalculating] = useState(false);
-  const calculatingRef = useRef(false);
-  const idempotencyKeyRef = useRef(newIdempotencyKey());
+  const [month, setMonth] = useState('')
+  const [calculating, setCalculating] = useState(false)
+  const calculatingRef = useRef(false)
+  const idempotencyKeyRef = useRef(newIdempotencyKey())
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setItems(await apiJson<DistributionView[]>('/api/finance/distributions'));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load distributions');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  /*
+   * Live: another member posting a finance entry moves the profit-share picture.
+   * Subscribed before `load` because `load` has to announce its read to the
+   * tracker — a read that goes out unannounced cannot be recognised afterwards as
+   * the answer to a signal that arrived mid-flight, which is the duplicate
+   * re-fetch this removes (Phase 6 §4.4, §5.2). The tracker identity is stable.
+   */
+  const financeSync = useRealtimeSync('finance', () => {
+    // `useRealtimeSync` keeps this callback in a ref and refreshes it every
+    // render, so referring to `load` before its declaration is safe: it is only
+    // ever invoked after the render body has run.
+    void load({ background: true })
+  })
+
+  const load = useCallback(
+    async (options: { background?: boolean } = {}) => {
+      const background = options.background === true
+      // A background re-read (a remote finance change) must not grey out the rows
+      // the user is reading — Phase 6 §3.1.
+      if (!background) setLoading(true)
+      setError(null)
+      financeSync.begin()
+      try {
+        const { data, serverTime, durationMs } = await apiJsonMeta<DistributionView[]>(
+          '/api/finance/distributions'
+        )
+        financeSync.settle(serverTime, durationMs)
+        setItems(data)
+        setLoaded(true)
+      } catch (err) {
+        financeSync.abandon()
+        setError(err instanceof Error ? err.message : 'Failed to load distributions')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [financeSync]
+  )
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load()
+  }, [load])
 
   const calculate = async () => {
-    if (calculatingRef.current || !month) return;
-    calculatingRef.current = true;
-    setCalculating(true);
+    if (calculatingRef.current || !month) return
+    calculatingRef.current = true
+    setCalculating(true)
     try {
       const created = await apiJson<DistributionView>('/api/finance/distributions', {
         method: 'POST',
         body: JSON.stringify({ month, idempotencyKey: idempotencyKeyRef.current }),
-      });
+      })
       // Fresh key for the next run; this one has done its job.
-      idempotencyKeyRef.current = newIdempotencyKey();
-      router.push(`/distributions/${created._id}`);
+      idempotencyKeyRef.current = newIdempotencyKey()
+      router.push(`/distributions/${created._id}`)
     } catch (err) {
       setToast({
         type: 'error',
         message: err instanceof ApiError ? err.message : 'Could not calculate the distribution',
-      });
+      })
     } finally {
-      calculatingRef.current = false;
-      setCalculating(false);
+      calculatingRef.current = false
+      setCalculating(false)
     }
-  };
+  }
 
   const columns = [
     { key: 'month', label: 'Month' },
@@ -98,7 +133,7 @@ export default function DistributionsPage() {
     { key: 'charity', label: 'Charity' },
     { key: 'reinvested', label: 'Reinvested' },
     { key: 'withdrawable', label: 'Withdrawable' },
-  ];
+  ]
 
   const rows = items.map((item) => ({
     _id: item._id,
@@ -117,7 +152,7 @@ export default function DistributionsPage() {
         {formatPaisa(item.partnerShares.reduce((sum, share) => sum + share.availableToWithdraw, 0))}
       </span>
     ),
-  }));
+  }))
 
   return (
     <PageTransition>
@@ -141,10 +176,15 @@ export default function DistributionsPage() {
                 type="month"
                 value={month}
                 disabled={calculating}
+                hint="Whole Karachi calendar months only — the same month twice returns the record that already exists."
                 onChange={(e) => setMonth(e.target.value)}
               />
             </div>
-            <Button onClick={() => void calculate()} loading={calculating} disabled={calculating || !month}>
+            <Button
+              onClick={() => void calculate()}
+              loading={calculating}
+              disabled={calculating || !month}
+            >
               Calculate distribution
             </Button>
           </div>
@@ -155,8 +195,7 @@ export default function DistributionsPage() {
           </p>
         </Card>
       )}
-
-      {loading ? (
+      {loading && !loaded ? (
         <div className="space-y-3">
           {Array.from({ length: 2 }).map((_, i) => (
             <Skeleton key={i} variant="rect" className="h-20" />
@@ -204,7 +243,9 @@ export default function DistributionsPage() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-decoricks-dark">{monthLabelKarachi(item.month)}</p>
+                      <p className="truncate font-medium text-decoricks-dark">
+                        {monthLabelKarachi(item.month)}
+                      </p>
                       <p className="text-xs text-ink-muted">{item.distributionNumber ?? '—'}</p>
                     </div>
                     <Badge variant={STATUS_BADGE[item.status]} size="sm">
@@ -214,7 +255,9 @@ export default function DistributionsPage() {
                   <dl className="mt-2 grid grid-cols-2 gap-2 text-xs">
                     <div>
                       <dt className="text-ink-muted">Net profit</dt>
-                      <dd className={`font-semibold tabular-nums ${item.netProfit < 0 ? 'text-status-danger' : 'text-decoricks-dark'}`}>
+                      <dd
+                        className={`font-semibold tabular-nums ${item.netProfit < 0 ? 'text-status-danger' : 'text-decoricks-dark'}`}
+                      >
                         {formatPaisa(item.netProfit)}
                       </dd>
                     </div>
@@ -232,5 +275,5 @@ export default function DistributionsPage() {
         </>
       )}
     </PageTransition>
-  );
+  )
 }

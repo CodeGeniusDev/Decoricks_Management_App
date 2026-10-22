@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { authorizeAllViews } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { errorResponse } from '@/lib/api-response'
 import { recordAuditEntry } from '@/lib/audit'
 import { toKarachiInputDate } from '@/lib/form-helpers'
@@ -90,7 +90,7 @@ async function __GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('GET /api/reports/export failed:', error)
+    logRouteFailure('GET /api/reports/export', error)
     return handleRouteError(error)
   }
 }

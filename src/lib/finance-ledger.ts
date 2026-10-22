@@ -1,5 +1,7 @@
 import { ObjectId, type ClientSession, type Db, type Filter } from 'mongodb'
 import { HttpError } from '@/lib/http'
+import { FIRST_BATCH_SIZE } from '@/lib/mongo-read'
+import { idempotencyField } from '@/lib/idempotency'
 import { recordAuditEntry } from '@/lib/audit'
 import {
   getAccountCollection,
@@ -23,6 +25,7 @@ import {
 } from '@/lib/finance'
 import { formatPaisa } from '@/lib/money'
 import { formatKarachiDate } from '@/lib/date'
+import { timeStage } from '@/lib/timing'
 
 /**
  * Server-side ledger helpers shared by the finance routes.
@@ -91,6 +94,7 @@ export const buildLedgerFilter = (input: {
   category?: string
   partnerId?: string
   search?: string
+  entry?: string
   startDate?: string
   endDate?: string
 }): BuiltFilter => {
@@ -98,6 +102,13 @@ export const buildLedgerFilter = (input: {
 
   if (input.type && input.type !== 'all') {
     and.push({ type: input.type })
+  }
+
+  // A single record by id. Exists so an inbound link (a Chat reference chip)
+  // resolves to the entry itself rather than to whatever page one happens to
+  // hold today. Re-checked against `finance.view` by the calling route.
+  if (input.entry && ObjectId.isValid(input.entry)) {
+    and.push({ _id: new ObjectId(input.entry) })
   }
 
   if (input.accountId) {
@@ -176,10 +187,7 @@ export const buildSerializeContext = (
   categoryLabels: new Map(categories.map((c) => [c.name, c.label])),
 })
 
-export const serializeEntry = (
-  doc: LedgerTransaction,
-  ctx: SerializeContext
-): EntrySerialized => {
+export const serializeEntry = (doc: LedgerTransaction, ctx: SerializeContext): EntrySerialized => {
   const accountId = doc.accountId?.toString()
   const fromAccountId = doc.fromAccountId?.toString()
   const toAccountId = doc.toAccountId?.toString()
@@ -197,7 +205,9 @@ export const serializeEntry = (
     toAccountId,
     toAccountName: toAccountId ? ctx.accountNames.get(toAccountId) : undefined,
     category: doc.category,
-    categoryLabel: doc.category ? ctx.categoryLabels.get(doc.category) ?? doc.category : undefined,
+    categoryLabel: doc.category
+      ? (ctx.categoryLabels.get(doc.category) ?? doc.category)
+      : undefined,
     partnerId: doc.partnerId?.toString(),
     partnerName: doc.partnerName,
     paymentMethod: doc.paymentMethod,
@@ -209,11 +219,20 @@ export const serializeEntry = (
   }
 }
 
-export const loadAccounts = async (db: Db): Promise<Account[]> =>
-  getAccountCollection(db).find({}).sort({ createdAt: 1 }).toArray()
+/*
+ * Each read below is wrapped in `timeStage` purely for the `API_TIMING=1`
+ * diagnostics (Phase 6 §4.1). With the flag off `timeStage` calls the function and
+ * returns its promise untouched, so this changes no behaviour — it makes the
+ * difference between "the ledger scan is slow" and "the session lookup is slow"
+ * observable instead of argued about.
+ */
+export const loadAccounts = (db: Db): Promise<Account[]> =>
+  timeStage('q:accounts', () => getAccountCollection(db).find({}).sort({ createdAt: 1 }).toArray())
 
-export const loadCategories = async (db: Db): Promise<FinanceCategory[]> =>
-  getFinanceCategoryCollection(db).find({}).sort({ type: 1, label: 1 }).toArray()
+export const loadCategories = (db: Db): Promise<FinanceCategory[]> =>
+  timeStage('q:categories', () =>
+    getFinanceCategoryCollection(db).find({}).sort({ type: 1, label: 1 }).toArray()
+  )
 
 /**
  * List transactions with pagination, filters, totals, averages and period
@@ -225,10 +244,13 @@ export const listLedger = async (db: Db, input: BuiltFilter & { page: number; li
   const [accounts, categories] = await Promise.all([loadAccounts(db), loadCategories(db)])
   const ctx = buildSerializeContext(accounts, categories)
 
-  const all = await getLedgerCollection(db)
-    .find(input.filter as Filter<LedgerTransaction>)
-    .sort({ date: -1, createdAt: -1 })
-    .toArray()
+  const all = await timeStage('q:ledger:filtered', () =>
+    getLedgerCollection(db)
+      .find(input.filter as Filter<LedgerTransaction>)
+      .batchSize(FIRST_BATCH_SIZE)
+      .sort({ date: -1, createdAt: -1 })
+      .toArray()
+  )
 
   const normalized = all.map(normalizeEntry)
   const summary = summarize(normalized)
@@ -266,20 +288,46 @@ export const listLedger = async (db: Db, input: BuiltFilter & { page: number; li
   }
 }
 
-export const getAccountBalances = async (db: Db) => {
-  const [accounts, entries] = await Promise.all([
-    loadAccounts(db),
-    getLedgerCollection(db).find({}).toArray(),
-  ])
-  const balances = computeAccountBalances(
+/**
+ * Every ledger entry, newest first.
+ *
+ * One round trip per caller. The Finance overview previously issued this read
+ * *and* `getAccountBalances` in the same request, so the whole ledger crossed
+ * the wire twice — 211ms of the 346ms measured in Phase 4 §1, spent re-fetching
+ * documents the handler already held. Callers that need balances pass the array
+ * they got here straight to `computeBalancesFrom`.
+ */
+export const loadLedger = (db: Db): Promise<LedgerTransaction[]> =>
+  timeStage('q:ledger:all', () =>
+    getLedgerCollection(db)
+      .find({})
+      .batchSize(FIRST_BATCH_SIZE)
+      .sort({ date: -1, createdAt: -1 })
+      .toArray()
+  )
+
+/**
+ * Balances from documents the caller already has, so a handler that read the
+ * ledger for its own figures never has to read it a second time for these.
+ */
+export const computeBalancesFrom = (
+  accounts: Account[],
+  entries: LedgerTransaction[]
+): Record<string, number> =>
+  computeAccountBalances(
     accounts.map((a) => ({ _id: a._id!.toString(), openingBalance: a.openingBalance })),
     entries.map(normalizeEntry)
   )
-  return { accounts, balances }
+
+export const getAccountBalances = async (db: Db) => {
+  const [accounts, entries] = await Promise.all([loadAccounts(db), loadLedger(db)])
+  return { accounts, balances: computeBalancesFrom(accounts, entries) }
 }
 
 export const getWithdrawalLock = async (db: Db): Promise<Date | null> => {
-  const settings = await getBusinessSettingsCollection(db).findOne({ key: 'business' })
+  const settings = await timeStage('q:settings', () =>
+    getBusinessSettingsCollection(db).findOne({ key: 'business' })
+  )
   return settings?.withdrawalLockedUntil ?? null
 }
 
@@ -323,7 +371,10 @@ const assertAccountsUsable = async (
 ): Promise<void> => {
   if (accountIds.size === 0) return
   const accounts = await getAccountCollection(db)
-    .find({ _id: { $in: [...accountIds].map((id) => new ObjectId(id)) } }, session ? { session } : {})
+    .find(
+      { _id: { $in: [...accountIds].map((id) => new ObjectId(id)) } },
+      session ? { session } : {}
+    )
     .toArray()
   const found = new Map(accounts.map((account) => [account._id!.toString(), account]))
 
@@ -436,7 +487,7 @@ export const createLedgerEntry = async (
     note: input.note,
     isReversal: false,
     status: 'posted',
-    idempotencyKey: input.idempotencyKey,
+    ...idempotencyField(input.idempotencyKey),
     createdBy: actor.id,
     createdByName: actor.name,
     createdAt: now,
@@ -448,7 +499,10 @@ export const createLedgerEntry = async (
     doc._id = result.insertedId
   } catch (error) {
     if (isDuplicateKeyError(error) && input.idempotencyKey) {
-      const existing = await collection.findOne({ idempotencyKey: input.idempotencyKey }, sessionOpts)
+      const existing = await collection.findOne(
+        { idempotencyKey: input.idempotencyKey },
+        sessionOpts
+      )
       if (existing) return { doc: existing, created: false }
     }
     throw error
@@ -533,7 +587,7 @@ export const reverseLedgerEntry = async (
     isReversal: true,
     reversesId: original._id,
     status: 'posted',
-    idempotencyKey,
+    ...idempotencyField(idempotencyKey),
     createdBy: actor.id,
     createdAt: now,
     updatedAt: now,
@@ -564,7 +618,11 @@ export const reverseLedgerEntry = async (
       entityType: 'finance',
       entityId: original._id ?? null,
       oldValue: { status: original.status },
-      newValue: { status: 'reversed', reversalId: reversal._id?.toString(), reason: reason ?? null },
+      newValue: {
+        status: 'reversed',
+        reversalId: reversal._id?.toString(),
+        reason: reason ?? null,
+      },
       details: `Reversed ${original.type} of ${formatPaisa(original.amount)}`,
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
