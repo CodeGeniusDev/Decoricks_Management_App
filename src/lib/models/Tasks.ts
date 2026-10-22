@@ -53,9 +53,10 @@ export interface Board {
   _id?: ObjectId
   name: string
   description?: string
+  createdBy?: ObjectId
   isActive: boolean
   archivedAt?: Date | null
-  createdBy: ObjectId
+  idempotencyKey?: string
   createdAt: Date
   updatedAt: Date
 }
@@ -70,7 +71,7 @@ export const boardToJSON = (b: Board) => ({
   archivedAt: b.archivedAt ?? null,
   createdAt: b.createdAt,
   updatedAt: b.updatedAt,
-  createdBy: b.createdBy.toString(),
+  createdBy: b.createdBy?.toString() ?? null,
 })
 
 /* --------------------------------- columns -------------------------------- */
@@ -280,6 +281,16 @@ export function ensureTaskIndexes(db: Db): Promise<void> {
             getBoardCollection(db).createIndex(
               { isActive: 1, updatedAt: -1 },
               { name: 'boards_active_updated' }
+            )
+          ),
+          createIndexTolerant(
+            getBoardCollection(db).createIndex(
+              { idempotencyKey: 1 },
+              {
+                unique: true,
+                partialFilterExpression: { idempotencyKey: { $type: 'string' } },
+                name: 'boards_idempotency_unique',
+              }
             )
           ),
 

@@ -280,11 +280,12 @@ export async function createBoardWithDefaults(
 ): Promise<WithId<Board>> {
   const now = new Date()
   const boardDoc: Omit<Board, '_id'> = {
-    name: input.name,
-    description: input.description,
+    name: input.name.trim(),
+    description: input.description?.trim() || undefined,
     isActive: true,
     archivedAt: null,
     createdBy: input.createdBy,
+    idempotencyKey: input.idempotencyKey,
     createdAt: now,
     updatedAt: now,
   } as never

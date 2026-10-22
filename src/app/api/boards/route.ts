@@ -81,6 +81,7 @@ async function __POST(request: NextRequest) {
       name: parsed.data.name,
       description: parsed.data.description,
       createdBy: actor.id,
+      idempotencyKey: parsed.data.idempotencyKey,
     })
 
     const meta = await getRequestMeta()
