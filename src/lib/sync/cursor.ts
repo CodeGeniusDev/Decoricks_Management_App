@@ -1,5 +1,6 @@
 import type { Collection, Db, Document } from 'mongodb'
 import { ObjectId } from 'mongodb'
+import { getBudgetCollection } from '@/lib/models/Operations'
 import { getTaskDocCollection } from '@/lib/models/Tasks'
 import { getMessageCollection } from '@/lib/models/Chat'
 import { getOrderCollection, getReturnCollection } from '@/lib/models/Sales'
@@ -67,6 +68,10 @@ export const SOURCES: Record<Exclude<SyncModule, 'notifications'>, Source[]> = {
       get: (db) => getLedgerCollection(db) as unknown as Collection<Document>,
       field: 'updatedAt',
     },
+    {
+      get: (db) => getBudgetCollection(db) as unknown as Collection<Document>,
+      field: 'updatedAt',
+    },
   ],
 }
 
@@ -97,6 +102,7 @@ export function ensureSyncIndexes(db: Db): Promise<void> {
           getProductCollection(db).createIndex({ updatedAt: -1 }),
           getStockCollection(db).createIndex({ updatedAt: -1 }),
           getLedgerCollection(db).createIndex({ updatedAt: -1 }),
+          getBudgetCollection(db).createIndex({ updatedAt: -1 }),
           // Per-user notifications cursor: newest of the caller's own rows.
           getNotificationCollection(db).createIndex(
             { userId: 1, createdAt: -1 },

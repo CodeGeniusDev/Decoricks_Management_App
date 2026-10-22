@@ -52,11 +52,6 @@ export const COLLECTION_MODULES: Record<string, SyncModule> = {
   financeCategories: 'finance',
   budgets: 'finance',
   profitDistributions: 'finance',
-  // The finance module's cursor is computed from `transactions`
-  // (`getLedgerCollection` in `sync/cursor.ts`). This entry used to read
-  // `ledger`, which is not a collection in any database — so every ledger write
-  // was published under a namespace the change stream never reports and finance
-  // had no live signal at all: it refreshed only on the polling fallback.
   transactions: 'finance',
 }
 

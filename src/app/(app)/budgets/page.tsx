@@ -15,6 +15,7 @@ import { Table } from '@/components/ui/Table';
 import { Toast } from '@/components/ui/Toast';
 import { IconPlus } from '@/components/ui/icons';
 import { apiJson, ApiError } from '@/lib/api-client';
+import { useRealtimeSync } from '@/lib/sync/useRealtime';
 import { enqueueCreate } from '@/lib/offline/browser';
 import type { BudgetCreatePayload } from '@/lib/offline/types';
 import { useAuth } from '@/components/auth/AuthProvider';
@@ -102,9 +103,9 @@ export default function BudgetsPage() {
   const idempotencyKeyRef = useRef('');
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
     try {
+      setLoading(true);
+      setError(null);
       setBudgets(await apiJson<BudgetView[]>('/api/budgets'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load budgets');
@@ -113,9 +114,9 @@ export default function BudgetsPage() {
     }
   }, []);
 
-  useEffect(() => {
+  useRealtimeSync('finance', () => {
     void load();
-  }, [load]);
+  });
 
   // Reference data for labels and the create form; not fatal if it fails.
   useEffect(() => {
