@@ -118,7 +118,7 @@ export async function POST(request: Request) {
       // forcing an immediate re-login.
       const session = await createSession(db, updatedUser, meta)
       await clearSessionCookies()
-      await writeSessionCookies(session.tokenHash, session.csrfToken)
+      await writeSessionCookies(session.tokenHash, session.csrfToken, session.createdAt)
     }
 
     await recordAuditEntry(db, {

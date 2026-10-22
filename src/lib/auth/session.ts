@@ -30,6 +30,38 @@ export const SESSION_BACKGROUND_HEADER = 'x-session-background'
 
 const SESSION_TTL_MS = () => getEnv().SESSION_TTL_MINUTES * 60 * 1000
 
+/**
+ * Absolute ceiling on a session's life, measured from `createdAt`.
+ *
+ * Policy decision (Phase 10 §4a): the inactivity window slides, but a session
+ * can never outlive this window from the moment it was created, however active
+ * the user (or an automated client replaying the cookie) keeps it.
+ */
+const SESSION_MAX_LIFETIME_MS = () => getEnv().SESSION_MAX_LIFETIME_MINUTES * 60 * 1000
+
+/**
+ * The instant a session must die, whichever bound is reached first.
+ *
+ * The sliding inactivity bound is `now + TTL`, but it can never push the
+ * deadline past `createdAt + MAX_LIFETIME`. Taking the earlier of the two is
+ * what makes the absolute cap real rather than decorative.
+ */
+export const sessionDeadline = (session: Pick<Session, 'createdAt'>, now = Date.now()): Date => {
+  const sliding = new Date(now + SESSION_TTL_MS())
+  const absolute = new Date(session.createdAt.getTime() + SESSION_MAX_LIFETIME_MS())
+  return sliding.getTime() < absolute.getTime() ? sliding : absolute
+}
+
+/**
+ * True once the absolute lifetime has elapsed, whatever the sliding window
+ * says. A session in this state is deleted and the caller is treated as
+ * unauthenticated.
+ */
+export const isPastAbsoluteLifetime = (
+  session: Pick<Session, 'createdAt'>,
+  now = Date.now()
+): boolean => now >= session.createdAt.getTime() + SESSION_MAX_LIFETIME_MS()
+
 /** Session tokens are stored hashed so a database leak cannot be replayed. */
 export const hashToken = (token: string): string => createHash('sha256').update(token).digest('hex')
 
@@ -57,7 +89,7 @@ export const createSession = async (
     csrfToken,
     createdAt: now,
     lastActivityAt: now,
-    expiresAt: new Date(now.getTime() + SESSION_TTL_MS()),
+    expiresAt: sessionDeadline({ createdAt: now }, now.getTime()),
     ipAddress: meta.ipAddress,
     userAgent: meta.userAgent,
   }
@@ -71,12 +103,27 @@ export interface SessionCookieOptions {
   maxAgeSeconds: number
 }
 
-export const sessionCookieOptions = (): SessionCookieOptions => ({
-  // SPEC §10.1.1 Threat 2 requires Secure in production; plain http on localhost
-  // would make the browser drop the cookie entirely during development.
-  secure: getEnv().NODE_ENV === 'production',
-  maxAgeSeconds: Math.floor(SESSION_TTL_MS() / 1000),
-})
+/**
+ * Cookie lifetime, capped by the session's absolute maximum.
+ *
+ * The browser cookie must never outlive the server-side record, and it must
+ * not outlive the absolute cap either — otherwise the cookie would keep
+ * presenting a token the server has already rejected. `createdAt` is optional
+ * so callers that do not hold a session record still get a sane bound.
+ */
+export const sessionCookieOptions = (createdAt?: Date): SessionCookieOptions => {
+  const ttlSeconds = Math.floor(SESSION_TTL_MS() / 1000)
+  const absoluteSeconds = Math.floor(SESSION_MAX_LIFETIME_MS() / 1000)
+  const remainingAbsolute = createdAt
+    ? Math.max(0, Math.floor((createdAt.getTime() + SESSION_MAX_LIFETIME_MS() - Date.now()) / 1000))
+    : absoluteSeconds
+  return {
+    // SPEC §10.1.1 Threat 2 requires Secure in production; plain http on localhost
+    // would make the browser drop the cookie entirely during development.
+    secure: getEnv().NODE_ENV === 'production',
+    maxAgeSeconds: Math.min(ttlSeconds, remainingAbsolute),
+  }
+}
 
 /** Shared cookie attributes: HttpOnly, SameSite=Lax (SPEC Threat 2). */
 const baseCookie = {
@@ -85,8 +132,12 @@ const baseCookie = {
   path: '/',
 } as const
 
-export const writeSessionCookies = async (token: string, csrfToken: string) => {
-  const opts = sessionCookieOptions()
+export const writeSessionCookies = async (
+  token: string,
+  csrfToken: string,
+  createdAt?: Date
+) => {
+  const opts = sessionCookieOptions(createdAt)
   const store = await cookies()
 
   store.set(SESSION_COOKIE, token, {
@@ -254,6 +305,15 @@ export const getAuthenticatedUser = async (
 
   const { linkedUser, ...sessionRecord } = joined
   const session: Session = sessionRecord
+
+  // The absolute lifetime is checked BEFORE the sliding expiry, because a
+  // session that was slid past its absolute cap must die even if its
+  // `expiresAt` says otherwise. Order matters: checking the sliding expiry
+  // first would let a session that was pushed past the cap live on.
+  if (isPastAbsoluteLifetime(session)) {
+    await withDbRetry((database) => getSessionCollection(database).deleteOne({ _id: session._id }))
+    return null
+  }
   if (session.expiresAt.getTime() <= Date.now()) {
     await withDbRetry((database) => getSessionCollection(database).deleteOne({ _id: session._id }))
     return null
@@ -288,7 +348,8 @@ const maybeSlideSession = async (db: Db, session: Session, token: string): Promi
   const sinceLastActivity = now - session.lastActivityAt.getTime()
   if (sinceLastActivity < slideIntervalMs()) return
 
-  const expiresAt = new Date(now + SESSION_TTL_MS())
+  // The slide can never push the deadline past the absolute cap.
+  const expiresAt = sessionDeadline(session, now)
 
   await withDbRetry((database) =>
     getSessionCollection(database).updateOne(
@@ -306,7 +367,7 @@ const maybeSlideSession = async (db: Db, session: Session, token: string): Promi
   // Handler / Server Action — in a read-only render there is nothing to update,
   // and the next handler request will re-issue it, so a failure is harmless.
   try {
-    await writeSessionCookies(token, session.csrfToken)
+    await writeSessionCookies(token, session.csrfToken, session.createdAt)
   } catch {
     // Not in a mutable cookie context; server-side expiry is already extended.
   }

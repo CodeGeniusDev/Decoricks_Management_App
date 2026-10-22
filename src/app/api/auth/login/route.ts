@@ -115,7 +115,7 @@ export async function POST(request: Request) {
       userAgent: meta.userAgent,
     })
 
-    await writeSessionCookies(session.tokenHash, session.csrfToken)
+    await writeSessionCookies(session.tokenHash, session.csrfToken, session.createdAt)
 
     // Effective permissions travel with the login response so the shell renders
     // the correct navigation immediately instead of falling back to defaults

@@ -14,14 +14,29 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(16, 'SESSION_SECRET must be at least 16 characters'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
-  // Session lifetime. SPEC §10.1.1 Threat 2 / §10.2.1 Test 3 specified 30
-  // minutes; the product requirement is now a 7-day *inactivity* timeout, so the
-  // window restarts on each qualifying authenticated request.
-  SESSION_TTL_MINUTES: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(7 * 24 * 60),
+  /**
+   * Sliding *inactivity* window, in minutes. The window restarts on each
+   * qualifying authenticated request.
+   *
+   * Policy decision (Phase 10 §4a): 12 hours of inactivity ends the session.
+   * SPEC §10.1.1 Threat 2 originally specified 30 minutes, which the product
+   * later replaced with a 7-day inactivity timeout; Phase 10 tightens it to a
+   * 12-hour sliding window. Both numbers are configurable so a deployment can
+   * tighten further without a code change.
+   */
+  SESSION_TTL_MINUTES: z.coerce.number().int().positive().default(12 * 60),
+
+  /**
+   * Absolute session lifetime, in minutes, measured from the moment the session
+   * was created.
+   *
+   * Policy decision (Phase 10 §4a): a session may slide for at most 7 days no
+   * matter how active the user is. This is the backstop that stops a stolen or
+   * shared session from being kept alive indefinitely by automated traffic.
+   * Must be greater than or equal to SESSION_TTL_MINUTES; the schema refinement
+   * below rejects a configuration that would make the absolute cap unreachable.
+   */
+  SESSION_MAX_LIFETIME_MINUTES: z.coerce.number().int().positive().default(7 * 24 * 60),
 
   // Minimum gap between session "slides" so a burst of requests does not turn
   // into a burst of writes. Background / auto-polling requests never slide.
@@ -66,6 +81,13 @@ const envSchema = z.object({
   VAPID_PRIVATE_KEY: z.string().min(1).optional(),
   VAPID_SUBJECT: z.string().min(1).optional(),
 })
+  // The absolute lifetime is the outer bound on a sliding window, so it can
+  // never be shorter than the window it caps.
+  .refine((env) => env.SESSION_MAX_LIFETIME_MINUTES >= env.SESSION_TTL_MINUTES, {
+    message:
+      'SESSION_MAX_LIFETIME_MINUTES must be greater than or equal to SESSION_TTL_MINUTES',
+    path: ['SESSION_MAX_LIFETIME_MINUTES'],
+  })
 
 // Validate environment variables at runtime (not build time)
 let _env: z.infer<typeof envSchema> | null = null
@@ -79,6 +101,7 @@ export const getEnv = () => {
       SESSION_SECRET: process.env.SESSION_SECRET,
       NODE_ENV: process.env.NODE_ENV || 'development',
       SESSION_TTL_MINUTES: process.env.SESSION_TTL_MINUTES,
+      SESSION_MAX_LIFETIME_MINUTES: process.env.SESSION_MAX_LIFETIME_MINUTES,
       SESSION_SLIDE_INTERVAL_SECONDS: process.env.SESSION_SLIDE_INTERVAL_SECONDS,
       LOGIN_MAX_ATTEMPTS: process.env.LOGIN_MAX_ATTEMPTS,
       LOGIN_WINDOW_MINUTES: process.env.LOGIN_WINDOW_MINUTES,
