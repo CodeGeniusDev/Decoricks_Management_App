@@ -12,9 +12,12 @@ interface SidebarProps {
   activeId: string | null
   loading: boolean
   canManage: boolean
+  /** A closed room is open in the panel; keeps the Archived entry marked. */
+  viewingArchived: boolean
   onSelect: (id: string) => void
   onCreate: (name: string, description: string) => Promise<boolean>
   onArchive: (id: string) => Promise<void>
+  onOpenArchived: () => void
 }
 
 /**
@@ -22,15 +25,21 @@ interface SidebarProps {
  * Founder-only affordances (new channel, archive) are shown when `canManage`
  * is true, but that flag is presentational — the mutating routes re-check
  * Founder-ness server-side, so hiding them here is UX, not security.
+ *
+ * The Archived Chats entry is a permanent footer rather than a hover control:
+ * the whole bug it fixes was that archiving a room removed its only trace, so
+ * the way back must be visible without requiring anyone to discover it.
  */
 export function ChannelSidebar({
   channels,
   activeId,
   loading,
   canManage,
+  viewingArchived,
   onSelect,
   onCreate,
   onArchive,
+  onOpenArchived,
 }: SidebarProps) {
   const [createOpen, setCreateOpen] = useState(false)
   const [name, setName] = useState('')
@@ -117,7 +126,10 @@ export function ChannelSidebar({
                         onClick={() => onArchive(c._id)}
                         aria-label={`Archive ${c.name}`}
                         title="Archive channel"
-                        className="mr-1 hidden h-8 w-8 items-center justify-center rounded-md text-decoricks-light/70 hover:bg-decoricks-light/20 group-hover:inline-flex"
+                        /* Hover reveals nothing on a touchscreen, and archiving had
+                           better not be a desktop-only verb: visible always, tidy on
+                           pointer devices. */
+                        className="mr-1 inline-flex h-9 w-9 items-center justify-center rounded-md text-decoricks-light/70 hover:bg-decoricks-light/20 md:hidden md:group-hover:inline-flex"
                       >
                         <IconArchive className="h-4 w-4" />
                       </button>
@@ -129,6 +141,24 @@ export function ChannelSidebar({
           </ul>
         )}
       </nav>
+
+      {canManage && (
+        <div className="border-t border-line-subtle p-2">
+          <button
+            type="button"
+            onClick={onOpenArchived}
+            aria-label="Open archived chats"
+            className={`flex min-h-[44px] w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium ${
+              viewingArchived
+                ? 'bg-surface-sunken text-ink'
+                : 'text-ink-muted hover:bg-surface-sunken hover:text-ink-secondary'
+            }`}
+          >
+            <IconArchive className="h-4 w-4 shrink-0" />
+            <span className="flex-1">Archived Chats</span>
+          </button>
+        </div>
+      )}
 
       <Modal
         isOpen={createOpen}

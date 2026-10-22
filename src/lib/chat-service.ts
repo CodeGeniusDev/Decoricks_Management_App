@@ -5,10 +5,14 @@ import {
   getMessageCollection,
   type ChatChannel,
   type Message,
+  type MessageMention,
+  type MessageReference,
 } from '@/lib/models/Chat'
 import { commentWithinEditWindow } from '@/lib/business-policy'
 import { sanitizeMessageText } from '@/lib/sanitize'
 import { getKarachiDate } from '@/lib/date'
+import { resolveReferences, type ResolvedReference } from '@/lib/chat-references'
+import type { AuthorizationResult } from '@/lib/authorization'
 
 /**
  * Chat data-access shared by every channel/message route.
@@ -25,15 +29,39 @@ export function isDuplicateKeyError(err: unknown): boolean {
   return /E11000|duplicate key/i.test(message)
 }
 
-/** Loads a channel by id, only if it exists and is not archived. */
+/**
+ * Loads a channel by id, only if it exists and is not archived.
+ *
+ * Archiving a channel is conversation-wide by design (the flag lives on
+ * `chatChannels`, not on messages) and it hides the room from the normal list
+ * while keeping every message intact — so "not found" is the correct answer for
+ * anyone reading the active chat, and it is what stops a post landing in a room
+ * the team closed.
+ */
 export async function resolveActiveChannel(
   db: Db,
   channelId: ObjectId
 ): Promise<(ChatChannel & { _id: ObjectId }) | null> {
+  return resolveChannel(db, channelId)
+}
+
+/**
+ * Same lookup with the archive filter lifted, for the Archived Chats view.
+ * Keeping this as an explicit opt-in (rather than widening
+ * `resolveActiveChannel`) is what makes it impossible to accidentally let an
+ * archived room accept new posts from the ordinary send path.
+ */
+export async function resolveChannel(
+  db: Db,
+  channelId: ObjectId,
+  options: { allowArchived?: boolean } = {}
+): Promise<(ChatChannel & { _id: ObjectId }) | null> {
   const channel = await getChannelCollection(db).findOne({
     _id: channelId,
+    ...(options.allowArchived ? {} : { isArchived: false }),
   } as never)
-  if (!channel || channel.isArchived) return null
+  if (!channel) return null
+  if (!options.allowArchived && channel.isArchived) return null
   return channel as ChatChannel & { _id: ObjectId }
 }
 
@@ -43,6 +71,10 @@ export interface SendParams {
   senderName: string
   content: string
   clientId: string
+  /** Server-derived @mentions. Never taken from the request body. */
+  mentions?: MessageMention[]
+  /** Server-validated record references. */
+  references?: MessageReference[]
 }
 
 export interface SendResult {
@@ -72,6 +104,10 @@ export async function sendIdempotent(db: Db, params: SendParams): Promise<SendRe
     isSystem: false,
     clientId: params.clientId,
     isDeleted: false,
+    // Omitted entirely when empty, so the overwhelming majority of rows stay
+    // exactly the shape they were before Phase 3.
+    ...(params.mentions?.length ? { mentions: params.mentions } : {}),
+    ...(params.references?.length ? { references: params.references } : {}),
     createdAt: getKarachiDate(),
   }
 
@@ -143,12 +179,58 @@ export function guardMessage(
   return { ok: true }
 }
 
+/* --------------------------- record reference chips -------------------------- */
+
+/**
+ * Turn stored reference ids into per-viewer chips, in one batch.
+ *
+ * Lives here rather than in the routes because three read paths (channel
+ * history, a send's response, an edit's response) must render the exact same
+ * thing; a divergence between them is how a chip ends up clickable in the
+ * message you just sent and dead after a refresh.
+ *
+ * A soft-deleted message gets no chips at all, matching `messageToJSON` dropping
+ * its body — a tombstone should not keep pointing at business records.
+ */
+export async function attachReferenceChips(
+  db: Db,
+  auth: AuthorizationResult,
+  rows: { references?: MessageReference[]; isDeleted?: boolean }[]
+): Promise<ResolvedReference[][]> {
+  const resolved = await resolveReferences(
+    db,
+    auth,
+    rows.map((row) => ({ references: row.references ?? [] }))
+  )
+  return rows.map((row) =>
+    row.isDeleted
+      ? []
+      : (row.references ?? []).map(
+          (ref) =>
+            resolved[`${ref.entityType}:${ref.entityId.toString()}`] ?? {
+              state: 'unavailable' as const,
+              entityType: ref.entityType,
+              entityId: ref.entityId.toString(),
+            }
+        )
+  )
+}
+
 /* ------------------------------ read / unread ------------------------------ */
 
 /**
  * Unread counts per channel for one user: non-deleted, not-from-me messages
  * newer than the user's watermark. A channel never opened defaults to a zero
  * watermark, so the whole backlog counts as unread until the first visit.
+ *
+ * ONE round trip for all channels. This used to issue a `countDocuments` per
+ * channel in a `Promise.all` — an N+1 pattern where the shared connection pool
+ * (`maxPoolSize: 10`) and ~65ms of Atlas RTT meant the fan-out resolved in
+ * waves: `GET /api/chat/channels` measured 921ms largely because of it. Now a
+ * singletons `find` over the union of channels, projected to just
+ * `{ channelId, createdAt }`, is grouped in memory. The scan is bounded by the
+ * EARLIEST watermark across the caller's channels, so it never reads messages
+ * older than any channel could still count, and the result is identical.
  */
 export async function computeUnreadCounts(
   db: Db,
@@ -161,20 +243,29 @@ export async function computeUnreadCounts(
     .toArray()
   const byChannel = new Map(reads.map((r) => [r.channelId.toString(), r.lastReadAt]))
 
-  const col = getMessageCollection(db)
-  const counts = await Promise.all(
-    channelIds.map(async (channelId) => {
-      const since = byChannel.get(channelId.toString()) ?? new Date(0)
-      const n = await col.countDocuments({
-        channelId,
-        isDeleted: false,
-        senderId: { $ne: userId },
-        createdAt: { $gt: since },
-      } as never)
-      return [channelId.toString(), n] as [string, number]
-    })
-  )
-  return Object.fromEntries(counts)
+  // Earliest watermark bounds the scan; a channel with no watermark reads from
+  // the epoch, which (being the minimum) simply means "no lower bound".
+  const watermarks = channelIds.map((id) => byChannel.get(id.toString())?.getTime() ?? 0)
+  const earliest = new Date(Math.min(...watermarks))
+
+  const rows = (await getMessageCollection(db)
+    .find({
+      channelId: { $in: channelIds },
+      isDeleted: false,
+      senderId: { $ne: userId },
+      createdAt: { $gt: earliest },
+    } as never)
+    .project({ channelId: 1, createdAt: 1 })
+    .toArray()) as unknown as { channelId: ObjectId; createdAt: Date }[]
+
+  const counts: Record<string, number> = {}
+  for (const id of channelIds) counts[id.toString()] = 0
+  for (const row of rows) {
+    const key = row.channelId.toString()
+    const since = byChannel.get(key)?.getTime() ?? 0
+    if (row.createdAt.getTime() > since) counts[key] = (counts[key] ?? 0) + 1
+  }
+  return counts
 }
 
 /** Upserts the user's last-read watermark for a channel. */

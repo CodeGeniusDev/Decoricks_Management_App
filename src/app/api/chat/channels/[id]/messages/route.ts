@@ -1,14 +1,26 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth } from '@/lib/http'
-import { authorize } from '@/lib/authorization'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
+import { authorize, requireFounder } from '@/lib/authorization'
 import { isFounderRole } from '@/lib/roles'
 import { getDatabase } from '@/lib/mongodb'
 import { getBusinessSettingsCollection } from '@/lib/models/Ledger'
 import { resolveCommentEditWindow, commentWithinEditWindow } from '@/lib/business-policy'
 import { ensureChatCollections, getMessageCollection, messageToJSON } from '@/lib/models/Chat'
 import { messageSendSchema, isObjectId } from '@/lib/schemas/chat'
-import { resolveActiveChannel, sendIdempotent } from '@/lib/chat-service'
+import { sanitizeMessageText } from '@/lib/sanitize'
+import {
+  attachReferenceChips,
+  resolveActiveChannel,
+  resolveChannel,
+  sendIdempotent,
+} from '@/lib/chat-service'
+import {
+  loadMentionDirectory,
+  notifyMentions,
+  resolveMentionsForMessage,
+} from '@/lib/chat-mentions'
+import { validateReferences } from '@/lib/chat-references'
 import { messageSendLimiter } from '@/lib/rate-limit'
 import { errorResponse, notFoundError, successResponse, validationError } from '@/lib/api-response'
 
@@ -29,11 +41,23 @@ type RouteContext = { params: Promise<{ id: string }> }
  * Chat is open to every member, so both verbs gate on `chat.view` /
  * `chat.create` (all four roles hold these); channel existence is checked for a
  * non-archived room.
+ *
+ * Phase 3 adds two things to the same envelope, both resolved server-side:
+ * `mentions`, derived from the stored text against the active-member directory,
+ * and `references`, expanded from the submitted ids into per-viewer chips. An
+ * archived room is readable ONLY through `?archived=true` and ONLY by a Founder
+ * — the ordinary read path keeps answering 404, which is what makes "archived"
+ * mean hidden rather than merely unlisted.
  */
+
+/** `?archived=true|1`, matching the channels route's spelling. */
+const wantsArchived = (raw: string | null): boolean => raw === 'true' || raw === '1'
 
 async function __GET(request: NextRequest, context: RouteContext) {
   try {
-    const auth = await authorize('chat', 'view')
+    const { searchParams } = new URL(request.url)
+    const archived = wantsArchived(searchParams.get('archived'))
+    const auth = archived ? await requireFounder() : await authorize('chat', 'view')
     const { id } = await context.params
     if (!isObjectId(id)) {
       return validationError('Invalid channel id', [{ path: 'id', message: 'Malformed' }])
@@ -41,10 +65,8 @@ async function __GET(request: NextRequest, context: RouteContext) {
 
     const db = await getDatabase()
     await ensureChatCollections(db)
-    const channel = await resolveActiveChannel(db, new ObjectId(id))
+    const channel = await resolveChannel(db, new ObjectId(id), { allowArchived: archived })
     if (!channel) return notFoundError('Channel not found')
-
-    const { searchParams } = new URL(request.url)
     const sinceRaw = searchParams.get('since')
     const before = searchParams.get('before')
     const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit') || '50', 10) || 50))
@@ -87,9 +109,18 @@ async function __GET(request: NextRequest, context: RouteContext) {
             (m.senderId === viewerId && commentWithinEditWindow(m.createdAt, now, windowMinutes))),
       }))
 
-    return successResponse(data)
+    // Live chips, resolved once for the whole page against the current viewer's
+    // grants. Done after serialisation so the raw ObjectIds never leave the
+    // server: the client receives label/href/state, or nothing at all for a
+    // record it may not see.
+    const chips = await attachReferenceChips(db, auth, docs)
+    // `docs` is newest-first and `data` is its reverse; align before zipping.
+    const chipsOldestFirst = [...chips].reverse()
+    const enriched = data.map((m, index) => ({ ...m, references: chipsOldestFirst[index] ?? [] }))
+
+    return successResponse(enriched)
   } catch (error) {
-    console.error('GET /api/chat/channels/[id]/messages failed:', error)
+    logRouteFailure('GET /api/chat/channels/[id]/messages', error)
     return handleRouteError(error)
   }
 }
@@ -112,10 +143,12 @@ async function __POST(request: NextRequest, context: RouteContext) {
         parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message }))
       )
     }
-    const { content, clientId } = parsed.data
+    const { content, clientId, references } = parsed.data
 
     const db = await getDatabase()
     await ensureChatCollections(db)
+    // `resolveActiveChannel`, not the archived-tolerant one: closing a room
+    // stops it accepting posts, while the archived view still reads its history.
     const channel = await resolveActiveChannel(db, new ObjectId(id))
     if (!channel) return notFoundError('Channel not found')
 
@@ -133,17 +166,47 @@ async function __POST(request: NextRequest, context: RouteContext) {
       return res
     }
 
+    // Mentions come out of the SAME sanitised string that gets stored, so the
+    // text on the page and the ids in the document cannot disagree. Resolving
+    // before the insert also means a deactivated or chat-less user is simply not
+    // a mention, with no notification attempted for them.
+    const clean = sanitizeMessageText(content)
+    const directory = await loadMentionDirectory(db)
+    const mentions = resolveMentionsForMessage(clean, directory)
+
+    // References are checked against the DB and the caller's own grants: an id
+    // for a record that does not exist, or that this member cannot view, is
+    // dropped rather than stored, so no message can smuggle a link to data the
+    // reader is not entitled to open.
+    const { accepted } = references?.length
+      ? await validateReferences(db, auth, references)
+      : { accepted: [] }
+
     const { message, created } = await sendIdempotent(db, {
       channelId: channel._id,
       senderId: auth.user._id,
       senderName: auth.user.name,
       content,
       clientId,
+      mentions,
+      references: accepted,
     })
 
-    return successResponse({ ...messageToJSON(message), editable: true }, created ? 201 : 200)
+    // Alerts only for a row that was genuinely inserted. A retry folded into the
+    // original by the idempotency index arrives here with `created: false`, and
+    // the mention dedupe key is per message per user regardless — so a double
+    // send cannot double-notify even if this branch were reached.
+    if (created && mentions?.length) {
+      await notifyMentions(db, { message, channel, mentions })
+    }
+
+    const [chips] = await attachReferenceChips(db, auth, [message])
+    return successResponse(
+      { ...messageToJSON(message), editable: true, references: chips ?? [] },
+      created ? 201 : 200
+    )
   } catch (error) {
-    console.error('POST /api/chat/channels/[id]/messages failed:', error)
+    logRouteFailure('POST /api/chat/channels/[id]/messages', error)
     return handleRouteError(error)
   }
 }

@@ -10,6 +10,66 @@
 /** How the composer renders a single outgoing message. */
 export type MessageStatus = 'sending' | 'sent' | 'failed'
 
+/** A person the server resolved out of this message's text. */
+export interface ServerMention {
+  userId: string
+  name: string
+}
+
+/**
+ * A record reference as the server resolves it for THIS viewer at read time.
+ *
+ * Three states, and the client must render all three honestly: `available` is a
+ * live, clickable chip; `hidden` means the viewer's role cannot open that
+ * module, so the server sent no label and there is nothing to click; and
+ * `unavailable` means the record was deleted after the message was written.
+ * Rendering an inert chip in the last two cases is deliberate — a message that
+ * claims a link and shows nothing reads as a bug.
+ */
+export type ReferenceChip =
+  | {
+      state: 'available'
+      entityType: string
+      entityId: string
+      label: string
+      href: string
+      meta?: string
+    }
+  | { state: 'hidden'; entityType: string; entityId: string }
+  | { state: 'unavailable'; entityType: string; entityId: string }
+
+/** What the reference picker hands back, shaped as an `available` chip. */
+export interface ReferenceCandidate {
+  entityType: string
+  entityId: string
+  label: string
+  meta?: string
+  href: string
+}
+
+/** A module the picker may search, as offered by the server for this user. */
+export interface ReferenceType {
+  entityType: string
+  label: string
+}
+
+/**
+ * One row of the mention directory (`GET /api/chat/members`): an active member
+ * whose role can read Chat, as an id and a display name and nothing else. The
+ * composer inserts the name; the server is what turns it back into the id.
+ */
+export interface MentionMember {
+  id: string
+  name: string
+}
+
+/** Matches the server's per-message cap in `messageSendSchema`. */
+export const MAX_REFERENCES_PER_MESSAGE = 8
+
+/** Identity for a chip, used by the composer's pending tray and by React keys. */
+export const referenceKey = (chip: { entityType: string; entityId: string }): string =>
+  `${chip.entityType}:${chip.entityId}`
+
 /** A message as serialised by `messageToJSON` on the server. */
 export interface ServerMessage {
   _id: string
@@ -24,6 +84,10 @@ export interface ServerMessage {
   createdAt: string
   /** Server-computed: may the caller edit/delete this row right now? */
   editable?: boolean
+  /** Server-derived @mentions. Absent on the overwhelming majority of rows. */
+  mentions?: ServerMention[]
+  /** Per-viewer record chips, resolved on read. Empty means "none visible". */
+  references?: ReferenceChip[]
 }
 
 /** A message on the client: server copy plus a local status, or an optimistic
@@ -42,8 +106,15 @@ export interface ChatChannel {
   description?: string
   isArchived: boolean
   createdAt: string
+  /** Last touch — the sort key of the archived list, and the fallback date for
+   *  rooms archived before `archivedAt` existed. */
+  updatedAt: string
   unreadCount: number
   canManage: boolean
+  /** When the room was archived, for the Archived Chats list. */
+  archivedAt?: string | null
+  /** Message count, supplied only for archived rows (read-only history view). */
+  messageCount?: number
 }
 
 const timeOf = (m: ChatMessage): number => Date.parse(m.createdAt) || 0

@@ -1,11 +1,21 @@
 'use client'
 
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Textarea'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { IconEdit, IconTrash, IconCheck, IconClose, IconAlert } from '@/components/ui/icons'
-import type { ChatMessage } from './types'
+import {
+  IconEdit,
+  IconTrash,
+  IconCheck,
+  IconClose,
+  IconAlert,
+  IconReference,
+} from '@/components/ui/icons'
+import { segmentMentions } from '@/lib/chat-mention-text'
+import { entityIcon, entityNoun } from './reference-visuals'
+import { referenceKey, type ChatMessage, type ReferenceChip } from './types'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -26,6 +36,109 @@ const initials = (name: string) => name.trim().charAt(0).toUpperCase() || '?'
 
 const formatTime = (dateStr: string): string =>
   new Date(dateStr).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' })
+
+/**
+ * Message body with `@mentions` picked out.
+ *
+ * Highlighting is driven by the mention names the server stored with the row, so
+ * a run only looks like a mention if it resolved to a real user id at send time;
+ * `mail@decoricks` and an unknown `@SomeName` stay plain text, which is the
+ * honest rendering. Text is split and re-emitted as React children — never
+ * `dangerouslySetInnerHTML` — because the message body is user input.
+ */
+function MessageBody({ message }: { message: ChatMessage }) {
+  const names = (message.mentions ?? []).map((m) => m.name)
+  const segments = names.length ? segmentMentions(message.content, names) : null
+  if (!segments) {
+    return <p className="whitespace-pre-wrap break-words">{message.content}</p>
+  }
+  return (
+    <p className="whitespace-pre-wrap break-words">
+      {segments.map((segment, index) =>
+        segment.mention ? (
+          <span
+            key={`${segment.text}-${index}`}
+            title={`Mentioned ${segment.name}`}
+            className="rounded bg-decoricks-brown/10 px-1 font-semibold text-decoricks-brown-dark"
+          >
+            {segment.text}
+          </span>
+        ) : (
+          <span key={`${segment.text}-${index}`}>{segment.text}</span>
+        )
+      )}
+    </p>
+  )
+}
+
+/**
+ * Record-reference chips.
+ *
+ * Three renderings, and the difference between them is the point:
+ *  - `available` links to the record through Next's router (no full reload), and
+ *    its label was read from the live document when this page was fetched, so a
+ *    renamed record shows its new name rather than the one someone copied;
+ *  - `hidden` is an inert pill. The viewer's role cannot open that module, so
+ *    the server sent no label, no summary and no link — confirming a record's
+ *    contents to someone not entitled to them would be a leak disguised as a
+ *    convenience, while showing nothing at all would make the sender's message
+ *    look broken;
+ *  - `unavailable` is inert too: the record was deleted after the message was
+ *    written, and saying so beats linking to a 404.
+ */
+function ReferenceChips({ chips, own }: { chips: ReferenceChip[]; own: boolean }) {
+  if (chips.length === 0) return null
+  const tone = own
+    ? 'border-decoricks-light/40 bg-decoricks-light/15 text-decoricks-light'
+    : 'border-line bg-surface-raised text-ink-secondary'
+  return (
+    <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label="Referenced records">
+      {chips.map((chip) => {
+        const Icon = chip.state === 'available' ? entityIcon(chip.entityType) : IconReference
+        const body = (
+          <>
+            <Icon className="h-3.5 w-3.5 shrink-0 opacity-70" />
+            <span className="max-w-[15rem] truncate">
+              {chip.state === 'available'
+                ? chip.label
+                : chip.state === 'hidden'
+                  ? 'Restricted record'
+                  : 'Record no longer available'}
+            </span>
+            {chip.state === 'available' && (
+              <span className="shrink-0 opacity-70">{entityNoun(chip.entityType)}</span>
+            )}
+          </>
+        )
+        const className = `inline-flex max-w-full items-center gap-1.5 rounded-full border px-2 py-1 text-2xs font-medium ${tone}`
+        return (
+          <li key={referenceKey(chip)}>
+            {chip.state === 'available' ? (
+              <Link
+                href={chip.href}
+                title={chip.meta ? `${chip.label} · ${chip.meta}` : chip.label}
+                className={`${className} transition-colors hover:border-decoricks-brown`}
+              >
+                {body}
+              </Link>
+            ) : (
+              <span
+                title={
+                  chip.state === 'hidden'
+                    ? 'This record belongs to a module you do not have access to'
+                    : 'This record has since been deleted'
+                }
+                className={`${className} italic opacity-80`}
+              >
+                {body}
+              </span>
+            )}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
 
 /**
  * Message transcript.
@@ -231,7 +344,11 @@ export function MessageList({
                     ) : isDeleted ? (
                       <p>This message was deleted.</p>
                     ) : (
-                      <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                      <MessageBody message={message} />
+                    )}
+
+                    {!editing && !isDeleted && (
+                      <ReferenceChips chips={message.references ?? []} own={own} />
                     )}
 
                     {!editing && !isDeleted && (

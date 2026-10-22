@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { getDatabase } from '@/lib/mongodb'
@@ -54,7 +54,7 @@ async function __GET(request: NextRequest) {
 
     return successResponse(docs.reverse().map(messageToJSON))
   } catch (error) {
-    console.error('GET /api/chat failed:', error)
+    logRouteFailure('GET /api/chat', error)
     return handleRouteError(error)
   }
 }
@@ -111,7 +111,7 @@ async function __POST(request: NextRequest) {
 
     return successResponse(messageToJSON(saved), 201)
   } catch (error) {
-    console.error('POST /api/chat failed:', error)
+    logRouteFailure('POST /api/chat', error)
     return handleRouteError(error)
   }
 }

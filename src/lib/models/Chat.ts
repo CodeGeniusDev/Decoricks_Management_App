@@ -42,6 +42,12 @@ export interface ChatChannel {
   name: string
   description?: string
   isArchived: boolean
+  /**
+   * When the channel was archived, for the Archived Chats view. Optional on the
+   * document: channels archived before Phase 3 simply have no timestamp, which
+   * the UI shows as "archived earlier" rather than inventing one.
+   */
+  archivedAt?: Date | null
   /** null for the three seeded channels; a Founder's id for created ones. */
   createdBy: ObjectId | null
   createdAt: Date
@@ -57,11 +63,41 @@ export const channelToJSON = (c: ChatChannel) => ({
   name: c.name,
   description: c.description,
   isArchived: c.isArchived,
+  archivedAt: c.archivedAt ?? null,
   createdAt: c.createdAt,
   updatedAt: c.updatedAt,
 })
 
 /* --------------------------------- messages -------------------------------- */
+
+/* -------------------------------- mentions -------------------------------- */
+/**
+ * A resolved @mention. The text keeps the human `@Name` run so a message reads
+ * naturally in any consumer, while this array is the structured record: the
+ * `userId` is derived SERVER-SIDE from the text against the active-user
+ * directory (`@/lib/chat-mentions`), so a client can never forge a mention of a
+ * user it merely typed a name for, and a notification always has a real id to
+ * point at.
+ */
+export interface MessageMention {
+  userId: ObjectId
+  /** The display name the mention was resolved from, kept for rendering. */
+  name: string
+}
+
+/* ------------------------------- references ------------------------------- */
+
+/**
+ * A link to a real record in another module. Only the type + id are stored —
+ * never a copy of the record's name, figure or status, because a copied label
+ * goes stale and can leak data the later viewer may not be entitled to see.
+ * The read path re-resolves each id against the live record, per viewer
+ * (`@/lib/chat-references`), so a chip always points at the actual record.
+ */
+export interface MessageReference {
+  entityType: string
+  entityId: ObjectId
+}
 
 export interface Message {
   _id?: ObjectId
@@ -77,6 +113,13 @@ export interface Message {
   isDeleted: boolean
   deletedAt?: Date | null
   deletedBy?: ObjectId | null
+  /**
+   * Phase 3 collaboration fields. Both are OPTIONAL rather than defaulted: no
+   * migration touches the existing history, and a message without them behaves
+   * exactly as before (`[]` at serialisation time).
+   */
+  mentions?: MessageMention[]
+  references?: MessageReference[]
   createdAt: Date
 }
 
@@ -100,6 +143,18 @@ export const messageToJSON = (m: Message) => ({
   isDeleted: m.isDeleted,
   deletedAt: m.deletedAt ?? null,
   createdAt: m.createdAt,
+  // A deleted message's collaboration data goes with its body: an unresolvable
+  // mention list or record link would advertise a connection to content that is
+  // no longer readable.
+  mentions: m.isDeleted
+    ? []
+    : (m.mentions ?? []).map((x) => ({ userId: x.userId.toString(), name: x.name })),
+  references: m.isDeleted
+    ? []
+    : (m.references ?? []).map((x) => ({
+        entityType: x.entityType,
+        entityId: x.entityId.toString(),
+      })),
 })
 
 /* ------------------------------ read watermarks ---------------------------- */

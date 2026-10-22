@@ -1,10 +1,15 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize, requireFounder } from '@/lib/authorization'
 import { isFounderRole } from '@/lib/roles'
 import { getDatabase } from '@/lib/mongodb'
-import { channelToJSON, ensureChatCollections, getChannelCollection } from '@/lib/models/Chat'
+import {
+  channelToJSON,
+  ensureChatCollections,
+  getChannelCollection,
+  getMessageCollection,
+} from '@/lib/models/Chat'
 import { channelCreateSchema } from '@/lib/schemas/chat'
 import { computeUnreadCounts } from '@/lib/chat-service'
 import { recordAuditEntry } from '@/lib/audit'
@@ -19,22 +24,51 @@ import { conflictError, successResponse, validationError } from '@/lib/api-respo
  *        the Founder-only controls in the UI. (`canManage` is presentational —
  *        the mutating routes enforce Founder-ness independently.)
  *
+ *        `?archived=true` is the Archived Chats list: Founder-only, because
+ *        archiving is a Founder act and an archived room is one the team closed
+ *        — a Partner who could not archive it should not be able to browse what
+ *        was hidden. Sorted most-recently-touched first and reporting each
+ *        room's message count, so "the history is still there" is visible rather
+ *        than assumed. Unread counts are not computed here: a closed room is not
+ *        something the team is expected to be catching up on.
+ *
  * POST — create a channel. Founder-only via `requireFounder`, which no
  *        permission grant can open.
  */
 
-async function __GET(_request: NextRequest) {
+/** `?archived=true|1` — the only query this route understands. */
+const wantsArchived = (raw: string | null): boolean => raw === 'true' || raw === '1'
+
+async function __GET(request: NextRequest) {
   try {
-    const auth = await authorize('chat', 'view')
+    const archived = wantsArchived(new URL(request.url).searchParams.get('archived'))
+    // Founder-only for the archive, permission-gated for the live list. Both
+    // paths still 401 with no session; `requireFounder` additionally records a
+    // denied attempt when a Partner asks for what only a Founder may see.
+    const auth = archived ? await requireFounder() : await authorize('chat', 'view')
     const db = await getDatabase()
     await ensureChatCollections(db)
 
     const channels = await getChannelCollection(db)
-      .find({ isArchived: false } as never)
-      .sort({ createdAt: 1 })
+      .find({ isArchived: archived } as never)
+      .sort(archived ? { updatedAt: -1 } : ({ createdAt: 1 } as never))
       .toArray()
 
     const userId = auth.user._id as ObjectId
+    if (archived) {
+      const messages = getMessageCollection(db)
+      const data = await Promise.all(
+        channels.map(async (c) => ({
+          ...channelToJSON(c),
+          unreadCount: 0,
+          canManage: true,
+          // Proof of preservation, cheap and indexed by `{ channelId, createdAt }`.
+          messageCount: await messages.countDocuments({ channelId: c._id } as never),
+        }))
+      )
+      return successResponse(data)
+    }
+
     const unread = await computeUnreadCounts(
       db,
       userId,
@@ -50,7 +84,7 @@ async function __GET(_request: NextRequest) {
 
     return successResponse(data)
   } catch (error) {
-    console.error('GET /api/chat/channels failed:', error)
+    logRouteFailure('GET /api/chat/channels', error)
     return handleRouteError(error)
   }
 }
@@ -114,7 +148,7 @@ async function __POST(request: NextRequest) {
       201
     )
   } catch (error) {
-    console.error('POST /api/chat/channels failed:', error)
+    logRouteFailure('POST /api/chat/channels', error)
     // requireFounder throws AuthorizationError → 403 via handleRouteError.
     return handleRouteError(error)
   }
