@@ -502,7 +502,7 @@ export default function DistributionDetailPage() {
               <p className="border-t border-line-subtle pt-1 text-xs text-ink-muted">
                 Reinvested {formatPaisa(sums.reinvestTotal)} stays in the business ·{' '}
                 {formatPaisa(sums.withdrawableTotal)} available to partners now ·{' '}
-                {formatPaisa(dist.retainedEarnings)} retained earnings.
+                {formatPaisa(dist.retainedEarnings)} retained earnings (cumulative per §5.9).
               </p>
             </div>
           )}
@@ -525,12 +525,14 @@ export default function DistributionDetailPage() {
             note="Per partner: reinvested = floor(share × reinvest %); final = share + adjustments (deductions are redistributed pro-rata to the other partners, bonuses come out of retained earnings); withdrawable = final − reinvested."
           />
 
-          {dist.partnerShares.some((share) => share.adjustments.length > 0) && (
-            <p className="mt-2 text-xs text-ink-muted">
-              Adjustments were applied after the first calculation. Each one re-split the whole month from the
-              stored snapshot — see the reasons above and the audit log.
-            </p>
-          )}
+          <p className="mt-3 text-xs text-ink-muted">
+            <strong className="text-ink-secondary">Payouts:</strong> Approving/distributing this record does{' '}
+            <strong>not</strong> post ledger entries. Partner payouts go through the existing{' '}
+            <Link href="/finance/transactions?new=1" className="font-medium text-decoricks-brown hover:underline">
+              Founder-approved partner withdrawal flow
+            </Link>{' '}
+            (Finance → Transactions). Only a Founder can record partner withdrawals.
+          </p>
         </Card>
       </div>
 
