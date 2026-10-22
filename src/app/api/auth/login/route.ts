@@ -9,6 +9,7 @@ import { verifyPassword } from '@/lib/auth/password'
 import { createSession, writeSessionCookies } from '@/lib/auth/session'
 import { clearLoginAttempts, getLockoutStatus, recordLoginAttempt } from '@/lib/auth/lockout'
 import { recordAuditEntry } from '@/lib/audit'
+import { loginRateLimiter } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,10 +53,26 @@ export async function POST(request: Request) {
     const db = await getDatabase()
     const users = getUserCollection(db)
 
+    // Per-IP rate limit to blunt credential stuffing (Phase 10).
+    const ipKey = meta.ipAddress ? `ip:${meta.ipAddress}` : null
+    if (ipKey) {
+      const rl = loginRateLimiter.consume(ipKey)
+      if (!rl.allowed) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(rl.retryAfterMs / 1000))
+        return errorResponse(
+          `Too many login attempts. Try again in ${retryAfterSeconds} second${retryAfterSeconds === 1 ? '' : 's'}.`,
+          429,
+          'RATE_LIMITED'
+        )
+      }
+    }
+
     // SPEC §10.2.1 Test 2: 5 failures within 15 minutes locks the account.
     const lockout = await getLockoutStatus(db, email)
     if (lockout.locked) {
-      await recordLoginAttempt(db, email, false, meta)
+      // Do NOT record another failed attempt while locked — the lockout is
+      // fixed for LOCKOUT_MINUTES from the triggering failure (Phase 10 fix),
+      // so hammering the endpoint must not extend the timeout.
       await recordAuditEntry(db, {
         userId: null,
         userEmail: email,

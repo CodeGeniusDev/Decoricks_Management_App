@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
 import { getRoleCollection, isValidObjectId } from '@/lib/models/User'
-import { successResponse, validationError, notFoundError } from '@/lib/api-response'
+import { successResponse, validationError, notFoundError, errorResponse } from '@/lib/api-response'
 import { getRequestMeta, handleRouteError } from '@/lib/http'
 import { invalidateRoleCache, requireFounder } from '@/lib/authorization'
 import {
@@ -12,6 +12,7 @@ import {
   SCOPED_SALES_FULL_EDIT,
 } from '@/lib/roles'
 import { recordAuditEntry } from '@/lib/audit'
+import { adminRateLimiter } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,6 +51,18 @@ const updatePermissionsSchema = z
 export async function PUT(request: Request, context: RouteContext) {
   try {
     const meta = await getRequestMeta()
+    const ipKey = meta.ipAddress ? `ip:${meta.ipAddress}` : null
+    if (ipKey) {
+      const rl = adminRateLimiter.consume(ipKey)
+      if (!rl.allowed) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(rl.retryAfterMs / 1000))
+        return errorResponse(
+          `Too many requests. Try again in ${retryAfterSeconds} second${retryAfterSeconds === 1 ? '' : 's'}.`,
+          429,
+          'RATE_LIMITED'
+        )
+      }
+    }
     const { id } = await context.params
 
     const parsed = updatePermissionsSchema.safeParse(await request.json().catch(() => null))

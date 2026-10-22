@@ -75,3 +75,21 @@ export const messageSendLimiter = new SlidingWindowRateLimiter(20, 10_000)
  * client should not be able to hammer all of them at message-send volume.
  */
 export const recordSearchLimiter = new SlidingWindowRateLimiter(40, 10_000)
+
+/**
+ * Auth endpoint rate limits (Phase 10).
+ *
+ * These protect against brute-force and credential-stuffing without relying on
+ * a shared store. They are process-local; the single-persistent-Node deployment
+ * is the intended host (see docs/REALTIME.md). For a multi-replica deployment
+ * they would need to move to Redis — that tradeoff is tracked in
+ * KNOWN_LIMITATIONS.md.
+ *
+ * Per-IP limits (keyed by `x-forwarded-for` / `x-real-ip`, see getRequestMeta):
+ * - login:        10 attempts per minute per IP
+ * - change-password: 5 attempts per minute per IP (authenticated endpoint)
+ * - admin actions:   30 requests per minute per IP for admin/role/user routes
+ */
+export const loginRateLimiter = new SlidingWindowRateLimiter(10, 60_000)
+export const changePasswordRateLimiter = new SlidingWindowRateLimiter(5, 60_000)
+export const adminRateLimiter = new SlidingWindowRateLimiter(30, 60_000)

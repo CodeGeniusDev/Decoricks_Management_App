@@ -11,6 +11,7 @@ import { authorize, requireFounder } from '@/lib/authorization'
 import { hashPassword, validatePasswordStrength } from '@/lib/auth/password'
 import { ROLE_NAMES } from '@/lib/roles'
 import { recordAuditEntry } from '@/lib/audit'
+import { adminRateLimiter } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +39,20 @@ const createUserSchema = z
 
 export async function GET() {
   try {
+    const meta = await getRequestMeta()
     const auth = await authorize('users', 'view')
+    const ipKey = meta.ipAddress ? `ip:${meta.ipAddress}` : null
+    if (ipKey) {
+      const rl = adminRateLimiter.consume(ipKey)
+      if (!rl.allowed) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(rl.retryAfterMs / 1000))
+        return errorResponse(
+          `Too many requests. Try again in ${retryAfterSeconds} second${retryAfterSeconds === 1 ? '' : 's'}.`,
+          429,
+          'RATE_LIMITED'
+        )
+      }
+    }
 
     const db = await getDatabase()
     const users = await getUserCollection(db).find({}).sort({ createdAt: 1 }).toArray()
@@ -59,6 +73,18 @@ export async function POST(request: Request) {
   try {
     const meta = await getRequestMeta()
     const auth = await requireFounder({ ipAddress: meta.ipAddress, userAgent: meta.userAgent })
+    const ipKey = meta.ipAddress ? `ip:${meta.ipAddress}` : null
+    if (ipKey) {
+      const rl = adminRateLimiter.consume(ipKey)
+      if (!rl.allowed) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(rl.retryAfterMs / 1000))
+        return errorResponse(
+          `Too many requests. Try again in ${retryAfterSeconds} second${retryAfterSeconds === 1 ? '' : 's'}.`,
+          429,
+          'RATE_LIMITED'
+        )
+      }
+    }
 
     const parsed = createUserSchema.safeParse(await request.json().catch(() => null))
     if (!parsed.success) {

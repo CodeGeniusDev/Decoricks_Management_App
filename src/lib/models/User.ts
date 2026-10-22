@@ -184,6 +184,14 @@ export const ensureAuthIndexes = async (db: Db): Promise<void> => {
       { identifier: 1, createdAt: -1 },
       { name: 'loginAttempts_lookup' }
     ),
+    // TTL so failed-attempt history cannot accumulate without bound (Phase 10).
+    // Attempts older than the window+lockout are harmless but should not bloat
+    // the collection; `purgeExpiredLoginAttempts` is also available for
+    // environments where TTL cleanup needs to be enforced explicitly.
+    getLoginAttemptCollection(db).createIndex(
+      { createdAt: 1 },
+      { expireAfterSeconds: 60 * 60 * 24, name: 'loginAttempts_ttl' }
+    ),
 
     // SPEC §3.1.19
     getAuditLogCollection(db).createIndex({ userId: 1 }, { name: 'audit_userId' }),

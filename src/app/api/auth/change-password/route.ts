@@ -8,6 +8,7 @@ import { requireAuth } from '@/lib/authorization'
 import { hashPassword, validatePasswordStrength, verifyPassword } from '@/lib/auth/password'
 import { SESSION_COOKIE, clearSessionCookies, createSession, hashToken, writeSessionCookies } from '@/lib/auth/session'
 import { recordAuditEntry } from '@/lib/audit'
+import { changePasswordRateLimiter } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,6 +37,20 @@ export async function POST(request: Request) {
   try {
     const meta = await getRequestMeta()
     const auth = await requireAuth()
+
+    // Per-IP rate limit on password changes (Phase 10).
+    const ipKey = meta.ipAddress ? `ip:${meta.ipAddress}` : null
+    if (ipKey) {
+      const rl = changePasswordRateLimiter.consume(ipKey)
+      if (!rl.allowed) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(rl.retryAfterMs / 1000))
+        return errorResponse(
+          `Too many password change attempts. Try again in ${retryAfterSeconds} second${retryAfterSeconds === 1 ? '' : 's'}.`,
+          429,
+          'RATE_LIMITED'
+        )
+      }
+    }
 
     const parsed = changeSchema.safeParse(await request.json().catch(() => null))
     if (!parsed.success) {

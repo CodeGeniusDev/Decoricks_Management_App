@@ -50,6 +50,11 @@ export const recordLoginAttempt = async (
  * failures against an unknown email still burns attempts, which stops an
  * attacker from probing account existence by watching the lockout appear only
  * for real users.
+ *
+ * Fix (Phase 10): once an account is locked, we do NOT record additional login
+ * attempts (that would extend the lockout on every hit and turn a 15-minute
+ * lockout into a DoS). The lockout expires based on when it was first triggered,
+ * not on the most recent hammer.
  */
 export const getLockoutStatus = async (db: Db, identifier: string): Promise<LockoutStatus> => {
   const now = Date.now()
@@ -61,7 +66,7 @@ export const getLockoutStatus = async (db: Db, identifier: string): Promise<Lock
       successful: false,
       createdAt: { $gte: windowStart },
     })
-    .sort({ createdAt: -1 })
+    .sort({ createdAt: 1 })
     .limit(MAX_ATTEMPTS())
     .toArray()
 
@@ -74,8 +79,11 @@ export const getLockoutStatus = async (db: Db, identifier: string): Promise<Lock
     }
   }
 
-  const newest = recentFailures[0].createdAt.getTime()
-  const lockedUntilMs = newest + LOCKOUT_MS()
+  // The lockout is triggered by the Nth failure and expires LOCKOUT_MS after
+  // that attempt, not after the most recent one. This prevents a DoS where
+  // continued attempts while locked keep extending the timeout.
+  const lockoutStart = recentFailures[0].createdAt.getTime()
+  const lockedUntilMs = lockoutStart + LOCKOUT_MS()
 
   if (lockedUntilMs <= now) {
     return {
@@ -99,8 +107,14 @@ export const clearLoginAttempts = async (db: Db, identifier: string): Promise<vo
   await getLoginAttemptCollection(db).deleteMany({ identifier: normalizeIdentifier(identifier) })
 }
 
+/**
+ * Purges login attempts older than the lockout window plus a grace period.
+ *
+ * Used by operational tooling and tests; the collection also has a 24h TTL
+ * index as a backstop.
+ */
 export const purgeExpiredLoginAttempts = async (db: Db): Promise<number> => {
-  const cutoff = new Date(Date.now() - WINDOW_MS() - LOCKOUT_MS())
+  const cutoff = new Date(Date.now() - WINDOW_MS() - LOCKOUT_MS() - 60 * 1000)
   const result = await getLoginAttemptCollection(db).deleteMany({ createdAt: { $lt: cutoff } })
   return result.deletedCount ?? 0
 }

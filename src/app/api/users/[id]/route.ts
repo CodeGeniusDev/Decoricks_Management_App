@@ -18,6 +18,7 @@ import { requireFounder } from '@/lib/authorization'
 import { hashPassword, validatePasswordStrength } from '@/lib/auth/password'
 import { ROLE_NAMES } from '@/lib/roles'
 import { recordAuditEntry } from '@/lib/audit'
+import { adminRateLimiter } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,6 +62,18 @@ export async function GET(request: Request, context: RouteContext) {
     // signed-in Partner could enumerate user records by id. A missing id would
     // have returned 404 rather than 403, which also confirmed the route existed.
     const meta = await getRequestMeta()
+    const ipKey = meta.ipAddress ? `ip:${meta.ipAddress}` : null
+    if (ipKey) {
+      const rl = adminRateLimiter.consume(ipKey)
+      if (!rl.allowed) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(rl.retryAfterMs / 1000))
+        return errorResponse(
+          `Too many requests. Try again in ${retryAfterSeconds} second${retryAfterSeconds === 1 ? '' : 's'}.`,
+          429,
+          'RATE_LIMITED'
+        )
+      }
+    }
     const { id } = await context.params
     await requireFounder({
       entityId: id,
@@ -80,6 +93,18 @@ export async function GET(request: Request, context: RouteContext) {
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const meta = await getRequestMeta()
+    const ipKey = meta.ipAddress ? `ip:${meta.ipAddress}` : null
+    if (ipKey) {
+      const rl = adminRateLimiter.consume(ipKey)
+      if (!rl.allowed) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(rl.retryAfterMs / 1000))
+        return errorResponse(
+          `Too many requests. Try again in ${retryAfterSeconds} second${retryAfterSeconds === 1 ? '' : 's'}.`,
+          429,
+          'RATE_LIMITED'
+        )
+      }
+    }
     const { id } = await context.params
 
     const parsed = updateUserSchema.safeParse(await request.json().catch(() => null))
@@ -179,6 +204,18 @@ export async function PATCH(request: Request, context: RouteContext) {
 export async function POST(request: Request, context: RouteContext) {
   try {
     const meta = await getRequestMeta()
+    const ipKey = meta.ipAddress ? `ip:${meta.ipAddress}` : null
+    if (ipKey) {
+      const rl = adminRateLimiter.consume(ipKey)
+      if (!rl.allowed) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(rl.retryAfterMs / 1000))
+        return errorResponse(
+          `Too many requests. Try again in ${retryAfterSeconds} second${retryAfterSeconds === 1 ? '' : 's'}.`,
+          429,
+          'RATE_LIMITED'
+        )
+      }
+    }
     const { id } = await context.params
 
     const parsed = resetPasswordSchema.safeParse(await request.json().catch(() => null))
