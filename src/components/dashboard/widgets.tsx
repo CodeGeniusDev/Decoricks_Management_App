@@ -74,14 +74,34 @@ const Row = ({
         : 'text-decoricks-dark'
   return (
     <div className="flex items-baseline justify-between gap-3 py-1.5">
+      {/* No `truncate` here on purpose: a long label like "Total balance (end of
+          period)" wrapped before this change and stayed fully readable. Clipping it
+          would have traded a sideways scrollbar for lost words. Only the figure
+          column is bounded. */}
       <span
         className={`min-w-0 text-sm ${strong ? 'font-semibold text-decoricks-dark' : 'text-ink-muted'}`}
       >
         {label}
       </span>
-      <span className="shrink-0 text-right">
-        <span className={`text-sm font-semibold tabular-nums ${toneClass}`}>{value}</span>
-        {hint && <span className="ml-1 text-2xs text-ink-muted">{hint}</span>}
+      {/*
+        A figure must never set a minimum width for the page. This column used to be
+        `shrink-0`, so a long hint — the dashboard prints the contributing category
+        list here — held a 333px box open and made the whole document scroll sideways
+        at 320px/375px. It is capped at 55% of the row: the number itself never
+        truncates, the secondary hint does (with a title carrying the full text), and
+        the label keeps the rest. Below `sm` the hint drops under the figure; from
+        `sm` it stays inline, as it always did on desktop.
+      */}
+      <span className="flex min-w-0 max-w-[55%] flex-col items-end text-right sm:flex-row sm:items-baseline sm:justify-end">
+        <span className={`shrink-0 text-sm font-semibold tabular-nums ${toneClass}`}>{value}</span>
+        {hint && (
+          <span
+            className="min-w-0 max-w-full truncate text-2xs text-ink-muted sm:ml-1"
+            title={hint}
+          >
+            {hint}
+          </span>
+        )}
       </span>
     </div>
   )

@@ -52,6 +52,7 @@ import {
   HiOutlineArrowPathRoundedSquare,
   HiOutlineCalendarDays,
   HiOutlineBanknotes,
+  HiOutlineLink,
 } from 'react-icons/hi2'
 import {
   LuLayoutDashboard,
@@ -155,3 +156,6 @@ export const IconArchive = LuArchive
 export const IconTransfer = LuMoveLeft
 export const IconReverseMovement = LuRotateCcw
 export const IconCalculation = LuCalculator
+
+/** Phase 3 collaboration glyphs. */
+export const IconReference = HiOutlineLink

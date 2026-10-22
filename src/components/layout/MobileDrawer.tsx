@@ -144,7 +144,9 @@ export const MobileDrawer = () => {
         <div className="flex h-header shrink-0 items-center justify-between border-b border-line-subtle px-4">
           <div className="flex items-center gap-2.5">
             <BrandMark size={26} />
-            <span className="text-md font-semibold tracking-tight text-decoricks-dark">Decoricks</span>
+            <span className="text-md font-semibold tracking-tight text-decoricks-dark">
+              Decoricks
+            </span>
           </div>
           <button
             type="button"

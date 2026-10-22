@@ -6,12 +6,15 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label?: string
   error?: string
   options: Array<{ value: string; label: string }>
+  /** Quiet helper text under the field. Hidden while `error` is showing. */
+  hint?: string
 }
 
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ label, error, options, className = '', id, ...props }, ref) => {
+  ({ label, error, hint, options, className = '', id, ...props }, ref) => {
     const generatedId = useId()
     const selectId = id || generatedId
+    const describeId = hint || error ? `${selectId}-describe` : undefined
 
     return (
       <div className="flex w-full flex-col gap-1.5">
@@ -32,6 +35,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
             ${className}
           `}
           aria-invalid={error ? true : undefined}
+          aria-describedby={describeId}
           {...props}
         >
           {options.map((option) => (
@@ -40,10 +44,16 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
             </option>
           ))}
         </select>
-        {error && (
-          <p className="text-xs text-status-danger" role="alert">
+        {error ? (
+          <p id={describeId} className="text-xs text-status-danger" role="alert">
             {error}
           </p>
+        ) : (
+          hint && (
+            <p id={describeId} className="text-xs text-ink-muted">
+              {hint}
+            </p>
+          )
         )}
       </div>
     )

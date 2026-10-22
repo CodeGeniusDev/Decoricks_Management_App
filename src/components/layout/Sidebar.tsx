@@ -83,16 +83,50 @@ export const Sidebar = () => {
         </button>
       </div>
 
-      {/* Nav. `overflow-hidden` on the rail is what clips labels mid-transition. */}
-      <nav className="flex-1 overflow-hidden px-3 py-3">
+      {/*
+       * Nav region.
+       *
+       * This was `flex-1 overflow-hidden`, which silently clipped the list: the
+       * rail is `fixed inset-y-0`, so at 15 items × 40px plus the 60px brand row
+       * and padding the contents need ~714px of height and everything below the
+       * fold was unreachable on a 1366×768 laptop — no scrollbar, and keyboard
+       * focus moved into invisible items. `overflow-y-auto` makes the navigation
+       * area scroll inside the rail instead.
+       *
+       * `overflow-x-hidden` is deliberate: labels are faded to `w-0` when
+       * collapsing, and during the width transition a long label can still push
+       * past the rail edge — the vertical scroller must not grow a horizontal
+       * scrollbar because of that. `overscroll-contain` (see globals.css
+       * `.sidebar-nav`) stops the nav from hijacking the page once it hits its
+       * own end. The tooltip is portalled out of the rail, so it is never
+       * clipped by this scroller.
+       */}
+      <nav className="sidebar-nav min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-3">
         <ul className="flex flex-col gap-0.5">
           {visibleItems.map((item) => {
             const isActive = isActiveRoute(pathname, item.href)
             return (
               <li key={item.href}>
-                <Tooltip content={isCollapsed ? item.name : ''} position="right" disabled={!isCollapsed}>
+                <Tooltip
+                  content={isCollapsed ? item.name : ''}
+                  position="right"
+                  disabled={!isCollapsed}
+                >
                   <Link
                     href={item.href}
+                    /*
+                     * Prefetching is deliberately left at Next's default ("auto"),
+                     * and that is a measured decision, not an untouched one. Turning
+                     * it off for the eleven sidebar links (`prefetch={false}`, then
+                     * re-run `scripts/nav-probe.ts`) changed nothing that matters:
+                     * 42 API requests and 16 navigations either way, median
+                     * time-to-content 28ms with and 30ms without. The reason is in
+                     * `.next/prerender-manifest.json` — every sidebar destination is
+                     * a static route, so its `?_rsc` prefetch is a file read that
+                     * never opens a MongoDB connection and can therefore not be what
+                     * makes an `/api/` call slow. Keeping it on means the shell is
+                     * already in the router cache when a click happens.
+                     */
                     aria-current={isActive ? 'page' : undefined}
                     /*
                      * When collapsed the visible label is clipped and hidden from

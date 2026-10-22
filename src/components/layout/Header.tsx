@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { useShellLayout } from './ShellLayoutContext'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
@@ -29,7 +29,6 @@ function titleForPath(pathname: string): string {
 
 export const Header = () => {
   const pathname = usePathname()
-  const router = useRouter()
   const { toggleDrawer, isDrawerOpen } = useShellLayout()
   const { user, signOut } = useAuth()
   const [isOnline, setIsOnline] = useState(true)
@@ -94,8 +93,20 @@ export const Header = () => {
     setSigningOut(true)
     try {
       await signOut()
-      router.replace('/login')
-      router.refresh()
+      /*
+       * Sign-out is the one transition that deliberately costs a document
+       * request, and it replaces the previous `router.replace('/login')` +
+       * `router.refresh()` pair — which issued two server renders for the same
+       * hand-off and could re-mount the login form twice.
+       *
+       * A fresh document is the correct end state here: it destroys every piece
+       * of client state that belonged to this user (permission display cache,
+       * optimistic rows, the offline queue view, sync subscriptions and cursors)
+       * rather than leaving them live for the next person who signs in in this
+       * tab. `replace` so Back cannot return to an authenticated screen. This is
+       * not a navigation-speed path — it happens once per session. (§10)
+       */
+      window.location.replace('/login')
     } finally {
       setSigningOut(false)
     }

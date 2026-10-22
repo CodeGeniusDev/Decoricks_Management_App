@@ -75,11 +75,18 @@ interface MetricHelpProps {
 
 /** A small "i" affordance carrying the metric's definition + engine citation. */
 export const MetricHelp = ({ definition, engine }: MetricHelpProps) => (
+  /*
+   * Rendered 16px, hittable at 32px: the button box grows to `h-8 w-8` and `-m-2`
+   * gives the surrounding layout back exactly what it lent, so the badge keeps its
+   * place next to the heading while a thumb can actually reach it. A tooltip needs
+   * a tap to appear on a touch screen, which a 16px target cannot deliver
+   * reliably. (Phase 4 §8)
+   */
   <Tooltip content={`${definition} · Source: ${engine}`} position="top">
     <button
       type="button"
       aria-label={`What is this? ${definition}. Computed by ${engine}.`}
-      className="inline-flex h-4 w-4 items-center justify-center rounded-full text-ink-muted transition-colors hover:text-decoricks-brown focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown"
+      className="-m-2 inline-flex h-8 w-8 items-center justify-center rounded-full text-ink-muted transition-colors hover:text-decoricks-brown focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown"
     >
       <IconInfo size={13} />
     </button>

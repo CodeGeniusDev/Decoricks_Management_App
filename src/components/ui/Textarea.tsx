@@ -5,12 +5,15 @@ import React, { useId } from 'react'
 interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string
   error?: string
+  /** Quiet helper text under the field, same behaviour as `Input`. Hidden while `error` is showing. */
+  hint?: string
 }
 
 export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ label, error, className = '', id, ...props }, ref) => {
+  ({ label, error, hint, className = '', id, ...props }, ref) => {
     const generatedId = useId()
     const textareaId = id || generatedId
+    const describeId = hint || error ? `${textareaId}-describe` : undefined
 
     return (
       <div className="flex flex-col gap-1">
@@ -34,9 +37,20 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
             ${className}
           `}
           aria-invalid={error ? true : undefined}
+          aria-describedby={describeId}
           {...props}
         />
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        {error ? (
+          <p id={describeId} className="text-sm text-red-500" role="alert">
+            {error}
+          </p>
+        ) : (
+          hint && (
+            <p id={describeId} className="text-xs text-ink-muted">
+              {hint}
+            </p>
+          )
+        )}
       </div>
     )
   }

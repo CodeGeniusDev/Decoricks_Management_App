@@ -155,6 +155,12 @@ export const Modal = ({
   // Portalled to <body> on purpose: a transformed ancestor becomes the
   // containing block for `position: fixed`, which would otherwise collapse the
   // backdrop to the animated page container and push tall dialogs off-screen.
+  //
+  // The sheet is height-capped at every width, phones included. Without a cap
+  // below `sm` a long form grew past the top of the screen while staying
+  // bottom-aligned, leaving its title, close button and first fields outside the
+  // viewport with no way to scroll to them — the body only scrolls inside the
+  // dialog box, and the box itself was partly off-screen.
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
       <div
@@ -169,7 +175,7 @@ export const Modal = ({
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        className={`relative flex w-full ${sizeStyles[size]} flex-col rounded-t-xl border border-line-subtle bg-surface-overlay shadow-lg focus:outline-none sm:my-auto sm:max-h-[calc(100dvh-2rem)] sm:rounded-xl`}
+        className={`relative flex w-full ${sizeStyles[size]} flex-col rounded-t-xl border border-line-subtle bg-surface-overlay shadow-lg focus:outline-none max-h-[85dvh] sm:my-auto sm:max-h-[calc(100dvh-2rem)] sm:rounded-xl`}
       >
         {/* Header. Always present so the dialog can always be closed, even
             when no title was supplied. */}
