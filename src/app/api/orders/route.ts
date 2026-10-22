@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { ObjectId, type ClientSession, type Db } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
+import { idempotencyField } from '@/lib/idempotency'
 import { authorize, authorizeStockWrite } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import {
@@ -90,7 +91,12 @@ async function __GET(request: NextRequest) {
     const filter = and.length === 0 ? {} : and.length === 1 ? and[0] : { $and: and }
 
     const [docs, total] = await Promise.all([
-      col.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).toArray(),
+      col
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .toArray(),
       col.countDocuments(filter),
     ])
 
@@ -99,7 +105,7 @@ async function __GET(request: NextRequest) {
       pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
     })
   } catch (error) {
-    console.error('GET /api/orders failed:', error)
+    logRouteFailure('GET /api/orders', error)
     return handleRouteError(error)
   }
 }
@@ -189,7 +195,7 @@ async function __POST(request: NextRequest) {
         salesChannel: parsed.data.salesChannel,
         notes: parsed.data.notes || undefined,
         shipFromLocation,
-        idempotencyKey,
+        ...idempotencyField(idempotencyKey),
         createdAt: now,
         updatedAt: now,
         createdBy: actor.id,
@@ -276,7 +282,7 @@ async function __POST(request: NextRequest) {
     })
     return successResponse({ order: orderToJSON(created), replay: false }, 201)
   } catch (error) {
-    console.error('POST /api/orders failed:', error)
+    logRouteFailure('POST /api/orders', error)
     return handleRouteError(error)
   }
 }

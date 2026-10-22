@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize, authorizeStockWrite, requireAuth } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
@@ -65,7 +65,7 @@ async function __GET(request: NextRequest) {
       })
     )
   } catch (error) {
-    console.error('GET /api/stock failed:', error)
+    logRouteFailure('GET /api/stock', error)
     return handleRouteError(error)
   }
 }
@@ -179,7 +179,7 @@ async function __POST(request: NextRequest) {
       replay: result.created === false,
     })
   } catch (error) {
-    console.error('POST /api/stock failed:', error)
+    logRouteFailure('POST /api/stock', error)
     return handleRouteError(error)
   }
 }

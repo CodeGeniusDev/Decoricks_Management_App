@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorizeStockWrite, requireAuth } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { ensureInventoryIndexes, getPurchaseCollection, purchaseToJSON } from '@/lib/models/Inventory'
@@ -112,7 +112,7 @@ async function __POST(request: NextRequest, context: RouteContext) {
 
     return successResponse({ replay: !result.reversalCreated })
   } catch (error) {
-    console.error('POST /api/purchases/[id]/cancel failed:', error)
+    logRouteFailure('POST /api/purchases/[id]/cancel', error)
     return handleRouteError(error)
   }
 }

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorizeStockWrite, requireAuth } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { getStockMovementCollection, ensureInventoryIndexes, movementToJSON } from '@/lib/models/Inventory'
@@ -89,7 +89,7 @@ async function __POST(request: NextRequest, context: RouteContext) {
 
     return successResponse({ movement: movementToJSON(result.reversal), replay: !result.created })
   } catch (error) {
-    console.error('POST /api/stock/movements/[id]/reverse failed:', error)
+    logRouteFailure('POST /api/stock/movements/[id]/reverse', error)
     return handleRouteError(error)
   }
 }

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { ObjectId, type ClientSession, type Db } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta, HttpError } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, HttpError, logRouteFailure } from '@/lib/http'
 import { authorize, authorizeScoped, authorizeStockWrite, SCOPED_SALES_FULL_EDIT } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import {
@@ -97,7 +97,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
 
     return successResponse(orderToJSON(doc))
   } catch (error) {
-    console.error('GET /api/orders/[id] failed:', error)
+    logRouteFailure('GET /api/orders/[id]', error)
     return handleRouteError(error)
   }
 }
@@ -316,7 +316,7 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
     }
     return successResponse(orderToJSON(result.updated!))
   } catch (error) {
-    console.error('PATCH /api/orders/[id] failed:', error)
+    logRouteFailure('PATCH /api/orders/[id]', error)
     return handleRouteError(error)
   }
 }
@@ -493,7 +493,7 @@ async function __PUT(request: NextRequest, context: RouteContext) {
     })
     return successResponse(orderToJSON(updated))
   } catch (error) {
-    console.error('PUT /api/orders/[id] failed:', error)
+    logRouteFailure('PUT /api/orders/[id]', error)
     return handleRouteError(error)
   }
 }
@@ -544,7 +544,7 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
     })
     return successResponse({ _id: id })
   } catch (error) {
-    console.error('DELETE /api/orders/[id] failed:', error)
+    logRouteFailure('DELETE /api/orders/[id]', error)
     return handleRouteError(error)
   }
 }

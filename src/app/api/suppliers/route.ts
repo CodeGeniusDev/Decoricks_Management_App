@@ -1,9 +1,13 @@
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
-import { ensureOperationsIndexes, getSupplierCollection, supplierToJSON } from '@/lib/models/Operations'
+import {
+  ensureOperationsIndexes,
+  getSupplierCollection,
+  supplierToJSON,
+} from '@/lib/models/Operations'
 import { supplierSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
 import { getActor } from '@/lib/current-user'
@@ -39,7 +43,7 @@ async function __GET(request: NextRequest) {
     const docs = await col.find(filter).sort({ createdAt: -1 }).toArray()
     return successResponse(docs.map(supplierToJSON))
   } catch (error) {
-    console.error('GET /api/suppliers failed:', error)
+    logRouteFailure('GET /api/suppliers', error)
     return handleRouteError(error)
   }
 }
@@ -65,7 +69,12 @@ async function __POST(request: NextRequest) {
     const now = getKarachiDate()
 
     // Case-insensitive duplicate guard on supplier name.
-    const clash = await col.findOne({ name: { $regex: `^${parsed.data.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } } as never)
+    const clash = await col.findOne({
+      name: {
+        $regex: `^${parsed.data.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+        $options: 'i',
+      },
+    } as never)
     if (clash) {
       return validationError('Supplier already exists', [
         { path: 'name', message: 'A supplier with this name already exists' },
@@ -84,7 +93,7 @@ async function __POST(request: NextRequest) {
       isActive: parsed.data.isActive ?? true,
       createdAt: now,
       updatedAt: now,
-      createdBy: (await getActor()).id,
+      createdBy: (await getActor(auth)).id,
     }
 
     const result = await col.insertOne(doc as never)
@@ -103,7 +112,7 @@ async function __POST(request: NextRequest) {
     })
     return successResponse(supplierToJSON(created), 201)
   } catch (error) {
-    console.error('POST /api/suppliers failed:', error)
+    logRouteFailure('POST /api/suppliers', error)
     return handleRouteError(error)
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { ObjectId, type ClientSession, type Db } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
+import { idempotencyField } from '@/lib/idempotency'
 import { authorize, authorizeStockWrite, requireFounder } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import {
@@ -32,12 +33,14 @@ const isObjectId = (v: string) => /^[0-9a-fA-F]{24}$/.test(v)
 const REFUND_CATEGORY = 'refunds_return_costs'
 
 /** Movement type per return outcome (SPEC §3.1.5). */
-const OUTCOME_MOVEMENT: Record<ReturnItemOutcome, 'return_restock' | 'return_damaged' | 'return_writeoff'> =
-  {
-    restock: 'return_restock',
-    damaged: 'return_damaged',
-    writeoff: 'return_writeoff',
-  }
+const OUTCOME_MOVEMENT: Record<
+  ReturnItemOutcome,
+  'return_restock' | 'return_damaged' | 'return_writeoff'
+> = {
+  restock: 'return_restock',
+  damaged: 'return_damaged',
+  writeoff: 'return_writeoff',
+}
 
 /** Builds `RET-YYYYMM-NNNN` from an atomic per-month counter (see lib/serial). */
 async function nextReturnNumber(db: Db, session?: ClientSession): Promise<string> {
@@ -87,7 +90,12 @@ async function __GET(request: NextRequest) {
     const filter = and.length === 0 ? {} : and.length === 1 ? and[0] : { $and: and }
 
     const [docs, total] = await Promise.all([
-      col.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).toArray(),
+      col
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .toArray(),
       col.countDocuments(filter),
     ])
 
@@ -107,7 +115,7 @@ async function __GET(request: NextRequest) {
       pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
     })
   } catch (error) {
-    console.error('GET /api/returns failed:', error)
+    logRouteFailure('GET /api/returns', error)
     return handleRouteError(error)
   }
 }
@@ -142,8 +150,17 @@ async function __POST(request: NextRequest) {
         parsed.error.errors.map((e) => ({ path: e.path.join('.'), message: e.message }))
       )
     }
-    const { orderId, items, outcome, refundAmount, courierCost, accountId, date, notes, idempotencyKey } =
-      parsed.data
+    const {
+      orderId,
+      items,
+      outcome,
+      refundAmount,
+      courierCost,
+      accountId,
+      date,
+      notes,
+      idempotencyKey,
+    } = parsed.data
 
     const actor: ActorContext = {
       id: auth.user._id as ObjectId,
@@ -175,7 +192,7 @@ async function __POST(request: NextRequest) {
       return validationError('Refused orders restore stock automatically', [
         {
           path: 'orderId',
-          message: 'Recording a refusal already restored this order\'s stock; no return is needed',
+          message: "Recording a refusal already restored this order's stock; no return is needed",
         },
       ])
     }
@@ -183,7 +200,10 @@ async function __POST(request: NextRequest) {
     const location = order.shipFromLocation
     if (!location) {
       return validationError('Order has no ship-from location', [
-        { path: 'orderId', message: 'This legacy order cannot be returned through the stock ledger' },
+        {
+          path: 'orderId',
+          message: 'This legacy order cannot be returned through the stock ledger',
+        },
       ])
     }
 
@@ -207,11 +227,16 @@ async function __POST(request: NextRequest) {
     // Returnable quantity per product = ordered minus already returned across
     // every previous return record for this order.
     const orderItems = new Map(order.items.map((i) => [i.productId.toString(), i]))
-    const previousReturns = await getReturnCollection(db).find({ orderId: order._id } as never).toArray()
+    const previousReturns = await getReturnCollection(db)
+      .find({ orderId: order._id } as never)
+      .toArray()
     const alreadyReturned = new Map<string, number>()
     for (const r of previousReturns) {
       for (const ri of r.items) {
-        alreadyReturned.set(ri.productId.toString(), (alreadyReturned.get(ri.productId.toString()) ?? 0) + ri.quantity)
+        alreadyReturned.set(
+          ri.productId.toString(),
+          (alreadyReturned.get(ri.productId.toString()) ?? 0) + ri.quantity
+        )
       }
     }
     const quantityErrors: { path: string; message: string }[] = []
@@ -225,7 +250,8 @@ async function __POST(request: NextRequest) {
         })
         continue
       }
-      const returnable = ordered.quantity - (alreadyReturned.get(line.productId.toString()) ?? 0) - line.quantity
+      const returnable =
+        ordered.quantity - (alreadyReturned.get(line.productId.toString()) ?? 0) - line.quantity
       if (returnable < 0) {
         quantityErrors.push({
           path: `items.${i}.quantity`,
@@ -233,14 +259,17 @@ async function __POST(request: NextRequest) {
         })
       }
     }
-    if (quantityErrors.length > 0) return validationError('Return quantity exceeds what was ordered', quantityErrors)
+    if (quantityErrors.length > 0)
+      return validationError('Return quantity exceeds what was ordered', quantityErrors)
 
     const allowNegative = await getAllowNegativeStock(db)
     const postingDate = date ? parseLedgerDate(date) : getKarachiDate()
     const refundAccountId =
       refundAmount > 0 ? await resolvePostingAccount(db, accountId, 'salesIncomeAccountId') : null
     const courierAccountId =
-      courierCost && courierCost > 0 ? await resolvePostingAccount(db, accountId, 'purchasingAccountId') : null
+      courierCost && courierCost > 0
+        ? await resolvePostingAccount(db, accountId, 'purchasingAccountId')
+        : null
 
     const result = await runInTransaction(async (session) => {
       const col = getReturnCollection(db)
@@ -261,7 +290,7 @@ async function __POST(request: NextRequest) {
         courierCost: courierCost && courierCost > 0 ? courierCost : undefined,
         location,
         notes: notes || undefined,
-        idempotencyKey,
+        ...idempotencyField(idempotencyKey),
         createdAt: now,
         updatedAt: now,
         createdBy: actor.id,
@@ -269,7 +298,10 @@ async function __POST(request: NextRequest) {
 
       const inserted = await insertIdempotent(col, record as never, session)
       if (!inserted.created) {
-        return { replayReturn: inserted.doc as unknown as ReturnRecord, record: null as ReturnRecord | null }
+        return {
+          replayReturn: inserted.doc as unknown as ReturnRecord,
+          record: null as ReturnRecord | null,
+        }
       }
       record._id = inserted.doc._id as ObjectId
 
@@ -286,8 +318,7 @@ async function __POST(request: NextRequest) {
         const item = record.items[i]
         const itemOutcome = item.outcome ?? (record.outcome as ReturnItemOutcome)
         const ordered = orderItems.get(item.productId.toString())
-        const unitCost =
-          ordered?.unitCost ?? costById.get(item.productId.toString()) ?? 0
+        const unitCost = ordered?.unitCost ?? costById.get(item.productId.toString()) ?? 0
 
         const { movement } = await postMovement(
           db,
@@ -372,7 +403,11 @@ async function __POST(request: NextRequest) {
         if (refundAmount >= order.total) orderUpdates.paymentStatus = 'refunded'
       }
       if (Object.keys(orderUpdates).length > 1) {
-        await getOrderCollection(db).updateOne({ _id: order._id } as never, { $set: orderUpdates } as never, { session })
+        await getOrderCollection(db).updateOne(
+          { _id: order._id } as never,
+          { $set: orderUpdates } as never,
+          { session }
+        )
       }
 
       return { replayReturn: null as ReturnRecord | null, record }
@@ -392,7 +427,10 @@ async function __POST(request: NextRequest) {
       entityId: created._id ?? null,
       newValue: returnToJSON(created),
       details: `Return ${created.returnNumber} for order ${order.orderNumber}: ${created.items
-        .map((i) => `${i.quantity} × ${orderItems.get(i.productId.toString())?.productName ?? '?'} (${i.outcome ?? created.outcome})`)
+        .map(
+          (i) =>
+            `${i.quantity} × ${orderItems.get(i.productId.toString())?.productName ?? '?'} (${i.outcome ?? created.outcome})`
+        )
         .join(', ')}${refundAmount > 0 ? `; refund ${formatPaisa(refundAmount)}` : ''}`,
       ipAddress: meta.ipAddress,
       userAgent: meta.userAgent,
@@ -408,7 +446,7 @@ async function __POST(request: NextRequest) {
       201
     )
   } catch (error) {
-    console.error('POST /api/returns failed:', error)
+    logRouteFailure('POST /api/returns', error)
     return handleRouteError(error)
   }
 }

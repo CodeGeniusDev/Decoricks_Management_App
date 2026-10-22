@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { PageTransition } from '@/components/PageTransition'
 import { PageHeader } from '@/components/layout/Page'
 import { Card } from '@/components/ui/Card'
@@ -28,7 +28,8 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Toast } from '@/components/ui/Toast'
-import { ApiError, apiDelete, apiJson } from '@/lib/api-client'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
+import { ApiError, apiDelete, apiJson, apiJsonMeta } from '@/lib/api-client'
 import { newIdempotencyKey } from '@/lib/form-helpers'
 import { formatPaisa } from '@/lib/money'
 import { formatKarachiDate } from '@/lib/date'
@@ -63,6 +64,7 @@ type ActionKey = 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'refused
 
 export default function OrderDetailPage() {
   const { user } = useAuth()
+  const router = useRouter()
   const params = useParams<{ id: string }>()
   const orderId = params?.id ?? ''
 
@@ -100,28 +102,63 @@ export default function OrderDetailPage() {
     [user?.role]
   )
 
-  const load = useCallback(async () => {
-    if (!orderId) return
-    setLoading(true)
-    setError(null)
-    setNotFound(false)
-    try {
-      const [orderData, returnsData] = await Promise.all([
-        apiJson<OrderView>(`/api/orders/${orderId}`),
-        apiJson<ReturnsView>(`/api/returns?orderId=${orderId}`),
-      ])
-      setOrder(orderData)
-      setReturns(returnsData.items)
-    } catch (err) {
-      if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
-        setNotFound(true)
-      } else {
-        setError(err instanceof Error ? err.message : 'Failed to load the order')
+  /*
+   * Subscribed above `load` so the read can announce itself: a snapshot landing
+   * while the order is already on the wire is held for that request to answer
+   * instead of fetching the same order twice. One representative read per `load()`
+   * is tracked — the decision it informs is whether to run `load()` again, which
+   * re-reads the returns list alongside it.
+   */
+  const salesSync = useRealtimeSync(
+    'sales',
+    () => {
+      void load({ background: true })
+    },
+    Boolean(orderId)
+  )
+
+  const load = useCallback(
+    async (opts?: { background?: boolean }) => {
+      // `background` keeps the already-painted order on screen while the fresh
+      // copy is fetched. Without it, saving a return re-triggered the page-level
+      // skeleton below (`if (loading) return <Skeleton …/>`), which unmounts and
+      // remounts the whole detail tree — the record was already visible, so the
+      // reload should never have blanked it (Phase 4 §3/§4).
+      const background = opts?.background ?? false
+      if (!orderId) return
+      if (!background) setLoading(true)
+      setError(null)
+      setNotFound(false)
+      const readOrder = async (): Promise<OrderView> => {
+        salesSync.begin()
+        try {
+          const meta = await apiJsonMeta<OrderView>(`/api/orders/${orderId}`)
+          salesSync.settle(meta.serverTime, meta.durationMs)
+          return meta.data
+        } catch (err) {
+          salesSync.abandon()
+          throw err
+        }
       }
-    } finally {
-      setLoading(false)
-    }
-  }, [orderId])
+      try {
+        const [orderData, returnsData] = await Promise.all([
+          readOrder(),
+          apiJson<ReturnsView>(`/api/returns?orderId=${orderId}`),
+        ])
+        setOrder(orderData)
+        setReturns(returnsData.items)
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
+          setNotFound(true)
+        } else {
+          setError(err instanceof Error ? err.message : 'Failed to load the order')
+        }
+      } finally {
+        setLoading(false)
+      }
+    },
+    [orderId, salesSync]
+  )
 
   useEffect(() => {
     void load()
@@ -230,8 +267,9 @@ export default function OrderDetailPage() {
       message: `${created.returnNumber} recorded — movements posted and refund entries linked.`,
     })
     if (updatedOrder) setOrder(updatedOrder)
-    // Reload so the returns list and stock-linked ids are exactly the server's.
-    void load()
+    // Reload so the returns list and stock-linked ids are exactly the server's,
+    // in place — the toast and the order panel stay painted.
+    void load({ background: true })
   }
 
   const deleteOrder = async () => {
@@ -240,7 +278,11 @@ export default function OrderDetailPage() {
     setActionBusy(true)
     try {
       await apiDelete(`/api/orders/${order._id}`)
-      window.location.href = '/sales'
+      // `replace`, not `href`: the order list is a client route, so a soft
+      // navigation is enough and a full document reload would re-boot ~1.1MB of
+      // shell + page bundle to show a list that is already one click away.
+      // Replace (rather than push) so Back cannot land on a deleted order.
+      router.replace('/sales')
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Could not delete the order.')
       setDeleteOpen(false)
@@ -267,7 +309,15 @@ export default function OrderDetailPage() {
   if (notFound || !order) {
     return (
       <PageTransition>
-        <PageHeader title="Order" description="Sales" actions={<Link href="/sales" className="text-sm text-decoricks-brown hover:underline">← Back to orders</Link>} />
+        <PageHeader
+          title="Order"
+          description="Sales"
+          actions={
+            <Link href="/sales" className="text-sm text-decoricks-brown hover:underline">
+              ← Back to orders
+            </Link>
+          }
+        />
         <Card>
           <EmptyState
             title={notFound ? 'Order not found' : 'Could not open this order'}
@@ -276,7 +326,7 @@ export default function OrderDetailPage() {
                 ? 'It may have been deleted, or the link is stale.'
                 : (error ?? 'Try again from the orders list.')
             }
-            action={{ label: 'Back to orders', onClick: () => { window.location.href = '/sales' } }}
+            action={{ label: 'Back to orders', onClick: () => router.push('/sales') }}
           />
         </Card>
       </PageTransition>
@@ -340,7 +390,11 @@ export default function OrderDetailPage() {
         <Card className="mb-4 p-4">
           <div className="flex flex-wrap items-center gap-2">
             {transitions.includes('processing') && (
-              <Button variant="outline" disabled={actionBusy} onClick={() => void patchOrder('processing', { orderStatus: 'processing' })}>
+              <Button
+                variant="outline"
+                disabled={actionBusy}
+                onClick={() => void patchOrder('processing', { orderStatus: 'processing' })}
+              >
                 Start processing
               </Button>
             )}
@@ -357,12 +411,19 @@ export default function OrderDetailPage() {
               </Button>
             )}
             {transitions.includes('delivered') && (
-              <Button variant="outline" disabled={actionBusy} onClick={() => void patchOrder('delivered', { orderStatus: 'delivered' })}>
+              <Button
+                variant="outline"
+                disabled={actionBusy}
+                onClick={() => void patchOrder('delivered', { orderStatus: 'delivered' })}
+              >
                 Mark delivered
               </Button>
             )}
             {canConfirmCash(order) && (
-              <Button disabled={actionBusy} onClick={() => void patchOrder('cash', { cashReceived: true })}>
+              <Button
+                disabled={actionBusy}
+                onClick={() => void patchOrder('cash', { cashReceived: true })}
+              >
                 Confirm COD cash received
               </Button>
             )}
@@ -390,7 +451,7 @@ export default function OrderDetailPage() {
                 Cancel order
               </Button>
             )}
-            {isReturnable(order) && can({ role: user?.role ?? '', }, 'sales', 'create') && (
+            {isReturnable(order) && can({ role: user?.role ?? '' }, 'sales', 'create') && (
               <Button variant="outline" disabled={actionBusy} onClick={() => setReturnOpen(true)}>
                 Record return
               </Button>
@@ -453,13 +514,18 @@ export default function OrderDetailPage() {
                 <li key={`${item.productId}-${index}`} className="py-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-decoricks-dark">{item.productName}</p>
+                      <p className="truncate text-sm font-medium text-decoricks-dark">
+                        {item.productName}
+                      </p>
                       <p className="text-xs text-ink-muted">
                         {item.quantity} × {formatPaisa(item.unitPrice)}
-                        {typeof item.unitCost === 'number' && ` · cost ${formatPaisa(item.unitCost)}`}
+                        {typeof item.unitCost === 'number' &&
+                          ` · cost ${formatPaisa(item.unitCost)}`}
                       </p>
                     </div>
-                    <p className="text-sm font-semibold text-decoricks-dark">{formatPaisa(item.total)}</p>
+                    <p className="text-sm font-semibold text-decoricks-dark">
+                      {formatPaisa(item.total)}
+                    </p>
                   </div>
                 </li>
               ))}
@@ -471,7 +537,10 @@ export default function OrderDetailPage() {
               <h2 className="text-md font-semibold text-decoricks-dark">Returns on this order</h2>
               <ul className="mt-2 divide-y divide-line-subtle">
                 {returns.map((ret) => (
-                  <li key={ret._id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <li
+                    key={ret._id}
+                    className="flex flex-wrap items-center justify-between gap-2 py-2"
+                  >
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-decoricks-dark">{ret.returnNumber}</p>
                       <p className="text-xs text-ink-muted">
@@ -481,7 +550,9 @@ export default function OrderDetailPage() {
                       </p>
                     </div>
                     <div className="text-right text-sm">
-                      <p className="font-semibold text-decoricks-dark">{formatPaisa(ret.refundAmount)} refund</p>
+                      <p className="font-semibold text-decoricks-dark">
+                        {formatPaisa(ret.refundAmount)} refund
+                      </p>
                       <p className="text-xs text-ink-muted">
                         outcome: {ret.items[0]?.outcome ?? ret.outcome}
                       </p>
@@ -512,7 +583,9 @@ export default function OrderDetailPage() {
               </div>
               <div className="flex justify-between border-t border-line-subtle pt-2">
                 <dt className="font-medium text-decoricks-dark">Total (COD)</dt>
-                <dd className="text-base font-semibold text-decoricks-dark">{formatPaisa(order.total)}</dd>
+                <dd className="text-base font-semibold text-decoricks-dark">
+                  {formatPaisa(order.total)}
+                </dd>
               </div>
             </dl>
           </Card>
@@ -572,7 +645,8 @@ export default function OrderDetailPage() {
                 <span>
                   {order.stockMovementIds && order.stockMovementIds.length > 0 ? (
                     <Badge variant="success" size="sm">
-                      {order.stockMovementIds.length} movement{order.stockMovementIds.length === 1 ? '' : 's'}
+                      {order.stockMovementIds.length} movement
+                      {order.stockMovementIds.length === 1 ? '' : 's'}
                     </Badge>
                   ) : order.orderStatus === 'cancelled' || order.orderStatus === 'returned' ? (
                     <Badge variant="default" size="sm">
@@ -604,7 +678,10 @@ export default function OrderDetailPage() {
                 <span>
                   {order.incomeTransactionId ? (
                     <Badge variant="success" size="sm">
-                      Posted {order.codCashReceivedAt ? formatKarachiDate(new Date(order.codCashReceivedAt), 'date') : ''}
+                      Posted{' '}
+                      {order.codCashReceivedAt
+                        ? formatKarachiDate(new Date(order.codCashReceivedAt), 'date')
+                        : ''}
                     </Badge>
                   ) : (
                     <Badge variant="default" size="sm">
@@ -629,8 +706,8 @@ export default function OrderDetailPage() {
               </li>
             </ul>
             <p className="mt-3 text-xs text-ink-muted">
-              Income is posted exactly once, only when COD cash is confirmed. Cancelling or
-              refusing after payment is blocked — money comes back through a return.
+              Income is posted exactly once, only when COD cash is confirmed. Cancelling or refusing
+              after payment is blocked — money comes back through a return.
             </p>
           </Card>
         </div>
@@ -667,10 +744,12 @@ export default function OrderDetailPage() {
               disabled={actionBusy}
               onClick={() => {
                 if (!confirmAction) return
-                if (confirmAction === 'shipped') void patchOrder('shipped', { orderStatus: 'shipped' })
+                if (confirmAction === 'shipped')
+                  void patchOrder('shipped', { orderStatus: 'shipped' })
                 else if (confirmAction === 'cancelled')
                   void patchOrder('cancelled', { orderStatus: 'cancelled' })
-                else if (confirmAction === 'refused') void patchOrder('refused', { codOutcome: 'refused' })
+                else if (confirmAction === 'refused')
+                  void patchOrder('refused', { codOutcome: 'refused' })
               }}
             >
               {actionBusy
@@ -718,7 +797,9 @@ export default function OrderDetailPage() {
         isOpen={editOpen}
         onClose={() => setEditOpen(false)}
         order={order}
-        products={products.filter((p) => p.isActive || order.items.some((i) => i.productId === p._id))}
+        products={products.filter(
+          (p) => p.isActive || order.items.some((i) => i.productId === p._id)
+        )}
         pools={pools}
         canWriteLocation={canWriteLocation}
         channels={[order.salesChannel]}

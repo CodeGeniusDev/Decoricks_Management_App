@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorizeStockWrite, requireAuth } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { getProductCollection } from '@/lib/models/Product'
@@ -92,7 +92,7 @@ async function __POST(request: NextRequest) {
 
     return successResponse({ movement: result.movement, replay: !result.created })
   } catch (error) {
-    console.error('POST /api/stock/damage failed:', error)
+    logRouteFailure('POST /api/stock/damage', error)
     return handleRouteError(error)
   }
 }

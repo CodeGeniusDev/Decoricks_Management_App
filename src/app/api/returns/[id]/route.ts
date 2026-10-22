@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import {
@@ -39,7 +39,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
       order: order ? orderToJSON(order) : undefined,
     })
   } catch (error) {
-    console.error('GET /api/returns/[id] failed:', error)
+    logRouteFailure('GET /api/returns/[id]', error)
     return handleRouteError(error)
   }
 }

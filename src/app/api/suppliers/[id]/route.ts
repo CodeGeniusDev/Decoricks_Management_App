@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
@@ -28,7 +28,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
 
     return successResponse(supplierToJSON(doc))
   } catch (error) {
-    console.error('GET /api/suppliers/[id] failed:', error)
+    logRouteFailure('GET /api/suppliers/[id]', error)
     return handleRouteError(error)
   }
 }
@@ -89,7 +89,7 @@ async function __PUT(request: NextRequest, context: RouteContext) {
     })
     return successResponse(supplierToJSON(updated!))
   } catch (error) {
-    console.error('PUT /api/suppliers/[id] failed:', error)
+    logRouteFailure('PUT /api/suppliers/[id]', error)
     return handleRouteError(error)
   }
 }
@@ -152,7 +152,7 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
     })
     return successResponse({ ...supplierToJSON(updated!), archived: true })
   } catch (error) {
-    console.error('DELETE /api/suppliers/[id] (archive) failed:', error)
+    logRouteFailure('DELETE /api/suppliers/[id] (archive)', error)
     return handleRouteError(error)
   }
 }

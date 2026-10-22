@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { ObjectId, type ClientSession, type Db } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
+import { idempotencyField } from '@/lib/idempotency'
 import { authorize, authorizeStockWrite, requireAuth } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import {
@@ -85,7 +86,12 @@ async function __GET(request: NextRequest) {
     const col = getPurchaseCollection(db)
 
     const [docs, total] = await Promise.all([
-      col.find(filter).sort({ date: -1, createdAt: -1 }).skip((page - 1) * limit).limit(limit).toArray(),
+      col
+        .find(filter)
+        .sort({ date: -1, createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .toArray(),
       col.countDocuments(filter),
     ])
 
@@ -97,7 +103,7 @@ async function __GET(request: NextRequest) {
       totals: { filteredSpendPaisa: spentOnPage },
     })
   } catch (error) {
-    console.error('GET /api/purchases failed:', error)
+    logRouteFailure('GET /api/purchases', error)
     return handleRouteError(error)
   }
 }
@@ -159,7 +165,9 @@ async function __POST(request: NextRequest) {
       }
     }
 
-    const product = await getProductCollection(db).findOne({ _id: new ObjectId(productId) } as never)
+    const product = await getProductCollection(db).findOne({
+      _id: new ObjectId(productId),
+    } as never)
     if (!product) return notFoundError('Product not found')
     if (!product.isActive) {
       return validationError('Product is archived', [
@@ -169,7 +177,9 @@ async function __POST(request: NextRequest) {
 
     let supplierName: string | undefined
     if (supplierId) {
-      const supplier = await getSupplierCollection(db).findOne({ _id: new ObjectId(supplierId) } as never)
+      const supplier = await getSupplierCollection(db).findOne({
+        _id: new ObjectId(supplierId),
+      } as never)
       if (!supplier) return notFoundError('Supplier not found')
       supplierName = supplier.name
     }
@@ -196,7 +206,7 @@ async function __POST(request: NextRequest) {
         totalCost,
         date: postingDate,
         notes: notes || undefined,
-        idempotencyKey,
+        ...idempotencyField(idempotencyKey),
         createdAt: now,
         createdBy: actor.id,
       }
@@ -265,7 +275,14 @@ async function __POST(request: NextRequest) {
       purchaseDoc.ledgerTransactionId = ledger.doc._id
       purchaseDoc.movementId = movement._id
 
-      return { replayPurchase: null as Purchase | null, purchase: purchaseDoc, wacBefore, wacAfter, ledger: ledger.doc, created: ledger.created }
+      return {
+        replayPurchase: null as Purchase | null,
+        purchase: purchaseDoc,
+        wacBefore,
+        wacAfter,
+        ledger: ledger.doc,
+        created: ledger.created,
+      }
     })
 
     if (result.replayPurchase) {
@@ -296,7 +313,7 @@ async function __POST(request: NextRequest) {
       201
     )
   } catch (error) {
-    console.error('POST /api/purchases failed:', error)
+    logRouteFailure('POST /api/purchases', error)
     return handleRouteError(error)
   }
 }

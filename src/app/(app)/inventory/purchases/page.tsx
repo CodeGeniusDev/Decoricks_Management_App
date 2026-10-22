@@ -26,7 +26,8 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Toast } from '@/components/ui/Toast'
-import { ApiError, apiJson, apiPost } from '@/lib/api-client'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
+import { ApiError, apiJson, apiJsonMeta, apiPost } from '@/lib/api-client'
 import { newIdempotencyKey } from '@/lib/form-helpers'
 import { formatPaisa } from '@/lib/money'
 import { formatKarachiDate } from '@/lib/date'
@@ -54,7 +55,9 @@ type Filters = typeof EMPTY_FILTERS
 
 export default function PurchasesPage() {
   const { user } = useAuth()
-  const canWriteSheikhupura = user ? canWriteStockLocation({ role: user.role }, 'sheikhupura') : false
+  const canWriteSheikhupura = user
+    ? canWriteStockLocation({ role: user.role }, 'sheikhupura')
+    : false
   const canWriteLahore = user ? canWriteStockLocation({ role: user.role }, 'lahore') : false
   const canWriteAny = canWriteSheikhupura || canWriteLahore
   const canWriteLocation = useCallback(
@@ -80,52 +83,100 @@ export default function PurchasesPage() {
   const cancelSavingRef = useRef(false)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
+  /** Latest user-driven request parameters, so a realtime tick refreshes what is
+   *  actually on screen without re-firing on every keystroke. */
+  const requestRef = useRef<{ filters: Filters; page: number }>({ filters, page })
+
   const requestSeq = useRef(0)
+  /*
+   * Separate cancellation slots for the two kinds of read. Sharing one meant a
+   * realtime tick aborted the request that was already carrying the rows it wanted
+   * to see, so the table was fetched twice and one request was left with no answer.
+   */
   const abortRef = useRef<AbortController | null>(null)
+  const bgAbortRef = useRef<AbortController | null>(null)
   const [reloadTick, setReloadTick] = useState(0)
+  const inventorySync = useRealtimeSync('inventory', () => {
+    setReloadTick((t) => t + 1)
+  })
 
   const setFilter = (patch: Partial<Filters>) => {
     setFilters((current) => ({ ...current, ...patch }))
     setPage(1)
   }
 
-  const load = useCallback(async (currentFilters: Filters, currentPage: number) => {
-    const seq = ++requestSeq.current
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
+  const load = useCallback(
+    async (
+      currentFilters: Filters,
+      currentPage: number,
+      options: { background?: boolean } = {}
+    ) => {
+      const background = options.background === true
+      const seq = ++requestSeq.current
+      const slot = background ? bgAbortRef : abortRef
+      slot.current?.abort()
+      const controller = new AbortController()
+      slot.current = controller
+      // A background re-read must not grey out rows the user is reading.
+      if (!background) setLoading(true)
+      // Announced before it goes out, so a realtime signal arriving during the
+      // round trip is held for this request to answer instead of starting a
+      // second identical read beside it.
+      inventorySync.begin()
+      let settled = false
 
-    const params = new URLSearchParams()
-    if (currentFilters.productId) params.set('productId', currentFilters.productId)
-    if (currentFilters.supplierId) params.set('supplierId', currentFilters.supplierId)
-    if (currentFilters.location) params.set('location', currentFilters.location)
-    appendRangeParams(params, { from: currentFilters.from, to: currentFilters.to })
-    params.set('page', String(currentPage))
-    params.set('limit', String(LIMIT))
+      const params = new URLSearchParams()
+      if (currentFilters.productId) params.set('productId', currentFilters.productId)
+      if (currentFilters.supplierId) params.set('supplierId', currentFilters.supplierId)
+      if (currentFilters.location) params.set('location', currentFilters.location)
+      appendRangeParams(params, { from: currentFilters.from, to: currentFilters.to })
+      params.set('page', String(currentPage))
+      params.set('limit', String(LIMIT))
 
-    try {
-      const result = await apiJson<PurchasesView>(`/api/purchases?${params.toString()}`, {
-        signal: controller.signal,
-      })
-      if (seq === requestSeq.current) {
-        setData(result)
-        setError(null)
+      try {
+        const {
+          data: result,
+          serverTime,
+          durationMs,
+        } = await apiJsonMeta<PurchasesView>(`/api/purchases?${params.toString()}`, {
+          signal: controller.signal,
+        })
+        settled = true
+        inventorySync.settle(serverTime, durationMs)
+        if (seq === requestSeq.current) {
+          setData(result)
+          setError(null)
+        }
+      } catch (err) {
+        if (!settled) inventorySync.abandon()
+        if ((err as Error)?.name === 'AbortError') return
+        if (seq === requestSeq.current) {
+          setError(err instanceof Error ? err.message : 'Failed to load purchases')
+        }
+      } finally {
+        if (seq === requestSeq.current) setLoading(false)
       }
-    } catch (err) {
-      if ((err as Error)?.name === 'AbortError') return
-      if (seq === requestSeq.current) {
-        setError(err instanceof Error ? err.message : 'Failed to load purchases')
-      }
-    } finally {
-      if (seq === requestSeq.current) setLoading(false)
-    }
-  }, [])
+    },
+    [inventorySync]
+  )
 
   useEffect(() => {
+    requestRef.current = { filters, page }
     setLoading(true)
     const timer = setTimeout(() => void load(filters, page), 0)
     return () => clearTimeout(timer)
-  }, [filters, page, reloadTick, load])
+  }, [filters, page, load])
+
+  /*
+   * Remote changes and our own writes re-read the table in place. Kept out of the
+   * effect above deliberately: nobody else's purchase is a reason to blank the
+   * rows someone is looking at (Phase 6 §3.1, §5.2).
+   */
+  useEffect(() => {
+    if (reloadTick === 0) return
+    const { filters: f, page: p } = requestRef.current
+    void load(f, p, { background: true })
+  }, [reloadTick, load])
 
   // Reference data for the form and filters; failures are not fatal here.
   useEffect(() => {
@@ -139,7 +190,9 @@ export default function PurchasesPage() {
         ])
         if (cancelled) return
         setProducts(productData.filter((p) => p.isActive))
-        setSuppliers(supplierData.filter((s) => s.isActive).map((s) => ({ _id: s._id, name: s.name })))
+        setSuppliers(
+          supplierData.filter((s) => s.isActive).map((s) => ({ _id: s._id, name: s.name }))
+        )
         setAccounts(accountData.accounts)
       } catch {
         // The list itself still loads; the form surfaces server errors.
@@ -151,7 +204,12 @@ export default function PurchasesPage() {
     }
   }, [])
 
-  const handleSaved = (purchase: PurchaseView, wacBefore: number, wacAfter: number, replayed: boolean) => {
+  const handleSaved = (
+    purchase: PurchaseView,
+    wacBefore: number,
+    wacAfter: number,
+    replayed: boolean
+  ) => {
     setToast({
       type: 'success',
       message: replayed
@@ -225,7 +283,9 @@ export default function PurchasesPage() {
     location: LOCATION_LABELS[purchase.location] ?? purchase.location,
     quantity: `+${purchase.quantity}`,
     unitCost: formatPaisa(purchase.unitCost),
-    total: <span className="font-medium text-decoricks-dark">{formatPaisa(purchase.totalCost)}</span>,
+    total: (
+      <span className="font-medium text-decoricks-dark">{formatPaisa(purchase.totalCost)}</span>
+    ),
     actions: cancellable(purchase) ? (
       <Button
         variant="ghost"
@@ -241,12 +301,25 @@ export default function PurchasesPage() {
     ) : null,
   }))
 
+  /*
+   * Loading phases (Phase 6 §3.1). `loading` is set by the user's own filter and
+   * page changes as well as the first fetch, so using it as the skeleton condition
+   * greyed out a table the user was already reading. Skeleton now means "nothing on
+   * screen yet"; a refresh keeps the rows and marks the card busy.
+   */
+  const firstPaint = loading && !data
+  const refreshing = loading && !firstPaint
+
   return (
     <PageTransition>
       <PageHeader
         title="Purchases"
         description="Goods received: stock in at cost, weighted average cost restated, ledger expense posted — one action."
-        actions={canWriteAny ? <Button onClick={() => setFormOpen(true)}>Record purchase</Button> : undefined}
+        actions={
+          canWriteAny ? (
+            <Button onClick={() => setFormOpen(true)}>Record purchase</Button>
+          ) : undefined
+        }
       />
 
       <SubNav items={INVENTORY_SUBNAV} />
@@ -328,8 +401,11 @@ export default function PurchasesPage() {
         </Card>
       )}
 
-      <Card>
-        {loading ? (
+      <Card
+        aria-busy={refreshing || undefined}
+        className={refreshing ? 'opacity-60 transition-opacity' : undefined}
+      >
+        {firstPaint ? (
           <div className="p-4">
             {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} variant="rect" className="mb-2 h-12" />
@@ -344,17 +420,27 @@ export default function PurchasesPage() {
         ) : rows.length === 0 ? (
           <EmptyState
             title={
-              filters.productId || filters.supplierId || filters.location || filters.from || filters.to
+              filters.productId ||
+              filters.supplierId ||
+              filters.location ||
+              filters.from ||
+              filters.to
                 ? 'No purchases match'
                 : 'No purchases recorded yet'
             }
             description={
-              filters.productId || filters.supplierId || filters.location || filters.from || filters.to
+              filters.productId ||
+              filters.supplierId ||
+              filters.location ||
+              filters.from ||
+              filters.to
                 ? 'Try widening the filters.'
                 : 'Recording a purchase is what puts stock on the shelf.'
             }
             action={
-              canWriteAny ? { label: 'Record purchase', onClick: () => setFormOpen(true) } : undefined
+              canWriteAny
+                ? { label: 'Record purchase', onClick: () => setFormOpen(true) }
+                : undefined
             }
           />
         ) : (
@@ -381,7 +467,8 @@ export default function PurchasesPage() {
                         {purchase.productName}
                       </p>
                       <p className="text-xs text-ink-muted">
-                        {purchase.purchaseNumber} · {formatKarachiDate(new Date(purchase.date), 'date')}
+                        {purchase.purchaseNumber} ·{' '}
+                        {formatKarachiDate(new Date(purchase.date), 'date')}
                       </p>
                     </div>
                     <div className="text-right">
@@ -393,7 +480,8 @@ export default function PurchasesPage() {
                   </div>
                   <p className="mt-1 text-xs text-ink-secondary">
                     {LOCATION_LABELS[purchase.location] ?? purchase.location} ·{' '}
-                    {purchase.supplierName ?? 'No supplier'} · {formatPaisa(purchase.unitCost)} / unit
+                    {purchase.supplierName ?? 'No supplier'} · {formatPaisa(purchase.unitCost)} /
+                    unit
                   </p>
                   {cancellable(purchase) && (
                     <div className="mt-2">

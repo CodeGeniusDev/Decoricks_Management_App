@@ -23,7 +23,8 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Toast } from '@/components/ui/Toast'
-import { apiJson } from '@/lib/api-client'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
+import { apiJson, apiJsonMeta } from '@/lib/api-client'
 import { formatPaisa } from '@/lib/money'
 import { formatKarachiDate } from '@/lib/date'
 import { useAuth } from '@/components/auth/AuthProvider'
@@ -85,51 +86,97 @@ export default function StockMovementsPage() {
   const [toast, setToast] = useState<string | null>(null)
 
   const requestSeq = useRef(0)
+  /*
+   * Separate cancellation slots for the two kinds of read. Sharing one meant a
+   * realtime tick aborted the request that was already carrying the rows it wanted
+   * to see, so the table was fetched twice and one request was left with no answer.
+   */
   const abortRef = useRef<AbortController | null>(null)
+  const bgAbortRef = useRef<AbortController | null>(null)
   const [reloadTick, setReloadTick] = useState(0)
+  /** Latest user-driven request parameters, so a tick refreshes what is on screen. */
+  const requestRef = useRef<{ filters: Filters; page: number }>({ filters, page })
+  const inventorySync = useRealtimeSync('inventory', () => {
+    setReloadTick((t) => t + 1)
+  })
 
   const setFilter = (patch: Partial<Filters>) => {
     setFilters((current) => ({ ...current, ...patch }))
     setPage(1)
   }
 
-  const load = useCallback(async (currentFilters: Filters, currentPage: number) => {
-    const seq = ++requestSeq.current
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
+  const load = useCallback(
+    async (
+      currentFilters: Filters,
+      currentPage: number,
+      options: { background?: boolean } = {}
+    ) => {
+      const background = options.background === true
+      const seq = ++requestSeq.current
+      const slot = background ? bgAbortRef : abortRef
+      slot.current?.abort()
+      const controller = new AbortController()
+      slot.current = controller
+      // A background re-read must not grey out rows the user is reading.
+      if (!background) setLoading(true)
+      // Announced before it goes out, so a realtime signal arriving during the
+      // round trip is held for this request to answer instead of starting a
+      // second identical read beside it.
+      inventorySync.begin()
+      let settled = false
 
-    const params = new URLSearchParams()
-    if (currentFilters.productId) params.set('productId', currentFilters.productId)
-    if (currentFilters.movementType) params.set('movementType', currentFilters.movementType)
-    if (currentFilters.location) params.set('location', currentFilters.location)
-    appendRangeParams(params, { from: currentFilters.from, to: currentFilters.to })
-    params.set('page', String(currentPage))
-    params.set('limit', String(LIMIT))
+      const params = new URLSearchParams()
+      if (currentFilters.productId) params.set('productId', currentFilters.productId)
+      if (currentFilters.movementType) params.set('movementType', currentFilters.movementType)
+      if (currentFilters.location) params.set('location', currentFilters.location)
+      appendRangeParams(params, { from: currentFilters.from, to: currentFilters.to })
+      params.set('page', String(currentPage))
+      params.set('limit', String(LIMIT))
 
-    try {
-      const result = await apiJson<MovementsView>(`/api/stock/movements?${params.toString()}`, {
-        signal: controller.signal,
-      })
-      if (seq === requestSeq.current) {
-        setData(result)
-        setError(null)
+      try {
+        const {
+          data: result,
+          serverTime,
+          durationMs,
+        } = await apiJsonMeta<MovementsView>(`/api/stock/movements?${params.toString()}`, {
+          signal: controller.signal,
+        })
+        settled = true
+        inventorySync.settle(serverTime, durationMs)
+        if (seq === requestSeq.current) {
+          setData(result)
+          setError(null)
+        }
+      } catch (err) {
+        if (!settled) inventorySync.abandon()
+        if ((err as Error)?.name === 'AbortError') return
+        if (seq === requestSeq.current) {
+          setError(err instanceof Error ? err.message : 'Failed to load stock movements')
+        }
+      } finally {
+        if (seq === requestSeq.current) setLoading(false)
       }
-    } catch (err) {
-      if ((err as Error)?.name === 'AbortError') return
-      if (seq === requestSeq.current) {
-        setError(err instanceof Error ? err.message : 'Failed to load stock movements')
-      }
-    } finally {
-      if (seq === requestSeq.current) setLoading(false)
-    }
-  }, [])
+    },
+    [inventorySync]
+  )
 
   useEffect(() => {
+    requestRef.current = { filters, page }
     setLoading(true)
     const timer = setTimeout(() => void load(filters, page), 0)
     return () => clearTimeout(timer)
-  }, [filters, page, reloadTick, load])
+  }, [filters, page, load])
+
+  /*
+   * Remote changes and our own writes re-read the table in place. Kept out of the
+   * effect above deliberately: nobody else's stock movement is a reason to blank
+   * the rows someone is looking at (Phase 6 §3.1, §5.2).
+   */
+  useEffect(() => {
+    if (reloadTick === 0) return
+    const { filters: f, page: p } = requestRef.current
+    void load(f, p, { background: true })
+  }, [reloadTick, load])
 
   // Product picker options — every product, because archived ones still have
   // a movement history that must stay findable.
@@ -223,26 +270,34 @@ export default function StockMovementsPage() {
         ? '—'
         : formatPaisa(movement.unitCost),
     reference: <span className="text-xs text-ink-muted">{movement.referenceType ?? '—'}</span>,
-    status:
-      movement.isReversal ? (
-        <Badge variant="warning" size="sm">
-          Reversal
-        </Badge>
-      ) : movement.status === 'reversed' || movement.reversedBy ? (
-        <Badge variant="default" size="sm">
-          Reversed
-        </Badge>
-      ) : (
-        <Badge variant="success" size="sm">
-          Posted
-        </Badge>
-      ),
+    status: movement.isReversal ? (
+      <Badge variant="warning" size="sm">
+        Reversal
+      </Badge>
+    ) : movement.status === 'reversed' || movement.reversedBy ? (
+      <Badge variant="default" size="sm">
+        Reversed
+      </Badge>
+    ) : (
+      <Badge variant="success" size="sm">
+        Posted
+      </Badge>
+    ),
     actions: canReverseRow(movement) ? (
       <Button variant="ghost" size="sm" onClick={() => setReverseTarget(movement)}>
         Reverse
       </Button>
     ) : null,
   }))
+
+  /*
+   * Loading phases (Phase 6 §3.1). `loading` is set by the user's own filter and
+   * page changes as well as the first fetch, so using it as the skeleton condition
+   * greyed out a table the user was already reading. Skeleton now means "nothing on
+   * screen yet"; a refresh keeps the rows and marks the card busy.
+   */
+  const firstPaint = loading && !data
+  const refreshing = loading && !firstPaint
 
   return (
     <PageTransition>
@@ -316,8 +371,11 @@ export default function StockMovementsPage() {
         </div>
       </Card>
 
-      <Card>
-        {loading ? (
+      <Card
+        aria-busy={refreshing || undefined}
+        className={refreshing ? 'opacity-60 transition-opacity' : undefined}
+      >
+        {firstPaint ? (
           <div className="p-4">
             {Array.from({ length: 8 }).map((_, i) => (
               <Skeleton key={i} variant="rect" className="mb-2 h-12" />
@@ -336,7 +394,11 @@ export default function StockMovementsPage() {
           <EmptyState
             title="No movements found"
             description={
-              filters.productId || filters.movementType || filters.location || filters.from || filters.to
+              filters.productId ||
+              filters.movementType ||
+              filters.location ||
+              filters.from ||
+              filters.to
                 ? 'Nothing matches the current filters.'
                 : 'The ledger is empty. Purchases, sales, returns, transfers and counts all write here.'
             }
@@ -388,7 +450,9 @@ export default function StockMovementsPage() {
                       </span>
                     )}
                     {movement.unitCost !== undefined && movement.unitCost !== null && (
-                      <span className="text-xs text-ink-muted">@ {formatPaisa(movement.unitCost)}</span>
+                      <span className="text-xs text-ink-muted">
+                        @ {formatPaisa(movement.unitCost)}
+                      </span>
                     )}
                     {movement.isReversal ? (
                       <Badge variant="warning" size="sm">

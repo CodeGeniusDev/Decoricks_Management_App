@@ -1,6 +1,5 @@
 'use client'
 
-
 import { IconPlus } from '@/components/ui/icons'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -160,11 +159,14 @@ export default function SuppliersPage() {
         isActive: formIsActive,
       }
 
-      const res = await apiFetch(editingSupplier ? `/api/suppliers/${editingSupplier._id}` : '/api/suppliers', {
-        method: editingSupplier ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
+      const res = await apiFetch(
+        editingSupplier ? `/api/suppliers/${editingSupplier._id}` : '/api/suppliers',
+        {
+          method: editingSupplier ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      )
       const body = await res.json()
 
       if (!res.ok || !body.success) {
@@ -209,9 +211,13 @@ export default function SuppliersPage() {
         body: JSON.stringify({ isActive: nextActive }),
       })
       const body = await res.json()
-      if (!res.ok || !body.success) throw new Error(body?.error?.message || 'Could not update supplier')
+      if (!res.ok || !body.success)
+        throw new Error(body?.error?.message || 'Could not update supplier')
 
-      setToastMessage({ type: 'info', message: `Supplier ${nextActive ? 'activated' : 'deactivated'}` })
+      setToastMessage({
+        type: 'info',
+        message: `Supplier ${nextActive ? 'activated' : 'deactivated'}`,
+      })
       await fetchSuppliers()
     } catch (err) {
       setSuppliers(previous)
@@ -267,15 +273,17 @@ export default function SuppliersPage() {
     ),
     actions: (
       <div className="flex gap-1">
-        <Button variant="ghost" size="sm" onClick={() => openEditModal(supplier)} type="button"
-        >
+        <Button variant="ghost" size="sm" onClick={() => openEditModal(supplier)} type="button">
           Edit
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => toggleActive(supplier)} type="button"
-        >
+        <Button variant="ghost" size="sm" onClick={() => toggleActive(supplier)} type="button">
           {supplier.isActive ? 'Deactivate' : 'Activate'}
         </Button>
-        <Button variant="ghost" size="sm" onClick={() => deleteSupplier(supplier._id)} type="button"
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => deleteSupplier(supplier._id)}
+          type="button"
         >
           Del
         </Button>
@@ -283,7 +291,10 @@ export default function SuppliersPage() {
     ),
   }))
 
-  if (loading) {
+  // First paint only. `fetchSuppliers()` also runs after every save/delete, and
+  // replacing the whole page (heading included) with one 96-tall skeleton made
+  // each write look like a reload. (Phase 4 §3/§4)
+  if (loading && suppliers.length === 0) {
     return (
       <PageTransition>
         <h1 className="text-2xl font-bold text-decoricks-dark mb-6">Suppliers</h1>
@@ -296,9 +307,8 @@ export default function SuppliersPage() {
     <PageTransition>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-decoricks-dark">Suppliers</h1>
-        <Button variant="primary" onClick={openModal} type="button"
-        >
-          <IconPlus size={16}  />
+        <Button variant="primary" onClick={openModal} type="button">
+          <IconPlus size={16} />
           Add Supplier
         </Button>
       </div>
@@ -336,11 +346,11 @@ export default function SuppliersPage() {
         />
       ) : (
         !loadError && (
-        <Card className="mb-6">
-          <div className="p-4">
-            <Table columns={columns} data={tableData} />
-          </div>
-        </Card>
+          <Card className="mb-6">
+            <div className="p-4">
+              <Table columns={columns} data={tableData} />
+            </div>
+          </Card>
         )
       )}
 
@@ -427,8 +437,7 @@ export default function SuppliersPage() {
           {formErrors.general && <p className="text-sm text-red-500">{formErrors.general}</p>}
 
           <div className="flex justify-end gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={closeModal} type="button"
-            >
+            <Button variant="outline" onClick={closeModal} type="button">
               Cancel
             </Button>
             <Button variant="primary" type="submit" disabled={isSubmitting}>

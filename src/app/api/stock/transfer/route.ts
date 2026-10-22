@@ -6,7 +6,7 @@ import { ensureInventoryIndexes } from '@/lib/models/Inventory'
 import { stockTransferSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
 import { successResponse, validationError } from '@/lib/api-response'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorizeStockWrite, requireAuth } from '@/lib/authorization'
 import { recordAuditEntry } from '@/lib/audit'
 import { getAllowNegativeStock, postMovement, runInTransaction } from '@/lib/stock-service'
@@ -85,7 +85,7 @@ async function __POST(request: NextRequest) {
       replay: !result.created,
     })
   } catch (error) {
-    console.error('POST /api/stock/transfer failed:', error)
+    logRouteFailure('POST /api/stock/transfer', error)
     return handleRouteError(error)
   }
 }

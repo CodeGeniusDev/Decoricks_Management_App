@@ -1,4 +1,4 @@
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
@@ -29,7 +29,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
 
     return successResponse(productToJSON(doc))
   } catch (error) {
-    console.error('GET /api/products/[id] failed:', error)
+    logRouteFailure('GET /api/products/[id]', error)
     return handleRouteError(error)
   }
 }
@@ -100,7 +100,7 @@ async function __PUT(request: NextRequest, context: RouteContext) {
     })
     return successResponse(productToJSON(updated!))
   } catch (error) {
-    console.error('PUT /api/products/[id] failed:', error)
+    logRouteFailure('PUT /api/products/[id]', error)
     return handleRouteError(error)
   }
 }
@@ -145,7 +145,7 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
     })
     return successResponse({ _id: id, archived: true })
   } catch (error) {
-    console.error('DELETE /api/products/[id] (archive) failed:', error)
+    logRouteFailure('DELETE /api/products/[id] (archive)', error)
     return handleRouteError(error)
   }
 }

@@ -30,7 +30,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { ExportLink } from '@/components/ui/ExportLink'
 import { Toast } from '@/components/ui/Toast'
-import { apiJson } from '@/lib/api-client'
+import { apiJson, apiJsonMeta } from '@/lib/api-client'
 import { formatPaisa } from '@/lib/money'
 import { formatKarachiDate } from '@/lib/date'
 import { useAuth } from '@/components/auth/AuthProvider'
@@ -125,46 +125,19 @@ export default function SalesOrdersPage() {
     setPage(1)
   }
 
-  const load = useCallback(async (currentFilters: Filters, currentPage: number) => {
-    const seq = ++requestSeq.current
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-
-    const params = new URLSearchParams(buildFilterQuery(currentFilters))
-    params.set('page', String(currentPage))
-    params.set('limit', String(LIMIT))
-
-    try {
-      const result = await apiJson<OrdersView>(`/api/orders?${params.toString()}`, {
-        signal: controller.signal,
-      })
-      if (seq === requestSeq.current) {
-        setData(result)
-        setError(null)
-      }
-    } catch (err) {
-      if ((err as Error)?.name === 'AbortError') return
-      if (seq === requestSeq.current) {
-        setError(err instanceof Error ? err.message : 'Failed to load orders')
-      }
-    } finally {
-      if (seq === requestSeq.current) setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    setLoading(true)
-    const timer = setTimeout(() => void load(filters, page), filters.search ? 350 : 0)
-    return () => clearTimeout(timer)
-  }, [filters, page, reloadTick, load])
-
-  // Live cross-device refresh. `load` is race-guarded and swaps `data` in place
-  // without touching `loading`, so an incoming order change updates the table
-  // silently. Paused while the order form modal is open so it can never disturb a
-  // half-filled order; applied once the modal closes.
+  /*
+   * Live cross-device refresh. `load` is race-guarded and swaps `data` in place
+   * without touching `loading`, so an incoming order change updates the table
+   * silently. Paused while the order form modal is open so it can never disturb a
+   * half-filled order; applied once the modal closes.
+   *
+   * Declared above `load` because the read announces itself here: a snapshot that
+   * lands while `/api/orders` is already on the wire is held for that request to
+   * answer instead of fetching the same page twice (the `×2` the Phase 6 perf
+   * probe counted on this route).
+   */
   const salesRemoteDirtyRef = useRef(false)
-  useRealtimeSync(
+  const salesSync = useRealtimeSync(
     'sales',
     () => {
       if (formOpen) {
@@ -175,6 +148,53 @@ export default function SalesOrdersPage() {
     },
     user != null
   )
+
+  const load = useCallback(
+    async (currentFilters: Filters, currentPage: number) => {
+      const seq = ++requestSeq.current
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+
+      const params = new URLSearchParams(buildFilterQuery(currentFilters))
+      params.set('page', String(currentPage))
+      params.set('limit', String(LIMIT))
+
+      salesSync.begin()
+      let settled = false
+      try {
+        const {
+          data: result,
+          serverTime,
+          durationMs,
+        } = await apiJsonMeta<OrdersView>(`/api/orders?${params.toString()}`, {
+          signal: controller.signal,
+        })
+        settled = true
+        salesSync.settle(serverTime, durationMs)
+        if (seq === requestSeq.current) {
+          setData(result)
+          setError(null)
+        }
+      } catch (err) {
+        if (!settled) salesSync.abandon()
+        if ((err as Error)?.name === 'AbortError') return
+        if (seq === requestSeq.current) {
+          setError(err instanceof Error ? err.message : 'Failed to load orders')
+        }
+      } finally {
+        if (seq === requestSeq.current) setLoading(false)
+      }
+    },
+    [salesSync]
+  )
+
+  useEffect(() => {
+    setLoading(true)
+    const timer = setTimeout(() => void load(filters, page), filters.search ? 350 : 0)
+    return () => clearTimeout(timer)
+  }, [filters, page, reloadTick, load])
+
   useEffect(() => {
     if (!formOpen && salesRemoteDirtyRef.current) {
       salesRemoteDirtyRef.current = false
@@ -304,6 +324,16 @@ export default function SalesOrdersPage() {
 
   const exportHref = `/api/orders/export?${buildFilterQuery(filters)}`
 
+  /*
+   * Loading phases (Phase 4 §3). `loading` is set on every fetch — the debounced
+   * search, a filter change, a page change and the reload after a save — so
+   * treating it as "show skeletons" replaced a table the user could already read
+   * with grey bars for the whole debounce window. Skeletons now mean "nothing on
+   * screen yet"; a refresh keeps the current rows and marks the card busy.
+   */
+  const firstPaint = loading && !data
+  const refreshing = loading && !firstPaint
+
   return (
     <PageTransition>
       <PageHeader
@@ -396,14 +426,29 @@ export default function SalesOrdersPage() {
         </div>
       </Card>
 
-      <Card>
-        {loading ? (
+      <Card
+        aria-busy={refreshing || undefined}
+        className={refreshing ? 'opacity-60 transition-opacity' : undefined}
+      >
+        {error && data && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line-subtle bg-status-warning/10 px-4 py-2 text-xs text-ink-secondary">
+            Couldn’t refresh — showing the orders from before.
+            <button
+              type="button"
+              onClick={() => void load({ ...filters }, page)}
+              className="font-medium text-decoricks-brown hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {firstPaint ? (
           <div className="p-4">
             {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} variant="rect" className="mb-2 h-12" />
             ))}
           </div>
-        ) : error ? (
+        ) : error && !data ? (
           <ErrorState
             title="Could not load orders"
             description={error}

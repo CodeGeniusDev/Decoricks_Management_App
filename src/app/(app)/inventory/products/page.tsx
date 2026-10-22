@@ -29,7 +29,8 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { ExportLink } from '@/components/ui/ExportLink'
 import { Toast } from '@/components/ui/Toast'
-import { ApiError, apiJson, apiDelete } from '@/lib/api-client'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
+import { ApiError, apiJson, apiJsonMeta, apiDelete } from '@/lib/api-client'
 import { formatPaisa } from '@/lib/money'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { can } from '@/lib/permissions-client'
@@ -66,6 +67,16 @@ export default function InventoryProductsPage() {
   const abortRef = useRef<AbortController | null>(null)
   const [reloadTick, setReloadTick] = useState(0)
 
+  /*
+   * Declared above `load` so the read can announce itself: a snapshot arriving
+   * while `/api/products` is already on the wire is held for that request to
+   * answer rather than starting an identical second one beside it (the `×2` the
+   * Phase 6 perf probe counted on this route).
+   */
+  const inventorySync = useRealtimeSync('inventory', () => {
+    setReloadTick((t) => t + 1)
+  })
+
   const load = useCallback(async () => {
     const seq = ++requestSeq.current
     abortRef.current?.abort()
@@ -77,15 +88,24 @@ export default function InventoryProductsPage() {
     if (category) params.set('category', category)
     if (status !== 'all') params.set('active', status === 'active' ? 'true' : 'false')
 
+    inventorySync.begin()
+    let settled = false
     try {
-      const result = await apiJson<ProductView[]>(`/api/products?${params.toString()}`, {
+      const {
+        data: result,
+        serverTime,
+        durationMs,
+      } = await apiJsonMeta<ProductView[]>(`/api/products?${params.toString()}`, {
         signal: controller.signal,
       })
+      settled = true
+      inventorySync.settle(serverTime, durationMs)
       if (seq === requestSeq.current) {
         setProducts(result)
         setError(null)
       }
     } catch (err) {
+      if (!settled) inventorySync.abandon()
       if ((err as Error)?.name === 'AbortError') return
       if (seq === requestSeq.current) {
         setError(err instanceof Error ? err.message : 'Failed to load products')
@@ -93,13 +113,31 @@ export default function InventoryProductsPage() {
     } finally {
       if (seq === requestSeq.current) setLoading(false)
     }
-  }, [search, category, status])
+  }, [search, category, status, inventorySync])
 
   useEffect(() => {
     setLoading(true)
     const timer = setTimeout(() => void load(), search ? 350 : 0)
     return () => clearTimeout(timer)
   }, [load, reloadTick, search])
+
+  /**
+   * Deep link from a Chat reference chip: `/inventory/products?search=<name>`.
+   * The chip's query is re-derived from the live product at read time, so it is
+   * always the CURRENT name and a renamed product still finds itself. Seeding a
+   * plain input — rather than a hidden filter — means the landing page shows
+   * exactly what it is filtering by and clearing it is one keystroke. Read off
+   * `window.location` (no `useSearchParams`, so no Suspense boundary), then the
+   * URL is cleaned so a reload does not re-apply a stale link.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const query = params.get('search')?.trim()
+    if (!query) return
+    setSearch(query.slice(0, 120))
+    setStatus((current) => (current === 'active' ? 'all' : current))
+    window.history.replaceState(null, '', '/inventory/products')
+  }, [])
 
   // Categories present in the data, offered as picker suggestions only.
   const categories = useMemo(() => {
@@ -197,7 +235,9 @@ export default function InventoryProductsPage() {
       ),
       category: product.category || '—',
       cost: formatPaisa(product.cost),
-      price: <span className="font-medium text-decoricks-dark">{formatPaisa(product.sellingPrice)}</span>,
+      price: (
+        <span className="font-medium text-decoricks-dark">{formatPaisa(product.sellingPrice)}</span>
+      ),
       stock: (
         <span>
           {sheikhupura + lahore}
@@ -206,7 +246,10 @@ export default function InventoryProductsPage() {
           </span>
         </span>
       ),
-      reorder: product.reorderLevel === null || product.reorderLevel === undefined ? '—' : product.reorderLevel,
+      reorder:
+        product.reorderLevel === null || product.reorderLevel === undefined
+          ? '—'
+          : product.reorderLevel,
       status: product.isActive ? (
         <Badge variant="success" size="sm">
           Active
@@ -237,6 +280,19 @@ export default function InventoryProductsPage() {
       ),
     }
   })
+
+  /*
+   * Loading phases (Phase 4 §3).
+   *
+   * `loading` is set at the start of every fetch, including the debounced search
+   * and the reload that follows a save, so gating the skeleton on `loading` alone
+   * blanked an already-painted table into six grey bars while the user was still
+   * typing — the "skeleton stays visible too long" symptom. Skeleton now means
+   * only "there is nothing on screen yet"; a refresh of an existing list keeps
+   * the previous rows readable and marks the card busy instead.
+   */
+  const firstPaint = loading && products.length === 0
+  const refreshing = loading && !firstPaint
 
   return (
     <PageTransition>
@@ -302,14 +358,29 @@ export default function InventoryProductsPage() {
         </div>
       </Card>
 
-      <Card>
-        {loading ? (
+      <Card
+        aria-busy={refreshing || undefined}
+        className={refreshing ? 'opacity-60 transition-opacity' : undefined}
+      >
+        {error && products.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line-subtle bg-status-warning/10 px-4 py-2 text-xs text-ink-secondary">
+            Couldn’t refresh — showing the products from before.
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="font-medium text-decoricks-brown hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {firstPaint ? (
           <div className="p-4">
             {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} variant="rect" className="mb-2 h-12" />
             ))}
           </div>
-        ) : error ? (
+        ) : error && products.length === 0 ? (
           <ErrorState
             title="Could not load products"
             description={error}
@@ -317,7 +388,9 @@ export default function InventoryProductsPage() {
           />
         ) : rows.length === 0 ? (
           <EmptyState
-            title={search || category || status !== 'active' ? 'No products match' : 'No products yet'}
+            title={
+              search || category || status !== 'active' ? 'No products match' : 'No products yet'
+            }
             description={
               search || category || status !== 'active'
                 ? 'Try widening the filters.'
@@ -335,7 +408,9 @@ export default function InventoryProductsPage() {
                 <li key={product._id} className="px-4 py-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-decoricks-dark">{product.name}</p>
+                      <p className="truncate text-sm font-medium text-decoricks-dark">
+                        {product.name}
+                      </p>
                       <p className="text-xs text-ink-muted">
                         {product.sku} · {product.category || 'Uncategorised'}
                       </p>
@@ -352,7 +427,10 @@ export default function InventoryProductsPage() {
                   </div>
                   <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-ink-secondary">
                     <p>
-                      Avg cost: <span className="font-medium text-decoricks-dark">{formatPaisa(product.cost)}</span>
+                      Avg cost:{' '}
+                      <span className="font-medium text-decoricks-dark">
+                        {formatPaisa(product.cost)}
+                      </span>
                     </p>
                     <p>
                       Price:{' '}
@@ -361,12 +439,11 @@ export default function InventoryProductsPage() {
                       </span>
                     </p>
                     <p>
-                      Stock: {LOCATION_LABELS.sheikhupura} {product.stockByLocation?.sheikhupura ?? 0} ·{' '}
-                      {LOCATION_LABELS.lahore} {product.stockByLocation?.lahore ?? 0}
+                      Stock: {LOCATION_LABELS.sheikhupura}{' '}
+                      {product.stockByLocation?.sheikhupura ?? 0} · {LOCATION_LABELS.lahore}{' '}
+                      {product.stockByLocation?.lahore ?? 0}
                     </p>
-                    <p>
-                      Reorder at: {product.reorderLevel ?? '—'}
-                    </p>
+                    <p>Reorder at: {product.reorderLevel ?? '—'}</p>
                   </div>
                   {(canEdit || canArchive) && (
                     <div className="mt-2 flex flex-wrap gap-1">
@@ -414,8 +491,8 @@ export default function InventoryProductsPage() {
         }
       >
         <p className="text-sm text-ink-secondary">
-          Its stock, movements, orders and purchases are kept — nothing is deleted. You can
-          restore the product later from the Archived filter.
+          Its stock, movements, orders and purchases are kept — nothing is deleted. You can restore
+          the product later from the Archived filter.
         </p>
       </Modal>
 

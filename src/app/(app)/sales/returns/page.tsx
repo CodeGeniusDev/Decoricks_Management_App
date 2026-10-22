@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { PageTransition } from '@/components/PageTransition'
 import { PageHeader } from '@/components/layout/Page'
 import { SubNav } from '@/components/layout/SubNav'
@@ -46,6 +47,7 @@ const returnUnits = (ret: ReturnView): number =>
   ret.items.reduce((sum, item) => sum + item.quantity, 0)
 
 export default function SalesReturnsPage() {
+  const router = useRouter()
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [page, setPage] = useState(1)
@@ -125,15 +127,31 @@ export default function SalesReturnsPage() {
         {RETURN_OUTCOME_LABELS[ret.outcome] ?? ret.outcome}
       </Badge>
     ),
-    refund: <span className="font-medium text-decoricks-dark">{formatPaisa(ret.refundAmount)}</span>,
-    courier: ret.courierCost ? formatPaisa(ret.courierCost) : <span className="text-ink-muted">—</span>,
+    refund: (
+      <span className="font-medium text-decoricks-dark">{formatPaisa(ret.refundAmount)}</span>
+    ),
+    courier: ret.courierCost ? (
+      formatPaisa(ret.courierCost)
+    ) : (
+      <span className="text-ink-muted">—</span>
+    ),
     entries: (
       <span className="text-xs text-ink-muted">
         {ret.refundTransactionId ? 'Refund posted' : 'No refund entry'}
-        {ret.movementIds && ret.movementIds.length > 0 && ` · ${ret.movementIds.length} movement${ret.movementIds.length === 1 ? '' : 's'}`}
+        {ret.movementIds &&
+          ret.movementIds.length > 0 &&
+          ` · ${ret.movementIds.length} movement${ret.movementIds.length === 1 ? '' : 's'}`}
       </span>
     ),
   }))
+
+  /*
+   * Loading phases (Phase 6 §3.1), matching the sales and transactions lists:
+   * skeleton means "nothing on screen yet", a page or date-range change keeps the
+   * rows and marks the card busy instead of blanking the table.
+   */
+  const firstPaint = loading && !data
+  const refreshing = loading && !firstPaint
 
   return (
     <PageTransition>
@@ -147,8 +165,24 @@ export default function SalesReturnsPage() {
       {/* Filters */}
       <Card className="mb-4 p-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Input label="From (Karachi date)" type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(1) }} />
-          <Input label="To (Karachi date)" type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(1) }} />
+          <Input
+            label="From (Karachi date)"
+            type="date"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value)
+              setPage(1)
+            }}
+          />
+          <Input
+            label="To (Karachi date)"
+            type="date"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value)
+              setPage(1)
+            }}
+          />
           <div className="flex items-end">
             <Button
               variant="outline"
@@ -164,8 +198,11 @@ export default function SalesReturnsPage() {
         </div>
       </Card>
 
-      <Card>
-        {loading ? (
+      <Card
+        aria-busy={refreshing || undefined}
+        className={refreshing ? 'opacity-60 transition-opacity' : undefined}
+      >
+        {firstPaint ? (
           <div className="p-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} variant="rect" className="mb-2 h-12" />
@@ -187,9 +224,9 @@ export default function SalesReturnsPage() {
             }
             action={{
               label: 'Go to orders',
-              onClick: () => {
-                window.location.href = '/sales'
-              },
+              // Client navigation: this is an internal route, so it must not cost
+              // a full document reload (Phase 4 §4).
+              onClick: () => router.push('/sales'),
             }}
           />
         ) : (
@@ -224,7 +261,9 @@ export default function SalesReturnsPage() {
                     </Badge>
                   </div>
                   <div className="mt-2 flex items-end justify-between gap-2">
-                    <p className="text-xs text-ink-secondary">{returnUnits(ret)} unit{returnUnits(ret) === 1 ? '' : 's'} returned</p>
+                    <p className="text-xs text-ink-secondary">
+                      {returnUnits(ret)} unit{returnUnits(ret) === 1 ? '' : 's'} returned
+                    </p>
                     <p className="text-sm font-semibold text-decoricks-dark">
                       {formatPaisa(ret.refundAmount)} refund
                     </p>

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { validationError } from '@/lib/api-response'
@@ -102,7 +102,7 @@ async function __GET(request: NextRequest) {
 
     return csvResponse(csv, 'orders')
   } catch (error) {
-    console.error('GET /api/orders/export failed:', error)
+    logRouteFailure('GET /api/orders/export', error)
     return handleRouteError(error)
   }
 }

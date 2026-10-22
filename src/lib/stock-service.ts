@@ -1,6 +1,12 @@
 import { ObjectId, type ClientSession, type Db } from 'mongodb'
 import { getMongoClient } from '@/lib/mongodb'
-import { getProductCollection, getStockCollection, type Location, type Product } from '@/lib/models/Product'
+import { idempotencyField } from '@/lib/idempotency'
+import {
+  getProductCollection,
+  getStockCollection,
+  type Location,
+  type Product,
+} from '@/lib/models/Product'
 import {
   getStockMovementCollection,
   insertIdempotent,
@@ -109,12 +115,7 @@ export async function applyAvailableDelta(
   const current = await stockCol.findOne({ productId, location } as never, {
     session: options.session,
   })
-  throw new InsufficientStockError(
-    productId.toString(),
-    location,
-    needed,
-    current?.quantity ?? 0
-  )
+  throw new InsufficientStockError(productId.toString(), location, needed, current?.quantity ?? 0)
 }
 
 export interface PostMovementInput {
@@ -178,7 +179,7 @@ export async function postMovement(
     reversesId: input.reversesId,
     isReversal: input.isReversal ?? false,
     status: 'posted',
-    idempotencyKey: key,
+    ...idempotencyField(key),
     notes: input.notes,
     date: input.date ?? now,
     createdAt: now,
@@ -261,7 +262,7 @@ export async function reverseMovement(
       referenceType: original.referenceType,
       reversesId: original._id,
       isReversal: true,
-      idempotencyKey: input.idempotencyKey,
+      ...idempotencyField(input.idempotencyKey),
       notes: input.reason ? `Reversal: ${input.reason}` : `Reversal of ${oid.toString()}`,
       date: input.date,
       createdBy: input.createdBy,

@@ -28,7 +28,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { ExportLink } from '@/components/ui/ExportLink'
 import { Toast } from '@/components/ui/Toast'
-import { apiJson } from '@/lib/api-client'
+import { apiJson, apiJsonMeta } from '@/lib/api-client'
 import { formatPaisa } from '@/lib/money'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { canWriteStockLocation } from '@/lib/permissions-client'
@@ -72,45 +72,20 @@ export default function InventoryOverviewPage() {
     [user?.role]
   )
 
-  const load = useCallback(async () => {
-    const seq = ++requestSeq.current
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-
-    try {
-      // Archived products are included on purpose: their stock is still real
-      // and still on the valuation. Rows for fully exhausted archived products
-      // are filtered out of the table below.
-      const result = await apiJson<StockSummaryView>('/api/stock/summary?includeArchived=true', {
-        signal: controller.signal,
-      })
-      if (seq === requestSeq.current) {
-        setData(result)
-        setError(null)
-      }
-    } catch (err) {
-      if ((err as Error)?.name === 'AbortError') return
-      if (seq === requestSeq.current) {
-        setError(err instanceof Error ? err.message : 'Failed to load stock overview')
-      }
-    } finally {
-      if (seq === requestSeq.current) setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    void load()
-    return () => abortRef.current?.abort()
-  }, [load])
-
-  // Live cross-device refresh. `load()` keeps existing data painted until the
-  // new snapshot arrives, so this updates in place with no flicker. It is paused
-  // while a stock-action modal is open (so a remote change can never clobber a
-  // half-filled transfer/count/damage form) and applied once on close.
+  /*
+   * Live cross-device refresh. `load()` keeps existing data painted until the
+   * new snapshot arrives, so this updates in place with no flicker. It is paused
+   * while a stock-action modal is open (so a remote change can never clobber a
+   * half-filled transfer/count/damage form) and applied once on close.
+   *
+   * Declared above `load` because the read announces itself here: a snapshot that
+   * arrives while `/api/stock/summary` is already on the wire is held for that
+   * request to answer instead of fetching the same summary twice (the `×2` the
+   * Phase 6 perf probe counted on this route).
+   */
   const stockModalOpen = transferOpen || countOpen || damageOpen
   const remoteDirtyRef = useRef(false)
-  useRealtimeSync(
+  const inventorySync = useRealtimeSync(
     'inventory',
     () => {
       if (stockModalOpen) {
@@ -121,6 +96,48 @@ export default function InventoryOverviewPage() {
     },
     user != null
   )
+
+  const load = useCallback(async () => {
+    const seq = ++requestSeq.current
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    inventorySync.begin()
+    let settled = false
+    try {
+      // Archived products are included on purpose: their stock is still real
+      // and still on the valuation. Rows for fully exhausted archived products
+      // are filtered out of the table below.
+      const {
+        data: result,
+        serverTime,
+        durationMs,
+      } = await apiJsonMeta<StockSummaryView>('/api/stock/summary?includeArchived=true', {
+        signal: controller.signal,
+      })
+      settled = true
+      inventorySync.settle(serverTime, durationMs)
+      if (seq === requestSeq.current) {
+        setData(result)
+        setError(null)
+      }
+    } catch (err) {
+      if (!settled) inventorySync.abandon()
+      if ((err as Error)?.name === 'AbortError') return
+      if (seq === requestSeq.current) {
+        setError(err instanceof Error ? err.message : 'Failed to load stock overview')
+      }
+    } finally {
+      if (seq === requestSeq.current) setLoading(false)
+    }
+  }, [inventorySync])
+
+  useEffect(() => {
+    void load()
+    return () => abortRef.current?.abort()
+  }, [load])
+
   useEffect(() => {
     if (!stockModalOpen && remoteDirtyRef.current) {
       remoteDirtyRef.current = false

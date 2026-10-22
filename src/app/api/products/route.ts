@@ -1,13 +1,19 @@
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
-import { getProductCollection, getStockCollection, productToJSON, ensureProductIndexes } from '@/lib/models/Product'
+import {
+  getProductCollection,
+  getStockCollection,
+  productToJSON,
+  ensureProductIndexes,
+} from '@/lib/models/Product'
 import { productSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
 import { recordAuditEntry } from '@/lib/audit'
-import { errorResponse, successResponse, validationError } from '@/lib/api-response'
+import { conflictError, errorResponse, successResponse, validationError } from '@/lib/api-response'
+import { idempotencyField } from '@/lib/idempotency'
 import { buildProductFilter, productParamsFromUrl } from '@/lib/inventory-sales-filters'
 
 /**
@@ -63,7 +69,7 @@ async function __GET(request: NextRequest) {
       })
     )
   } catch (error) {
-    console.error('GET /api/products failed:', error)
+    logRouteFailure('GET /api/products', error)
     return handleRouteError(error)
   }
 }
@@ -101,7 +107,9 @@ async function __POST(request: NextRequest) {
 
     const duplicate = await col.findOne({ sku: parsed.data.sku })
     if (duplicate) {
-      return validationError('SKU already exists', [{ path: 'sku', message: 'This SKU is already in use' }])
+      return validationError('SKU already exists', [
+        { path: 'sku', message: 'This SKU is already in use' },
+      ])
     }
 
     const { idempotencyKey, ...fields } = parsed.data
@@ -109,7 +117,10 @@ async function __POST(request: NextRequest) {
       ...fields,
       description: parsed.data.description || undefined,
       isActive: parsed.data.isActive ?? true,
-      idempotencyKey,
+      // A keyless write must omit the field, not store `null` — see
+      // `idempotencyField`. One stored null was enough to reject every later
+      // product created without a key, under a misleading message.
+      ...idempotencyField(idempotencyKey),
       createdAt: now,
       updatedAt: now,
     }
@@ -120,14 +131,19 @@ async function __POST(request: NextRequest) {
     } catch (error) {
       const code = (error as { code?: number })?.code
       if (code === 11000) {
-        // Concurrent duplicate: SKU clash or a replayed idempotency key.
+        // Concurrent duplicate: a SKU clash or a replayed idempotency key.
         if (idempotencyKey) {
           const existing = await col.findOne({ idempotencyKey } as never)
           if (existing) return successResponse(productToJSON(existing))
         }
-        return validationError('SKU already exists', [
-          { path: 'sku', message: 'This SKU is already in use' },
-        ])
+        if (await col.findOne({ sku: parsed.data.sku })) {
+          return validationError('SKU already exists', [
+            { path: 'sku', message: 'This SKU is already in use' },
+          ])
+        }
+        // The clash is on neither of the two above, so saying "SKU already
+        // exists" would send the reader to a record that does not exist.
+        return conflictError('This product was created concurrently, please retry')
       }
       throw error
     }
@@ -146,7 +162,7 @@ async function __POST(request: NextRequest) {
     })
     return successResponse(productToJSON(created), 201)
   } catch (error) {
-    console.error('POST /api/products failed:', error)
+    logRouteFailure('POST /api/products', error)
     return handleRouteError(error)
   }
 }
