@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { MongoClient } from 'mongodb'
 import { getEnv } from '../src/lib/env'
+import { resolveDatabase, looksLikeTestDatabase } from '../src/lib/db-name'
 import { SPEC_ROLES, LAHORE_STOCK_ROLES, SCOPED_LAHORE_STOCK_PERMISSION } from '../src/lib/roles'
 import { hashPassword } from '../src/lib/auth/password'
 import { karachiMidnight } from '../src/lib/finance'
@@ -251,11 +252,42 @@ const main = async () => {
     console.error('MONGODB_TEST_DB is set; refusing to run the seed against a test database.')
     process.exit(1)
   }
+  // Resolved through the same policy the application uses, so a seed can never
+  // land in a database the app will not read — and so a name that is reserved
+  // (`admin`/`local`/`config`) or malformed fails here instead of writing into a
+  // fresh, empty database that looks like a successful seed.
+  const target = resolveDatabase(env)
 
   const client = new MongoClient(env.MONGODB_URI)
   try {
     await client.connect()
-    const db = client.db()
+    const db = client.db(target.dbName)
+    console.log(`Target database: "${db.databaseName}" (resolved from ${target.source})`)
+    if (target.warning) console.warn(`WARNING: ${target.warning}`)
+
+    /*
+     * The second half of the guard above, which until Phase 5 §4 was only
+     * asserted by its comment. `MONGODB_TEST_DB` catches the test runner's own
+     * variable; nothing caught the operator who sets `MONGODB_DB=decoricks_test`
+     * by mistake, or who points the URI path at it — and this seed writes roles,
+     * a Founder and the SPEC financial defaults. Measured before the fix: with
+     * `MONGODB_DB=decoricks_test` the seed connected, printed "Seeded 4 roles"
+     * and completed, because the only check looked at a variable that was not
+     * involved. Refusing on the RESOLVED name covers every source at once.
+     *
+     * A bare `test` is deliberately not test-shaped (`db-name.ts`): in this
+     * deployment that is where the genuine records live, so it must stay
+     * seedable. `db-name.test.ts` pins both halves of that distinction.
+     */
+    if (looksLikeTestDatabase(db.databaseName)) {
+      console.error(
+        `Refusing to seed "${db.databaseName}": it resolves as a test database ` +
+          `(source: ${target.source}). This seed writes roles, a Founder and the SPEC ` +
+          `financial defaults — point it at the application database, and use ` +
+          `npm run seed:e2e for a test run.`
+      )
+      process.exit(1)
+    }
 
     // Create auth indexes first so the unique email constraint and the session
     // TTL/tokenHash indexes exist before the Founder is inserted and before any

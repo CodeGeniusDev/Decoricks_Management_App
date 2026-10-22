@@ -59,6 +59,18 @@ vi.mock('@/lib/authorization', async (importOriginal) => {
     authorizeScoped: vi.fn(async () => makeAuth()),
     authorizeAllViews: vi.fn(async () => makeAuth()),
     authorizeStockWrite: vi.fn(async () => undefined),
+    // Scope discovery for the SSE route: same permissive Founder, and every
+    // requested module comes back viewable. Suites that assert on the actual
+    // module set (phase7-events-api) override this to follow their own lever.
+    discoverViewScopes: vi.fn(async (modules: string[] = []) => {
+      const founder = makeAuth()
+      return {
+        userId: String(founder.user._id),
+        email: founder.user.email,
+        viewable: modules,
+        mustChangePassword: false,
+      }
+    }),
   }
 })
 

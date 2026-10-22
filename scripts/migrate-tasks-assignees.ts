@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { MongoClient, ObjectId, type Db } from 'mongodb'
 import { getEnv } from '../src/lib/env'
+import { resolveDatabase } from '../src/lib/db-name'
 
 /**
  * Phase 6 assignee migration (SPEC §3.1.15.3).
@@ -77,10 +78,16 @@ const run = async () => {
     process.exit(1)
   }
 
+  // Same resolution policy as the application, so a migration can never be
+  // applied to a database the app does not read.
+  const target = resolveDatabase(env)
+
   const client = new MongoClient(env.MONGODB_URI)
   try {
     await client.connect()
-    const db = client.db()
+    const db = client.db(target.dbName)
+    console.log(`Target database: "${db.databaseName}" (resolved from ${target.source})`)
+    if (target.warning) console.warn(`WARNING: ${target.warning}`)
     const names = await collectionNames(db)
     if (!names.has('tasks')) {
       console.log('No `tasks` collection — nothing to migrate.')

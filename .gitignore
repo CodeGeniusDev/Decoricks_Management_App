@@ -9,6 +9,9 @@
 /test-results
 /src/e2e/.auth
 
+# Phase 4 performance probe output (scripts/perf-probe.ts)
+/perf-*.json
+
 # Next.js
 /.next/
 /out/

@@ -1,6 +1,8 @@
 import { MongoClient, type Db } from 'mongodb'
 import { getEnv } from './env'
+import { resolveDatabase, type DatabaseNameSource } from './db-name'
 import { isTransientMongoError } from './mongo-errors'
+import { timeStage } from './timing'
 
 export { isTransientMongoError } from './mongo-errors'
 
@@ -17,29 +19,33 @@ declare global {
 /**
  * Resolves the database name for the current process.
  *
- * The automated test suite sets `MONGODB_TEST_DB` so every suite runs against a
- * separate database (`decoricks_test`) and can never touch production data.
- * A guard refuses to hand out a test database handle unless the process is
- * actually running tests — either the Vitest runner (`NODE_ENV=test`) or the
- * Playwright-managed app server (`E2E_TEST_MODE=1`, set only by the webServer
- * block in `playwright.config.ts`) — so a stray env var in production cannot
- * silently redirect traffic.
+ * The policy lives in `src/lib/db-name.ts` so the application and the
+ * maintenance scripts cannot disagree about which database they are in; this
+ * wrapper keeps the reporting (a resolved name is announced once, a
+ * configuration that fell through to the driver default is complained about
+ * once) out of the hot path.
+ *
+ * Announcing the name is not a nicety: with an Atlas URI whose path is empty,
+ * the driver silently opens a database called `test`. The deployment's real
+ * records happen to live there, which is precisely why the fallback is kept —
+ * but an operator needs to see which database every request is reading, and
+ * needs to see it once per process rather than per call.
  */
-const resolveDbName = (): string | undefined => {
-  const env = getEnv()
-  const testDb = env.MONGODB_TEST_DB
+let announcedDatabase: string | undefined
 
-  if (!testDb) return undefined
+const announceDatabase = (dbName: string, source: DatabaseNameSource, warning?: string): void => {
+  if (announcedDatabase === dbName) return
+  announcedDatabase = dbName
 
-  const inTestRunner = env.NODE_ENV === 'test' || process.env.E2E_TEST_MODE === '1'
-  if (!inTestRunner) {
-    throw new Error(
-      'MONGODB_TEST_DB is set but the process is not a test runner (NODE_ENV is not "test" and E2E_TEST_MODE is not "1"). Refusing to use a test database outside the test runner.'
-    )
-  }
-
-  return testDb
+  if (warning) console.warn(`[mongodb] using database "${dbName}" (${source}) — ${warning}`)
+  else console.log(`[mongodb] using database "${dbName}" (${source})`)
 }
+
+const resolveDbName = (): {
+  dbName: string | undefined
+  source: DatabaseNameSource
+  warning?: string
+} => resolveDatabase()
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -47,10 +53,19 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * Connection-pool tuning only. TLS is never disabled or downgraded: the URI
  * still negotiates TLS exactly as before, and `retryWrites`/`retryReads` use the
  * driver's built-in semantics rather than re-running writes blindly.
+ *
+ * `minPoolSize` is 2 rather than 0 because of a measurement, not a hunch
+ * (Phase 4 §1, `scripts/db-probe.ts`): a single indexed point read against this
+ * cluster costs ~65ms, while a read that has to *open* a connection costs
+ * ~300-400ms. With `minPoolSize: 0` the pool drains whenever the app is idle, so
+ * the first request after a pause — and every extra connection an intra-request
+ * `Promise.all` needs — pays that full handshake. Two permanently-warm
+ * connections cost almost nothing idle and make concurrent reads actually
+ * concurrent.
  */
 const driverOptions = () => ({
   maxPoolSize: 10,
-  minPoolSize: 0,
+  minPoolSize: 2,
   // Atlas (and some local proxies) close idle connections; dropping our side
   // first avoids handing a request to a socket the server has already gone.
   maxIdleTimeMS: 120_000,
@@ -140,18 +155,31 @@ export const withMongoRetry = async <T>(operation: () => Promise<T>, attempts = 
 }
 
 export async function getDatabase(): Promise<Db> {
-  // Resolved outside the try so a misconfiguration surfaces as a clear config
-  // error rather than a misleading "connection failed".
-  const dbName = resolveDbName()
+  /*
+   * `db:acquire` is the pool, not a query: on a warm instance the connect promise
+   * is already resolved and this reports ~0ms. When it is not ~0ms the request paid
+   * a handshake, which is the difference Phase 4 §2 asks to see (and the reason
+   * `minPoolSize` is 2). Nested inside it are the request's own stages, so the two
+   * numbers are read side by side, not added.
+   */
+  return timeStage('db:acquire', async () => {
+    // Resolved outside the try so a misconfiguration surfaces as a clear config
+    // error rather than a misleading "connection failed".
+    const { dbName, source, warning } = resolveDbName()
 
-  try {
-    const connected = await connectWithRetry()
-    return connected.db(dbName)
-  } catch {
-    // Never surface the connection string, host names, or driver internals.
-    console.error('[mongodb] database connection failed')
-    throw new Error('Database connection failed')
-  }
+    try {
+      const connected = await connectWithRetry()
+      const db = connected.db(dbName)
+      // `db.databaseName` is the name that will actually be used, which is the
+      // only way to report the driver-default case honestly.
+      announceDatabase(db.databaseName, source, warning)
+      return db
+    } catch {
+      // Never surface the connection string, host names, or driver internals.
+      console.error('[mongodb] database connection failed')
+      throw new Error('Database connection failed')
+    }
+  })
 }
 
 /**

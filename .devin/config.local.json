@@ -12,7 +12,8 @@
       "Exec(cat)",
       "Exec(grep)",
       "Exec(lsof)",
-      "Exec(xargs kill)"
+      "Exec(xargs kill)",
+      "Exec(sed)"
     ]
   }
 }
