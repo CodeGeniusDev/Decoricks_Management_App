@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import {
@@ -39,7 +39,7 @@ const applyQuery = (params: URLSearchParams) => {
 
 async function __GET(request: NextRequest) {
   try {
-    await authorize('tasks', 'view')
+    const auth = await authorize('tasks', 'view')
 
     const parsed = applyQuery(new URL(request.url).searchParams)
     if (!parsed.success) {
@@ -51,7 +51,7 @@ async function __GET(request: NextRequest) {
     const q = parsed.data
 
     const db = await getDatabase()
-    const actor = await getActor()
+    const actor = await getActor(auth)
 
     const filter: Record<string, unknown> = {}
     if (q.includeArchived !== 'true') filter.isArchived = false
@@ -103,7 +103,7 @@ async function __GET(request: NextRequest) {
       pagination: { page: q.page, limit: q.limit, total, hasMore: skip + docs.length < total },
     })
   } catch (error) {
-    console.error('GET /api/tasks failed:', error)
+    logRouteFailure('GET /api/tasks', error)
     return handleRouteError(error)
   }
 }
@@ -128,7 +128,7 @@ async function __POST(request: NextRequest) {
     }
 
     const db = await getDatabase()
-    const actor = await getActor()
+    const actor = await getActor(auth)
     const boardId = new ObjectId(parsed.data.boardId)
     const columnId = new ObjectId(parsed.data.columnId)
 
@@ -213,7 +213,7 @@ async function __POST(request: NextRequest) {
 
     return successResponse(taskToJSON(created), 201)
   } catch (error) {
-    console.error('POST /api/tasks failed:', error)
+    logRouteFailure('POST /api/tasks', error)
     if (error instanceof Error && (error as { code?: number }).code === 11000) {
       return errorResponse('Duplicate request', 409, 'CONFLICT')
     }

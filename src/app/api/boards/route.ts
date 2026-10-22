@@ -1,14 +1,9 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize, requireFounder } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
-import {
-  boardToJSON,
-  getBoardCollection,
-  ensureTaskIndexes,
-  type Board,
-} from '@/lib/models/Tasks'
+import { boardToJSON, getBoardCollection, ensureTaskIndexes, type Board } from '@/lib/models/Tasks'
 import { boardCreateSchema } from '@/lib/schemas/tasks'
 import { createBoardWithDefaults } from '@/lib/task-service'
 import { getActor } from '@/lib/current-user'
@@ -54,7 +49,7 @@ async function __GET() {
       })),
     })
   } catch (error) {
-    console.error('GET /api/boards failed:', error)
+    logRouteFailure('GET /api/boards', error)
     return handleRouteError(error)
   }
 }
@@ -71,7 +66,7 @@ async function __POST(request: NextRequest) {
     }
 
     const db = await getDatabase()
-    const actor = await getActor()
+    const actor = await getActor(auth)
 
     // Idempotency: a replayed POST returns the board that was created the
     // first time rather than building a duplicate.
@@ -102,8 +97,12 @@ async function __POST(request: NextRequest) {
 
     return successResponse(boardToJSON(board), 201)
   } catch (error) {
-    console.error('POST /api/boards failed:', error)
-    if (error instanceof Error && error.name === 'MongoServerError' && (error as { code?: number }).code === 11000) {
+    logRouteFailure('POST /api/boards', error)
+    if (
+      error instanceof Error &&
+      error.name === 'MongoServerError' &&
+      (error as { code?: number }).code === 11000
+    ) {
       return errorResponse('Board already exists', 409, 'CONFLICT')
     }
     return handleRouteError(error)

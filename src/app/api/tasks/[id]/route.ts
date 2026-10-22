@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { getBusinessSettingsCollection } from '@/lib/models/Ledger'
@@ -97,7 +97,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
       editWindowMinutes: resolveCommentEditWindow(settings),
     })
   } catch (error) {
-    console.error('GET /api/tasks/[id] failed:', error)
+    logRouteFailure('GET /api/tasks/[id]', error)
     return handleRouteError(error)
   }
 }
@@ -173,7 +173,7 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
       throw error
     }
 
-    const actor = await getActor()
+    const actor = await getActor(auth)
     await recordTaskActivity(db, {
       taskId: _id,
       actorId: actor.id,
@@ -200,7 +200,7 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
 
     return successResponse(taskToJSON(updated))
   } catch (error) {
-    console.error('PATCH /api/tasks/[id] failed:', error)
+    logRouteFailure('PATCH /api/tasks/[id]', error)
     return handleRouteError(error)
   }
 }
@@ -245,7 +245,7 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
       throw error
     }
 
-    const actor = await getActor()
+    const actor = await getActor(auth)
     await recordTaskActivity(db, { taskId: _id, actorId: actor.id, kind: 'archived' })
 
     const meta = await getRequestMeta()
@@ -263,7 +263,7 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
 
     return successResponse({ _id: id, isArchived: true })
   } catch (error) {
-    console.error('DELETE /api/tasks/[id] failed:', error)
+    logRouteFailure('DELETE /api/tasks/[id]', error)
     return handleRouteError(error)
   }
 }

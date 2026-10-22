@@ -1,13 +1,9 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize, requireFounder } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
-import {
-  getTaskLabelCollection,
-  taskLabelToJSON,
-  type TaskLabel,
-} from '@/lib/models/Tasks'
+import { getTaskLabelCollection, taskLabelToJSON, type TaskLabel } from '@/lib/models/Tasks'
 import { taskLabelCreateSchema } from '@/lib/schemas/tasks'
 import { getActor } from '@/lib/current-user'
 import { recordAuditEntry } from '@/lib/audit'
@@ -23,7 +19,7 @@ async function __GET() {
       .toArray()
     return successResponse({ labels: labels.map(taskLabelToJSON) })
   } catch (error) {
-    console.error('GET /api/task-labels failed:', error)
+    logRouteFailure('GET /api/task-labels', error)
     return handleRouteError(error)
   }
 }
@@ -40,7 +36,7 @@ async function __POST(request: NextRequest) {
     }
 
     const db = await getDatabase()
-    const actor = await getActor()
+    const actor = await getActor(auth)
     const now = new Date()
     const doc: Omit<TaskLabel, '_id'> = {
       name: parsed.data.name,
@@ -66,7 +62,7 @@ async function __POST(request: NextRequest) {
 
     return successResponse(taskLabelToJSON({ ...doc, _id: result.insertedId } as never), 201)
   } catch (error) {
-    console.error('POST /api/task-labels failed:', error)
+    logRouteFailure('POST /api/task-labels', error)
     return handleRouteError(error)
   }
 }

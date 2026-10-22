@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { requireFounder } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import {
@@ -53,7 +53,7 @@ async function __POST(request: NextRequest, context: RouteContext) {
     if (!board) return notFoundError('Board not found')
 
     const columns = getColumnCollection(db)
-    const actor = await getActor()
+    const actor = await getActor(auth)
 
     // Compute the new column's ordinal. Append by default; insert-after when
     // the client named an anchor. We do not renumber siblings — the neighbours
@@ -111,7 +111,7 @@ async function __POST(request: NextRequest, context: RouteContext) {
 
     return successResponse(columnToJSON({ ...doc, _id: result.insertedId } as never), 201)
   } catch (error) {
-    console.error('POST /api/boards/[id]/columns failed:', error)
+    logRouteFailure('POST /api/boards/[id]/columns', error)
     return handleRouteError(error)
   }
 }

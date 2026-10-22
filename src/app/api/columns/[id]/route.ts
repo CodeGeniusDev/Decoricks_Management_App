@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { requireFounder } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { columnToJSON, getColumnCollection, getTaskDocCollection } from '@/lib/models/Tasks'
@@ -100,7 +100,7 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
 
     return successResponse(columnToJSON(updated))
   } catch (error) {
-    console.error('PATCH /api/columns/[id] failed:', error)
+    logRouteFailure('PATCH /api/columns/[id]', error)
     return handleRouteError(error)
   }
 }

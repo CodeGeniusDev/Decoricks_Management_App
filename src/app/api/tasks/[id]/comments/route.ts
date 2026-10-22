@@ -1,11 +1,9 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
-import {
-  getBusinessSettingsCollection,
-} from '@/lib/models/Ledger'
+import { getBusinessSettingsCollection } from '@/lib/models/Ledger'
 import {
   getTaskCommentCollection,
   getTaskDocCollection,
@@ -35,7 +33,8 @@ async function __GET(_request: NextRequest, context: RouteContext) {
     await authorize('tasks', 'view')
 
     const { id } = await context.params
-    if (!isObjectId(id)) return validationError('Invalid task id', [{ path: 'id', message: 'Malformed' }])
+    if (!isObjectId(id))
+      return validationError('Invalid task id', [{ path: 'id', message: 'Malformed' }])
 
     const db = await getDatabase()
     const taskId = new ObjectId(id)
@@ -55,7 +54,7 @@ async function __GET(_request: NextRequest, context: RouteContext) {
       editWindowMinutes: resolveCommentEditWindow(settings),
     })
   } catch (error) {
-    console.error('GET /api/tasks/[id]/comments failed:', error)
+    logRouteFailure('GET /api/tasks/[id]/comments', error)
     return handleRouteError(error)
   }
 }
@@ -76,7 +75,8 @@ async function __POST(request: NextRequest, context: RouteContext) {
     const auth = await authorize('tasks', 'comment')
 
     const { id } = await context.params
-    if (!isObjectId(id)) return validationError('Invalid task id', [{ path: 'id', message: 'Malformed' }])
+    if (!isObjectId(id))
+      return validationError('Invalid task id', [{ path: 'id', message: 'Malformed' }])
 
     const parsed = taskCommentCreateSchema.safeParse(await request.json())
     if (!parsed.success) {
@@ -105,7 +105,7 @@ async function __POST(request: NextRequest, context: RouteContext) {
     }
     const insert = await getTaskCommentCollection(db).insertOne(doc as never)
 
-    const actor = await getActor()
+    const actor = await getActor(auth)
     await recordTaskActivity(db, {
       taskId,
       actorId: actor.id,
@@ -125,15 +125,12 @@ async function __POST(request: NextRequest, context: RouteContext) {
       userAgent: meta.userAgent,
     })
 
-    return successResponse(
-      taskCommentToJSON({ ...doc, _id: insert.insertedId } as never)
-    )
+    return successResponse(taskCommentToJSON({ ...doc, _id: insert.insertedId } as never))
   } catch (error) {
-    console.error('POST /api/tasks/[id]/comments failed:', error)
+    logRouteFailure('POST /api/tasks/[id]/comments', error)
     return handleRouteError(error)
   }
 }
 
 export const GET = withAuth(__GET)
 export const POST = withAuth(__POST)
-

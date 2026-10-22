@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { ObjectId, type Db } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { getBusinessSettingsCollection } from '@/lib/models/Ledger'
@@ -156,7 +156,7 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
 
     return successResponse(taskCommentToJSON(updated))
   } catch (error) {
-    console.error('PATCH /api/tasks/[id]/comments/[commentId] failed:', error)
+    logRouteFailure('PATCH /api/tasks/[id]/comments/[commentId]', error)
     return handleRouteError(error)
   }
 }
@@ -220,7 +220,7 @@ async function __DELETE(_request: NextRequest, context: RouteContext) {
 
     return successResponse(taskCommentToJSON(updated))
   } catch (error) {
-    console.error('DELETE /api/tasks/[id]/comments/[commentId] failed:', error)
+    logRouteFailure('DELETE /api/tasks/[id]/comments/[commentId]', error)
     return handleRouteError(error)
   }
 }

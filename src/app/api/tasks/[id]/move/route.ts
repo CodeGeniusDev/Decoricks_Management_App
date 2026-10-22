@@ -1,13 +1,9 @@
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
-import {
-  getColumnCollection,
-  getTaskDocCollection,
-  taskToJSON,
-} from '@/lib/models/Tasks'
+import { getColumnCollection, getTaskDocCollection, taskToJSON } from '@/lib/models/Tasks'
 import { taskMoveSchema } from '@/lib/schemas/tasks'
 import {
   TaskVersionConflictError,
@@ -42,7 +38,8 @@ async function __POST(request: NextRequest, context: RouteContext) {
     const auth = await authorize('tasks', 'edit')
 
     const { id } = await context.params
-    if (!isObjectId(id)) return validationError('Invalid task id', [{ path: 'id', message: 'Malformed' }])
+    if (!isObjectId(id))
+      return validationError('Invalid task id', [{ path: 'id', message: 'Malformed' }])
 
     const parsed = taskMoveSchema.safeParse(await request.json())
     if (!parsed.success) {
@@ -66,7 +63,11 @@ async function __POST(request: NextRequest, context: RouteContext) {
       before.createdBy.equals(auth.user._id as ObjectId) ||
       before.assigneeIds.some((a) => a.equals(auth.user._id as ObjectId))
     if (!owns) {
-      return errorResponse('You can only move tasks you created or are assigned to', 403, 'FORBIDDEN')
+      return errorResponse(
+        'You can only move tasks you created or are assigned to',
+        403,
+        'FORBIDDEN'
+      )
     }
 
     const toColumnId = new ObjectId(parsed.data.toColumnId)
@@ -75,7 +76,8 @@ async function __POST(request: NextRequest, context: RouteContext) {
       getColumnCollection(db).findOne({ _id: toColumnId, boardId: before.boardId } as never),
     ])
     if (!toCol) return notFoundError('Destination column not in this board')
-    if (toCol.isArchived) return validationError('Column is archived', [{ path: 'toColumnId', message: 'Archived' }])
+    if (toCol.isArchived)
+      return validationError('Column is archived', [{ path: 'toColumnId', message: 'Archived' }])
 
     const afterId = parsed.data.afterTaskId ? new ObjectId(parsed.data.afterTaskId) : null
     const position = await computePosition(tasks, toColumnId, afterId, _id)
@@ -97,7 +99,7 @@ async function __POST(request: NextRequest, context: RouteContext) {
       throw error
     }
 
-    const actor = await getActor()
+    const actor = await getActor(auth)
     // Always record the physical move; then a completed/reopened entry on top
     // so the timeline shows both the fact of the transition and its meaning.
     await recordTaskActivity(db, {
@@ -134,7 +136,7 @@ async function __POST(request: NextRequest, context: RouteContext) {
 
     return successResponse(taskToJSON(updated))
   } catch (error) {
-    console.error('POST /api/tasks/[id]/move failed:', error)
+    logRouteFailure('POST /api/tasks/[id]/move', error)
     return handleRouteError(error)
   }
 }

@@ -133,6 +133,30 @@ const emptyDraft = () => ({
 /** Droppable ids are namespaced so we can tell a column drop from a card drop. */
 const columnDropId = (columnId: string) => `col:${columnId}`
 
+type TaskView = 'board' | 'all' | 'mine' | 'overdue'
+
+/**
+ * Per-flat-view empty copy. Keyed on the three list views only — the board
+ * branch has its own empty handling — and written as a map rather than a
+ * ternary chain because the fourth view ('all', which a Chat reference chip
+ * lands on) made the chain say "Nothing is overdue" about a perfectly ordinary
+ * full text search.
+ */
+const EMPTY_COPY: Record<Exclude<TaskView, 'board'>, { title: string; description: string }> = {
+  all: {
+    title: 'No tasks match',
+    description: 'Nothing matched the current filters across your boards.',
+  },
+  mine: {
+    title: 'Nothing assigned to you',
+    description: 'No open cards list you as an assignee for the current filters.',
+  },
+  overdue: {
+    title: 'Nothing is overdue',
+    description: 'No cards are past their due date outside a done column right now.',
+  },
+}
+
 export default function TasksBoardPage() {
   const { user } = useAuth()
   const founder = isFounder(user?.role)
@@ -170,7 +194,7 @@ export default function TasksBoardPage() {
   // Phase 6f: views + filters. `board` is the dnd-kit pipeline; `mine` and
   // `overdue` are flat filtered sets fetched from /api/tasks. The filter bar
   // only applies to the flat views — the board shows everything in its columns.
-  const [view, setView] = useState<'board' | 'mine' | 'overdue'>('board')
+  const [view, setView] = useState<TaskView>('board')
   const [filterPriority, setFilterPriority] = useState<'' | Priority>('')
   const [filterLabelId, setFilterLabelId] = useState('')
   const [filterAssigneeId, setFilterAssigneeId] = useState('')
@@ -188,6 +212,38 @@ export default function TasksBoardPage() {
 
   const showToast = (kind: 'success' | 'error' | 'info' | 'warning', message: string) =>
     setToast({ kind, message })
+
+  /**
+   * Cross-device realtime, declared above every `tasks` read so each one can
+   * announce itself before it hits the network. A snapshot that lands while
+   * `/api/boards/<id>` is already on the wire is held and answered by that very
+   * request instead of firing a second identical fetch beside it — the `×2` the
+   * Phase 6 perf probe counted on this route.
+   *
+   * The callback mentions `refreshActiveView`, `realtimePaused` and
+   * `remoteDirtyRef`, all declared further down. That is safe: `useRealtimeSync`
+   * keeps the callback in a ref and only invokes it after the render that created
+   * it has completed.
+   *
+   * The refresh is deferred while a modal is open or a drag is in flight (we must
+   * never re-sort cards mid-gesture or steal the cursor from a form) and applied
+   * the moment it is safe again, so a remote change is never silently dropped.
+   */
+  const realtimePaused = modalOpen || columnModalOpen || activeTaskId !== null
+  const remoteDirtyRef = useRef(false)
+  const tasksSync = useRealtimeSync(
+    'tasks',
+    () => {
+      if (realtimePaused) {
+        remoteDirtyRef.current = true
+        return
+      }
+      void refreshActiveView()
+    },
+    // Only listen once we have a verified session; there is nothing to sync for
+    // an anonymous viewer and the cursor endpoint would 401 anyway.
+    user != null
+  )
 
   const loadBoards = useCallback(async () => {
     setLoadingBoards(true)
@@ -214,47 +270,68 @@ export default function TasksBoardPage() {
   // every poll/move/save blanks the board and reads as a full page reload.
   const loadedBoardIdRef = useRef<string | null>(null)
 
-  const loadBoard = useCallback(async (id: string) => {
-    const firstPaint = loadedBoardIdRef.current !== id
-    if (firstPaint) setLoadingBoard(true)
-    try {
-      const res = await apiFetch(`/api/boards/${id}`)
-      const body = await res.json()
-      if (!res.ok || !body.success) throw new Error(body?.error?.message ?? 'Failed to load board')
-      setDetail(body.data as BoardDetail)
-      loadedBoardIdRef.current = id
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load board')
-    } finally {
-      if (firstPaint) setLoadingBoard(false)
-    }
-  }, [])
+  const loadBoard = useCallback(
+    async (id: string) => {
+      const firstPaint = loadedBoardIdRef.current !== id
+      if (firstPaint) setLoadingBoard(true)
+      const startedAt = Date.now()
+      tasksSync.begin()
+      try {
+        const res = await apiFetch(`/api/boards/${id}`)
+        const body = await res.json()
+        if (!res.ok || !body.success)
+          throw new Error(body?.error?.message ?? 'Failed to load board')
+        tasksSync.settle(body.timestamp ? Date.parse(body.timestamp) : null, Date.now() - startedAt)
+        setDetail(body.data as BoardDetail)
+        loadedBoardIdRef.current = id
+      } catch (err) {
+        tasksSync.abandon()
+        setError(err instanceof Error ? err.message : 'Failed to load board')
+      } finally {
+        if (firstPaint) setLoadingBoard(false)
+      }
+    },
+    [tasksSync]
+  )
 
   // Labels are visible to anyone with tasks.view. The users list needs
   // users.view, which a Partner does not have — so we try and silently drop
   // it on failure; the assignee filter simply renders empty for them (they
   // still get the "Me" pseudo-option via the My-tasks view).
   const loadOptions = useCallback(async () => {
-    try {
-      const res = await apiFetch('/api/task-labels')
-      const body = await res.json()
-      if (res.ok && body.success) setLabels(body.data.labels ?? [])
-    } catch {
-      /* labels are a nicety; the board works without them */
-    }
-    try {
-      const res = await apiFetch('/api/users')
-      const body = await res.json()
-      if (res.ok && body.success) {
-        setUsers(
-          (body.data.users ?? [])
-            .filter((u: { isActive?: boolean }) => u.isActive !== false)
-            .map((u: { _id: string; name: string }) => ({ _id: u._id, name: u.name }))
-        )
-      }
-    } catch {
-      /* no users.view — assignee filter stays empty */
-    }
+    /*
+     * Independent reads, issued concurrently. They previously awaited each other,
+     * so the assignee filter was ready one full round trip after the labels — and
+     * both are gated behind the board's own fetch on a hard load. Each branch keeps
+     * its own failure contract: labels are a nicety, and `/api/users` legitimately
+     * answers 403 for a Partner without users.view, which must not affect labels.
+     */
+    await Promise.all([
+      (async () => {
+        try {
+          const res = await apiFetch('/api/task-labels')
+          const body = await res.json()
+          if (res.ok && body.success) setLabels(body.data.labels ?? [])
+        } catch {
+          /* labels are a nicety; the board works without them */
+        }
+      })(),
+      (async () => {
+        try {
+          const res = await apiFetch('/api/users')
+          const body = await res.json()
+          if (res.ok && body.success) {
+            setUsers(
+              (body.data.users ?? [])
+                .filter((u: { isActive?: boolean }) => u.isActive !== false)
+                .map((u: { _id: string; name: string }) => ({ _id: u._id, name: u.name }))
+            )
+          }
+        } catch {
+          /* no users.view — assignee filter stays empty */
+        }
+      })(),
+    ])
   }, [])
 
   /**
@@ -264,6 +341,8 @@ export default function TasksBoardPage() {
    */
   const loadList = useCallback(async () => {
     setListLoading(true)
+    const startedAt = Date.now()
+    tasksSync.begin()
     try {
       const params = new URLSearchParams()
       if (view === 'mine') params.set('assignee', 'me')
@@ -276,14 +355,16 @@ export default function TasksBoardPage() {
       const res = await apiFetch(`/api/tasks?${params.toString()}`)
       const body = await res.json()
       if (!res.ok || !body.success) throw new Error(body?.error?.message ?? 'Failed to load tasks')
+      tasksSync.settle(body.timestamp ? Date.parse(body.timestamp) : null, Date.now() - startedAt)
       setListTasks((body.data.tasks ?? []) as TaskDto[])
     } catch (err) {
+      tasksSync.abandon()
       setError(err instanceof Error ? err.message : 'Failed to load tasks')
       setListTasks([])
     } finally {
       setListLoading(false)
     }
-  }, [view, filterPriority, filterLabelId, filterAssigneeId, filterSearch])
+  }, [view, filterPriority, filterLabelId, filterAssigneeId, filterSearch, tasksSync])
 
   /**
    * Merge a saved task straight into the mounted state. The create/edit/move
@@ -334,6 +415,27 @@ export default function TasksBoardPage() {
     if (boardId) loadBoard(boardId)
   }, [boardId, loadBoard])
 
+  /**
+   * Deep link from a Chat reference chip: `/tasks?q=<title-or-#>`.
+   *
+   * A reference stores an id and re-derives its label from the live task, so the
+   * query it carries is always the task's CURRENT title — a renamed card still
+   * finds itself, which a copied string could not promise. The flat list is the
+   * only view with a search box, so the link switches to `all` (every board,
+   * none of the `mine`/`overdue` narrowing) and lets the existing debounced
+   * `loadList` do the filtering. Read off `window.location` rather than
+   * `useSearchParams` to keep the page free of a Suspense boundary, then the URL
+   * is cleaned so a reload does not re-apply a stale link.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const query = params.get('q')?.trim()
+    if (!query) return
+    setFilterSearch(query.slice(0, 120))
+    setView('all')
+    window.history.replaceState(null, '', '/tasks')
+  }, [])
+
   // Fetch the flat list whenever the view or a filter changes. Debounced by
   // the search box's own onChange cadence; a short timer keeps keystrokes
   // from firing a request each one.
@@ -352,33 +454,14 @@ export default function TasksBoardPage() {
   )
 
   /**
-   * Cross-device realtime. When the server reports a task changed on another
-   * device/session, refresh the active view — silently, because `loadBoard`
-   * only shows skeletons on a genuine first paint. The refresh is deferred
-   * while a modal is open or a drag is in flight (we must never re-sort cards
-   * mid-gesture or steal the cursor from a form) and applied the moment it is
-   * safe again, so a remote change is never silently dropped.
+   * The view to refresh when a remote change lands, or when a deferred one
+   * becomes safe to apply. `loadBoard` only shows skeletons on a genuine first
+   * paint, so this is silent — cards update in place.
    */
-  const realtimePaused = modalOpen || columnModalOpen || activeTaskId !== null
-  const remoteDirtyRef = useRef(false)
   const refreshActiveView = useCallback(() => {
     if (view === 'board') return boardId ? loadBoard(boardId) : Promise.resolve()
     return loadList()
   }, [view, boardId, loadBoard, loadList])
-
-  useRealtimeSync(
-    'tasks',
-    () => {
-      if (realtimePaused) {
-        remoteDirtyRef.current = true
-        return
-      }
-      void refreshActiveView()
-    },
-    // Only listen once we have a verified session; there is nothing to sync for
-    // an anonymous viewer and the cursor endpoint would 401 anyway.
-    user != null
-  )
 
   useEffect(() => {
     if (!realtimePaused && remoteDirtyRef.current) {
@@ -722,11 +805,12 @@ export default function TasksBoardPage() {
         </div>
       )}
 
-      {/* View switcher — board pipeline vs the two filtered flat views. */}
+      {/* View switcher — board pipeline vs the flat views over every board. */}
       <div className="mb-4 inline-flex rounded-lg border border-line-subtle bg-surface-sunken p-0.5">
         {(
           [
             { id: 'board', label: 'Board' },
+            { id: 'all', label: 'All tasks' },
             { id: 'mine', label: 'My tasks' },
             { id: 'overdue', label: 'Overdue' },
           ] as const
@@ -862,12 +946,8 @@ export default function TasksBoardPage() {
           loading={listLoading}
           userNames={new Map(users.map((u) => [u._id, u.name]))}
           labelNames={new Map(labels.map((l) => [l._id, l.name]))}
-          emptyTitle={view === 'mine' ? 'Nothing assigned to you' : 'Nothing is overdue'}
-          emptyDescription={
-            view === 'mine'
-              ? 'No open cards list you as an assignee for the current filters.'
-              : 'No cards are past their due date outside a done column right now.'
-          }
+          emptyTitle={EMPTY_COPY[view].title}
+          emptyDescription={EMPTY_COPY[view].description}
           onOpen={(t) => {
             const full = listTasks.find((x) => x._id === t._id)
             if (full) openEdit(full)
@@ -879,13 +959,7 @@ export default function TasksBoardPage() {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editing ? 'Edit task' : 'New task'}
-        description={
-          editing
-            ? `Version ${editing.version} — saving will bump it. A conflicting edit shows a 409 and reloads the board.`
-            : creatingInColumn
-              ? `Into "${creatingInColumn.name}"`
-              : undefined
-        }
+        description={creatingInColumn ? `Into "${creatingInColumn.name}"` : undefined}
         size={editing ? 'lg' : 'md'}
         footer={
           <>
@@ -1113,13 +1187,21 @@ function TaskCard(props: TaskCardProps) {
       } ${isDragging ? 'opacity-40' : ''}`}
     >
       <div className="flex items-start gap-2">
+        {/*
+         * The drag handle is a 32x32 touch target around a 16px grip. The negative
+         * margins take back exactly what the larger box adds, so the grip sits on the
+         * same pixel it always did and the card does not grow — only the area that
+         * responds to a thumb changes. (Phase 4 §8: a handle you cannot hit on a phone
+         * is not a mobile affordance, and the board's only other move path is the
+         * "Move to…" select below.)
+         */}
         <button
           type="button"
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
           aria-label={`Drag ${task.title} to another column`}
-          className="mt-0.5 flex h-6 w-4 shrink-0 cursor-grab items-center justify-center rounded text-ink-muted hover:bg-surface-sunken hover:text-decoricks-dark focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-decoricks-brown active:cursor-grabbing"
+          className="-ml-2 -mb-2 flex h-8 w-8 shrink-0 cursor-grab items-center justify-center rounded text-ink-muted hover:bg-surface-sunken hover:text-decoricks-dark focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-decoricks-brown active:cursor-grabbing"
         >
           <DragGrip />
         </button>

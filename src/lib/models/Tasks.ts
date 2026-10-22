@@ -1,4 +1,5 @@
 import { Db, Collection, ObjectId } from 'mongodb'
+import { createIndexTolerant } from './indexes'
 
 /**
  * Phase 6 task-board core documents (SPEC §3.1.15.1–.6).
@@ -33,14 +34,7 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 export const TASK_PRIORITIES: TaskPriority[] = ['low', 'medium', 'high', 'urgent']
 
 export type TaskActivityKind =
-  | 'created'
-  | 'assigned'
-  | 'moved'
-  | 'completed'
-  | 'reopened'
-  | 'commented'
-  | 'archived'
-  | 'edited'
+  'created' | 'assigned' | 'moved' | 'completed' | 'reopened' | 'commented' | 'archived' | 'edited'
 
 export const TASK_ACTIVITY_KINDS: TaskActivityKind[] = [
   'created',
@@ -95,8 +89,7 @@ export interface Column {
   updatedAt: Date
 }
 
-export const getColumnCollection = (db: Db): Collection<Column> =>
-  db.collection<Column>('columns')
+export const getColumnCollection = (db: Db): Collection<Column> => db.collection<Column>('columns')
 
 export const columnToJSON = (c: Column) => ({
   _id: c._id?.toString(),
@@ -154,8 +147,7 @@ export interface TaskDoc {
   updatedAt: Date
 }
 
-export const getTaskDocCollection = (db: Db): Collection<TaskDoc> =>
-  db.collection<TaskDoc>('tasks')
+export const getTaskDocCollection = (db: Db): Collection<TaskDoc> => db.collection<TaskDoc>('tasks')
 
 export const taskToJSON = (t: TaskDoc) => ({
   _id: t._id?.toString(),
@@ -270,35 +262,13 @@ export const taskLabelToJSON = (l: TaskLabel) => ({
 let taskIndexesPromise: Promise<void> | null = null
 
 /**
- * MongoDB codes raised when an index already exists for the requested key
- * pattern but under a different name (85, IndexOptionsConflict) or with
- * different options under the same name (86, IndexKeySpecsConflict). Both mean
- * "there is already an index here" — not a condition to retry.
- */
-const INDEX_ALREADY_EXISTS_CODES = new Set([85, 86])
-
-/**
- * Runs `createIndex`, treating an already-existing equivalent index as success.
- *
- * Without this, one such index rejected the whole `Promise.all`; because
- * `ensureTaskIndexes` resets its memo whenever the batch throws, every board and
- * task request then rebuilt the entire index set and re-logged the same raw
- * driver error — a retry storm on an already-correct database. A legacy index
- * that carries the right keys but the wrong options (e.g. a non-unique
- * `taskNumber_1` where a unique index is intended) is reconciled by an explicit,
- * approved one-time migration, not silently dropped from a request path.
- */
-const createIndexTolerant = (operation: Promise<unknown>): Promise<void> =>
-  operation.then(() => undefined).catch((error: unknown) => {
-    const code = (error as { code?: number } | null)?.code
-    if (typeof code === 'number' && INDEX_ALREADY_EXISTS_CODES.has(code)) return
-    throw error
-  })
-
-/**
  * Idempotent per-process. Failures are logged rather than thrown so read-only
  * deployments (and read paths during a permissions hiccups) keep working —
  * matches the ensureInventoryIndexes convention.
+ *
+ * Each index is ensured through `createIndexTolerant` (see `./indexes`) so one
+ * already-registered index cannot reject the batch and put every board request
+ * into a rebuild-and-relog loop.
  */
 export function ensureTaskIndexes(db: Db): Promise<void> {
   if (!taskIndexesPromise) {
@@ -403,10 +373,7 @@ export function ensureTaskIndexes(db: Db): Promise<void> {
             )
           ),
           createIndexTolerant(
-            getTaskLabelCollection(db).createIndex(
-              { isActive: 1 },
-              { name: 'taskLabels_active' }
-            )
+            getTaskLabelCollection(db).createIndex({ isActive: 1 }, { name: 'taskLabels_active' })
           ),
         ])
       } catch (error) {
@@ -417,4 +384,3 @@ export function ensureTaskIndexes(db: Db): Promise<void> {
   }
   return taskIndexesPromise
 }
-
