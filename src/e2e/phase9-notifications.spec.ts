@@ -14,8 +14,10 @@ import { test, expect } from '@playwright/test'
  *      and — the "no glitch" requirement — the numeric badge and the accessible
  *      label are SELF-CONSISTENT (the same N, capped at 99+), so a screen
  *      reader and the pixel badge can never disagree.
- *   3. Opening it reveals the in-app centre: the seeded row is listed and the
- *      "Notification settings" door links to the preferences tab.
+ *   3. Opening it reveals the in-app centre: the seeded row is listed (paging
+ *      with "Load older" if the run has raised enough noise to push it off the
+ *      first page) and the "Notification settings" door links to the
+ *      preferences tab.
  *   4. No uncaught page errors during the flow (hydration / render crashes).
  *
  * It never clicks "mark all read" (that would zero the shared count out from
@@ -50,14 +52,39 @@ test.describe('Phase 9 — notification bell', () => {
     await bell.click()
     const dialog = page.getByRole('dialog', { name: 'Notifications' })
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByText('E2E bell notification')).toBeVisible()
+    /*
+     * The seeded row is guaranteed to EXIST, not to sit on the first page. The
+     * bell renders the newest 20 (`PAGE_LIMIT` in `useNotifications`) and the
+     * parallel write specs keep raising budget / stock / ledger notifications for
+     * this same shared Founder account, so a fixed assertion on page one failed
+     * once the account held 22 rows and the seeded one ranked 21st — a healthy
+     * product reporting "element(s) not found". Paging with the panel's own
+     * control makes the check independent of how noisy the run is, and exercises
+     * the "Load older" path that keeps a real teammate's history reachable.
+     */
+    const seeded = dialog.getByText('E2E bell notification')
+    await expect
+      .poll(
+        async () => {
+          if ((await seeded.count()) > 0) return true
+          const older = dialog.getByRole('button', { name: 'Load older' })
+          if ((await older.count()) === 0) return true // nothing left to page through
+          await older.click()
+          return false
+        },
+        { timeout: 20_000, message: 'the seeded notification never appeared' }
+      )
+      .toBe(true)
+    await expect(seeded).toBeVisible()
     await expect(dialog.getByRole('button', { name: /Mark all read/ })).toBeVisible()
-    await expect(
-      dialog.getByRole('link', { name: /Notification settings/ })
-    ).toHaveAttribute('href', /\/settings\?tab=notifications/)
-
-    expect(pageErrors, `uncaught page errors: ${pageErrors.map((e) => e.message).join('; ')}`).toHaveLength(
-      0
+    await expect(dialog.getByRole('link', { name: /Notification settings/ })).toHaveAttribute(
+      'href',
+      /\/settings\?tab=notifications/
     )
+
+    expect(
+      pageErrors,
+      `uncaught page errors: ${pageErrors.map((e) => e.message).join('; ')}`
+    ).toHaveLength(0)
   })
 })

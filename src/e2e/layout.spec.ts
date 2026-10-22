@@ -1,5 +1,5 @@
 import { test, expect, devices, type Page } from '@playwright/test'
-import { FOUNDER_STATE } from './helpers'
+import { AFNAN_STATE, FOUNDER_STATE } from './helpers'
 
 /**
  * Layout regression suite.
@@ -30,9 +30,7 @@ async function expectDrawerOpen(page: Page, open: boolean) {
     await expect(drawer).toHaveAttribute('aria-modal', 'true')
     await expect(drawer).not.toHaveAttribute('inert', '')
     // Poll: the panel slides in over 240ms and ARIA flips on the first frame.
-    await expect
-      .poll(async () => (await drawer.boundingBox())!.x)
-      .toBeGreaterThanOrEqual(-1)
+    await expect.poll(async () => (await drawer.boundingBox())!.x).toBeGreaterThanOrEqual(-1)
   } else {
     await expect(drawer).toHaveAttribute('aria-hidden', 'true')
     await expect(drawer).toHaveAttribute('inert', '')
@@ -86,9 +84,7 @@ test.describe('navigation shell', () => {
 
     // The rail and the gutter animate together over 240ms; poll so the assertion
     // observes the settled layout rather than a frame mid-transition.
-    await expect
-      .poll(async () => (await sidebar.boundingBox())!.width)
-      .toBe(64)
+    await expect.poll(async () => (await sidebar.boundingBox())!.width).toBe(64)
     const collapsedWidth = (await sidebar.boundingBox())!.width
 
     // Icons must survive collapsing: this is the regression that made the
@@ -104,9 +100,7 @@ test.describe('navigation shell', () => {
 
     // Visual confirmation: the first content element starts at the rail edge.
     const content = page.locator('#main-content > div').first()
-    await expect
-      .poll(async () => Math.round((await content.boundingBox())!.x))
-      .toBe(collapsedWidth)
+    await expect.poll(async () => Math.round((await content.boundingBox())!.x)).toBe(collapsedWidth)
 
     // The brand mark must not be clipped away.
     await expect(page.getByRole('link', { name: /Decoricks Management/ })).toBeVisible()
@@ -114,9 +108,7 @@ test.describe('navigation shell', () => {
     await page.getByRole('button', { name: 'Expand sidebar' }).click()
     await expect(sidebar).toHaveClass(/w-sidebar/)
     // And it expands back to the full rail, with the gutter following again.
-    await expect
-      .poll(async () => (await sidebar.boundingBox())!.width)
-      .toBe(240)
+    await expect.poll(async () => (await sidebar.boundingBox())!.width).toBe(240)
     await expect
       .poll(async () => main.evaluate((el) => getComputedStyle(el).paddingLeft))
       .toBe('240px')
@@ -269,7 +261,10 @@ test.describe('visual system', () => {
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/inventory/products')
 
-    await page.getByRole('button', { name: /new product/i }).first().click()
+    await page
+      .getByRole('button', { name: /new product/i })
+      .first()
+      .click()
     const dialog = page.getByRole('dialog')
 
     const style = await dialog.evaluate((el) => {
@@ -347,6 +342,77 @@ test.describe('responsive smoke', () => {
   }
 })
 
+test.describe('every screen in the product', () => {
+  /*
+   * The viewport walk above deliberately covers a representative ten screens;
+   * this covers ALL of them once, and watches what they do rather than only
+   * whether they painted. Phase 5 §1 asked for every module to be verified, and
+   * a grep of the whole suite found `/profile` and `/sales/returns` visited by
+   * no test at all, with the finance report screens reached only from inside
+   * specs that care about their arithmetic. Those screens are where a bad
+   * import or a route that throws only for one role would show up.
+   *
+   * Excluded on purpose:
+   *  - `/design` — the component gallery. It renders sample data, so a clean
+   *    sweep of the product's own screens must not depend on it.
+   *  - `[id]` detail routes — they need a record, and the specs that create one
+   *    already open it (phase4-budget-profit, phase5-inventory-sales).
+   */
+  const SCREENS = [
+    '/',
+    '/finance',
+    '/finance/transactions',
+    '/finance/accounts',
+    '/finance/categories',
+    '/cash-flow',
+    '/profit-loss',
+    '/budgets',
+    '/distributions',
+    '/reconciliation',
+    '/inventory',
+    '/inventory/products',
+    '/inventory/movements',
+    '/inventory/purchases',
+    '/sales',
+    '/sales/returns',
+    '/tasks',
+    '/chat',
+    '/suppliers',
+    '/weekly-summary',
+    '/sync',
+    '/settings',
+    '/profile',
+  ]
+
+  // Twenty-three first-paint data loads, each of which may open a cold Atlas
+  // connection. Generous, because the assertion is the point, not the budget.
+  test.describe.configure({ timeout: 180_000 })
+
+  test('renders, and takes no failing API call or uncaught error with it', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+
+    const faults: string[] = []
+    page.on('response', (res) => {
+      if (!res.url().includes('/api/') || res.status() < 400) return
+      faults.push(`${res.status()} ${res.url().replace(/^https?:\/\/[^/]+/, '')}`)
+    })
+    page.on('pageerror', (error) => faults.push(`uncaught: ${error.message}`))
+    page.on('console', (message) => {
+      if (message.type() === 'error') faults.push(`console: ${message.text().slice(0, 200)}`)
+    })
+
+    for (const route of SCREENS) {
+      const response = await page.goto(route)
+      expect(response?.status(), `${route} did not answer`).toBeLessThan(400)
+      await expect(page.locator('#main-content h1').first(), `${route} has no heading`).toBeVisible(
+        { timeout: 30_000 }
+      )
+    }
+
+    expect(faults, `screens reported these failures:\n  ${faults.join('\n  ')}`).toEqual([])
+  })
+})
+
 test.describe('keyboard access', () => {
   test('skip link is the first tab stop and moves focus to content', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
@@ -419,6 +485,53 @@ test.describe('devices', () => {
     const page = await context.newPage()
     await page.goto('/')
     await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible()
+    await context.close()
+  })
+})
+
+test.describe('the component gallery is not a product screen', () => {
+  /*
+   * `/design` renders invented sample data — button variants, a table of
+   * imaginary customers. It is a design reference kept for the Founder, and it
+   * was reachable by any signed-in browser that typed the URL, which is how
+   * "hidden from the menu" was mistaken for "not deployed".
+   *
+   * The gate is server-side, so these tests assert the *response*, not what the
+   * page chose to hide: a client guard would pass a visible-text test while
+   * still sending the gallery to the browser.
+   */
+  const GALLERY_HEADING = 'Design System'
+
+  test('the Founder gets the gallery', async ({ browser }) => {
+    const context = await browser.newContext({ storageState: FOUNDER_STATE })
+    const page = await context.newPage()
+    const response = await page.goto('/design')
+    expect(response?.status()).toBe(200)
+    await expect(page.getByRole('heading', { name: GALLERY_HEADING })).toBeVisible()
+    await context.close()
+  })
+
+  test('a Partner is answered with 404, and no gallery markup is sent at all', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ storageState: AFNAN_STATE })
+    const page = await context.newPage()
+    const response = await page.goto('/design')
+    expect(response?.status()).toBe(404)
+    await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible()
+    // The heading is gone *and* the sample rows are gone: the render never ran.
+    await expect(page.getByText('Button Variants')).toHaveCount(0)
+    await context.close()
+  })
+
+  test('an anonymous caller never sees the gallery either', async ({ browser }) => {
+    const context = await browser.newContext() // no storage state
+    const page = await context.newPage()
+    const response = await page.goto('/design')
+    // Either refused outright or bounced to the login screen — both acceptable,
+    // because the property under test is that the content did not arrive.
+    expect([404, 200].includes(response?.status() ?? 0)).toBe(true)
+    await expect(page.getByText('Button Variants')).toHaveCount(0)
     await context.close()
   })
 })

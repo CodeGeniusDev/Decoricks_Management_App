@@ -57,7 +57,10 @@ test.describe('role-gated navigation', () => {
 
   test('a Partner calling a Founder-only API is refused', async ({ playwright }, testInfo) => {
     test.skip(testInfo.project.name !== 'chromium', 'Global state; run once')
-    const partner = await playwright.request.newContext({ baseURL: BASE_URL, storageState: AFNAN_STATE })
+    const partner = await playwright.request.newContext({
+      baseURL: BASE_URL,
+      storageState: AFNAN_STATE,
+    })
     const response = await partner.get('/api/users')
     expect(response.status()).toBe(403)
     await partner.dispose()
@@ -70,8 +73,14 @@ test.describe('Founder-granted permission is effective on the next request', () 
   }, testInfo) => {
     test.skip(testInfo.project.name !== 'chromium', 'Global state; run once')
 
-    const founder = await playwright.request.newContext({ baseURL: BASE_URL, storageState: FOUNDER_STATE })
-    const partner = await playwright.request.newContext({ baseURL: BASE_URL, storageState: AFNAN_STATE })
+    const founder = await playwright.request.newContext({
+      baseURL: BASE_URL,
+      storageState: FOUNDER_STATE,
+    })
+    const partner = await playwright.request.newContext({
+      baseURL: BASE_URL,
+      storageState: AFNAN_STATE,
+    })
     const csrf = csrfFromState(FOUNDER_STATE)
 
     // Default SPEC §4.2: Afnan cannot view users.
@@ -124,7 +133,7 @@ test.describe('Founder-granted permission is effective on the next request', () 
 
       // The board grant is not just acknowledged — it is stored. Read it back.
       const reread = await founder.get('/api/roles')
-      const storedTasks = (
+      const storedTasks =
         (
           (await reread.json()) as {
             data: {
@@ -135,7 +144,6 @@ test.describe('Founder-granted permission is effective on the next request', () 
             }
           }
         ).data.roles.find((role) => role.name === 'partner_afnan')?.permissions?.tasks ?? {}
-      )
       expect(storedTasks.manage).toBe(true)
       expect(storedTasks.editOthers).toBe(true)
 

@@ -59,7 +59,31 @@ const matches = (doc: Record<string, any>, filter: Record<string, any>): boolean
     return value === cond
   })
 
-const makeCollection = (getDocs: () => Record<string, any>[]) => ({
+const makeCollection = (getName: () => string, getDocs: () => Record<string, any>[]) => ({
+  // The real driver exposes the collection name, and `getAuthenticatedUser`
+  // reads it to build the `$lookup` into `users`.
+  get collectionName() {
+    return getName()
+  },
+  // Only the stages `getAuthenticatedUser` actually sends are implemented: the
+  // fake would rather fail loudly on an unexpected pipeline than silently
+  // answer a query the production code no longer makes.
+  aggregate(pipeline: Record<string, any>[]) {
+    let rows = [...getDocs()]
+    for (const stage of pipeline) {
+      if ('$match' in stage) rows = rows.filter((doc) => matches(doc, stage.$match))
+      else if ('$limit' in stage) rows = rows.slice(0, stage.$limit)
+      else if ('$lookup' in stage) {
+        const { from, localField, foreignField, as } = stage.$lookup
+        const peers: Record<string, any>[] = lookupTable[from] ?? []
+        rows = rows.map((doc) => ({
+          ...doc,
+          [as]: peers.filter((peer) => String(peer[foreignField]) === String(doc[localField])),
+        }))
+      } else throw new Error(`unhandled aggregate stage: ${Object.keys(stage).join(',')}`)
+    }
+    return { toArray: async () => rows }
+  },
   async insertOne(doc: Record<string, any>) {
     const withId = doc._id ? doc : { ...doc, _id: new ObjectId() }
     getDocs().push(withId)
@@ -93,14 +117,22 @@ const makeCollection = (getDocs: () => Record<string, any>[]) => ({
 
 const createFakeDb = () => {
   const data: Record<string, Record<string, any>[]> = { users: [], sessions: [] }
+  // `$lookup` resolves the joined collection by name, so the fake pipelines read
+  // from the same store the rest of the harness writes to.
+  lookupTable = data
   return {
     data,
     collection(name: string) {
       data[name] ??= []
-      return makeCollection(() => data[name])
+      return makeCollection(
+        () => name,
+        () => data[name]
+      )
     },
   } as any
 }
+
+let lookupTable: Record<string, Record<string, any>[]> = {}
 
 const sessions = () => h.db.collection('sessions')
 

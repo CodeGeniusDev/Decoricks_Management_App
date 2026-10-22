@@ -219,6 +219,16 @@ class MemCursor {
     return new MemCursor(this.rows)
   }
 
+  /**
+   * How many documents the server should send in the first response batch
+   * (`src/lib/mongo-read.ts`). It changes the number of network round trips and
+   * nothing about the result, so the in-memory stand-in simply returns the same
+   * cursor — the same answer the real server gives.
+   */
+  batchSize(_n: number): MemCursor {
+    return this
+  }
+
   async toArray(): Promise<Doc[]> {
     return this.rows.map((row) => ({ ...row }))
   }
@@ -230,7 +240,15 @@ class MemCursor {
 }
 
 export interface MemCollectionOptions {
-  /** Field names enforced unique (sparse: undefined/absent values always pass). */
+  /** Field names enforced unique.
+   *
+   * Mirrors a **unique sparse** index exactly: a document that lacks the field
+   * is not in the index at all, while a document that carries the field with
+   * `undefined` or `null` *is* — because the BSON serializer turns a present
+   * `undefined` into `null`, and only one null may exist in a unique index.
+   * Treating both as "always passes" is what let a real E11000-on-null defect
+   * reach the shipped app while 700+ tests stayed green (Phase 5 §5).
+   */
   unique?: string[]
   /**
    * Composite unique keys — arrays of field names that must be unique TOGETHER.
@@ -294,7 +312,12 @@ export class MemCollection {
     const _id = (doc._id as ObjectId) ?? new ObjectId()
     for (const key of this.unique) {
       const value = doc[key]
-      if (value === undefined || value === null) continue
+      if (!(key in doc)) continue // absent from the document → outside the sparse index
+      if (value === undefined || value === null) {
+        const emptyRow = (d: Doc): boolean => key in d && (d[key] === undefined || d[key] === null)
+        if (this.docs.some(emptyRow)) throw new DuplicateKeyError(key)
+        continue
+      }
       if (this.docs.some((existing) => existing[key] !== undefined && same(existing[key], value))) {
         throw new DuplicateKeyError(key)
       }
@@ -472,6 +495,55 @@ export class MemCollection {
       return null
     const doc = opts.returnDocument === 'before' ? result.before : result.after
     return doc ? { ...doc } : null
+  }
+
+  /**
+   * The driver's `bulkWrite` in the `updateOne`-with-upsert shape the app uses
+   * (see `ensureFinanceDefaults`). Each op is applied through the same
+   * synchronous read-modify-write as `updateOne`, so a test sees exactly what a
+   * real server would write — the whole point of collapsing serial upserts into
+   * one call being invisible to correctness, only to latency.
+   */
+  async bulkWrite(
+    operations: Array<{
+      updateOne: {
+        filter: Doc
+        update: { $set?: Doc; $setOnInsert?: Doc; $inc?: Doc }
+        upsert?: boolean
+      }
+    }>,
+    opts: { ordered?: boolean; session?: unknown } = {}
+  ): Promise<{
+    acknowledged: true
+    matchedCount: number
+    modifiedCount: number
+    upsertedCount: number
+    upsertedIds: Record<number, ObjectId>
+  }> {
+    await Promise.resolve()
+    let matched = 0
+    let upserted = 0
+    const upsertedIds: Record<number, ObjectId> = {}
+    for (const [index, op] of operations.entries()) {
+      const result = this.applyOne(
+        op.updateOne.filter,
+        op.updateOne.update,
+        { upsert: op.updateOne.upsert },
+        sessionOf(opts.session ?? opts)
+      )
+      if (result.matchedCount > 0) matched += 1
+      else if (result.upsertedId) {
+        upserted += 1
+        upsertedIds[index] = result.upsertedId as ObjectId
+      }
+    }
+    return {
+      acknowledged: true,
+      matchedCount: matched,
+      modifiedCount: matched,
+      upsertedCount: upserted,
+      upsertedIds,
+    }
   }
 
   /**

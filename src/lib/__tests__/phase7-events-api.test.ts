@@ -11,11 +11,17 @@
  * refused outright.
  *
  * The change-stream watcher is mocked out (mem-mongo has no `db.watch()`); the
- * per-module `authorize` mock is the lever that decides what scope is served.
+ * per-module `authorize` mock is the lever that decides what scope is served,
+ * with `discoverViewScopes` derived from it — the route resolves its module set
+ * through that one call now, so filtering it through the same lever keeps the
+ * "never advertise a module without its grant" assertion testing real logic.
+ * `awaitChangeStreamOpen` is mocked ready by default so the baseline path keeps
+ * its pre-Phase-5 shape; the "watcher not ready" case overrides it to prove the
+ * route will not claim liveness it cannot back up.
  */
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest'
 import { ObjectId } from 'mongodb'
-import { authorize, AuthorizationError } from '@/lib/authorization'
+import { authorize, AuthorizationError, discoverViewScopes } from '@/lib/authorization'
 import { createMemDb, type MemDb } from './helpers/mem-mongo'
 
 let mem: MemDb
@@ -27,11 +33,16 @@ vi.mock('@/lib/mongodb', () => ({
 }))
 
 const ensureChangeStreamWatcher = vi.fn()
+/** Resolves `true` (stream live) unless a test overrides it. */
+const awaitChangeStreamOpen = vi.fn(async (): Promise<boolean> => true)
 vi.mock('@/lib/realtime/watcher', () => ({
   ensureChangeStreamWatcher: () => ensureChangeStreamWatcher(),
+  awaitChangeStreamOpen: () => awaitChangeStreamOpen(),
 }))
 
 import { GET } from '@/app/api/events/route'
+import { SOURCES } from '@/lib/sync/cursor'
+import { COLLECTION_MODULES } from '@/lib/realtime/types'
 
 const FOUNDER = new ObjectId('507f1f77bcf86cd799439011')
 
@@ -58,9 +69,33 @@ const okCtx = () => ({
 
 /** Grants every module except those listed in `deny`. */
 const grantAllBut = (deny: string[]) => {
-  ;(authorize as Mock).mockReset().mockImplementation(async (module: string) => {
-    if (deny.includes(module)) throw new AuthorizationError(module, 'view')
-    return okCtx()
+  const authorizeMock = (authorize as Mock)
+    .mockReset()
+    .mockImplementation(async (module: string) => {
+      if (deny.includes(module)) throw new AuthorizationError(module, 'view')
+      return okCtx()
+    })
+
+  // Production resolves the whole stream scope with a single discovery call;
+  // reproduce its semantics by filtering through the `authorize` lever above, so
+  // `deny` still decides exactly which modules the route may advertise.
+  ;(discoverViewScopes as Mock).mockReset().mockImplementation(async (modules: string[]) => {
+    const viewable: string[] = []
+    for (const permModule of modules ?? []) {
+      try {
+        await authorizeMock(permModule)
+        viewable.push(permModule)
+      } catch (err) {
+        if (deny.includes(permModule)) continue
+        throw err
+      }
+    }
+    return {
+      userId: String(FOUNDER),
+      email: 'f@decoricks.com',
+      viewable,
+      mustChangePassword: false,
+    }
   })
 }
 
@@ -100,6 +135,7 @@ async function readUntilStreamEnds(
 beforeEach(() => {
   mem = createMemDb()
   ensureChangeStreamWatcher.mockClear()
+  awaitChangeStreamOpen.mockReset().mockImplementation(async () => true)
 })
 
 describe('GET /api/events', () => {
@@ -169,5 +205,78 @@ describe('GET /api/events', () => {
     await GET(req)
     expect(ensureChangeStreamWatcher).toHaveBeenCalled()
     ctrl.abort()
+  })
+
+  it('sends the authoritative cursor baseline only once the stream is really watching', async () => {
+    grantAllBut([])
+    const { req, ctrl } = makeRequest()
+    const res = await GET(req)
+    const text = await readUntilStreamEnds(res, ctrl, 'event: cursor')
+    expect(text).toContain('event: cursor')
+    expect(text).not.toContain('watcher-not-ready')
+    ctrl.abort()
+  })
+
+  it('degrades to reconcile — never a cursor baseline — when the watcher is not ready', async () => {
+    // A `cursor` frame is what tells the client to stop polling
+    // (`onLiveSignal()` in `sync/sse-transport.ts`). Publishing one from a
+    // process whose change stream has not completed its server-side handshake
+    // leaves a window with NO carrier at all: nothing can signal, and polling
+    // has just been stood down. Phase 5 reproduced exactly that as a remote
+    // write invisible to an open tab on a freshly started server.
+    grantAllBut([])
+    awaitChangeStreamOpen.mockImplementation(async () => false)
+    const { req, ctrl } = makeRequest()
+    const res = await GET(req)
+    const text = await readUntilStreamEnds(res, ctrl, 'watcher-not-ready')
+    expect(text).toContain('event: reconcile')
+    expect(text).toContain('"reason":"watcher-not-ready"')
+    expect(text).not.toContain('event: cursor')
+    ctrl.abort()
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * Collection-mapping contract — Phase 5 §3
+ * ------------------------------------------------------------------ */
+describe('change-stream module mapping', () => {
+  /**
+   * Resolves the collection NAME a model getter asks the driver for, with no
+   * driver: every `getXCollection(db)` is a thin `db.collection('<name>')`, so a
+   * stub that records the name reads the truth straight out of the models layer
+   * instead of duplicating a list a test would immediately rot.
+   */
+  const collectionNameOf = (get: (db: never) => unknown): string => {
+    const seen: string[] = []
+    // The stub is deliberately not a `Db` — only `collection()` is ever reached.
+    get({
+      collection: (name: string) => {
+        seen.push(name)
+        return {}
+      },
+    } as never)
+    expect(seen, 'a cursor source should resolve exactly one collection name').toHaveLength(1)
+    return seen[0]
+  }
+
+  it('gives a live signal to every collection the polling cursor reads', () => {
+    for (const [module, sources] of Object.entries(SOURCES)) {
+      for (const source of sources) {
+        const name = collectionNameOf(source.get)
+        expect(
+          COLLECTION_MODULES[name],
+          `a write to "${name}" moves the "${module}" cursor but has no COLLECTION_MODULES ` +
+            `entry — other devices would learn about it from the polling fallback only, never live`
+        ).toBe(module)
+      }
+    }
+  })
+
+  it('maps the finance cursor to the collection it actually reads', () => {
+    // Regression: this map said `ledger: 'finance'`. There is no `ledger`
+    // collection — the ledger lives in `transactions` — so the entry was dead
+    // and finance had no live signal whatsoever, while still looking correct.
+    expect(COLLECTION_MODULES).not.toHaveProperty('ledger')
+    expect(COLLECTION_MODULES.transactions).toBe('finance')
   })
 })

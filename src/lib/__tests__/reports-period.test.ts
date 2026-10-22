@@ -23,6 +23,8 @@ const cursor = (rows: unknown[] = []) => {
     limit: () => c,
     skip: () => c,
     project: () => c,
+    // A larger first batch changes round trips, never the rows (`src/lib/mongo-read.ts`).
+    batchSize: () => c,
     next: async () => (rows.length ? rows[0] : null),
     toArray: async () => rows,
   }
@@ -77,8 +79,7 @@ beforeEach(() => {
   docs = { transactions: [], stockMovements: [], stock: [], products: [] }
 })
 
-const get = (query: string) =>
-  new Request('http://localhost/api/reports/period' + query) as never
+const get = (query: string) => new Request('http://localhost/api/reports/period' + query) as never
 
 describe('GET /api/reports/period', () => {
   it('returns honest zeros for an empty period instead of a fixed report', async () => {
@@ -190,7 +191,11 @@ describe('GET /api/reports/period', () => {
     // The query must ask for the COGS-bearing movement family.
     const cogsQuery = queries.find((q) => {
       const types = (q.filter as { movementType?: { $in?: string[] } })?.movementType?.$in
-      return q.name === 'stockMovements' && types?.includes('sale_out') && types.includes('return_restock')
+      return (
+        q.name === 'stockMovements' &&
+        types?.includes('sale_out') &&
+        types.includes('return_restock')
+      )
     })
     expect(cogsQuery).toBeDefined()
 

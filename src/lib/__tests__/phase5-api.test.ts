@@ -233,9 +233,8 @@ let keySeq = 0
 const freshKey = (prefix = 'p5') => `${prefix}-key-${++keySeq}`
 
 const stockQty = (productId: string, location: string): number =>
-  cols.stock().docs.find(
-    (d) => String(d.productId) === productId && d.location === location
-  )?.quantity as number | undefined ?? 0
+  (cols.stock().docs.find((d) => String(d.productId) === productId && d.location === location)
+    ?.quantity as number | undefined) ?? 0
 
 const ledgerByCategory = (category: string) =>
   cols
@@ -314,15 +313,23 @@ const transferBody = (overrides: Record<string, unknown> = {}) => ({
  * because a couple of routes look the record up before authorizing.
  */
 const ALL_PHASE5_ROUTES: Array<{ name: string; call: () => Promise<Response> }> = [
-  { name: 'GET /api/products', call: () => invoke(productsRoute.GET, makeRequest('http://localhost/api/products')) },
+  {
+    name: 'GET /api/products',
+    call: () => invoke(productsRoute.GET, makeRequest('http://localhost/api/products')),
+  },
   {
     name: 'POST /api/products',
-    call: () => invoke(productsRoute.POST, makeRequest('http://localhost/api/products', json(productBody()))),
+    call: () =>
+      invoke(productsRoute.POST, makeRequest('http://localhost/api/products', json(productBody()))),
   },
   {
     name: 'GET /api/products/[id]',
     call: () =>
-      invoke(productDetailRoute.GET, makeRequest(`http://localhost/api/products/${PRODUCT_ID}`), ctx(PRODUCT_ID.toString())),
+      invoke(
+        productDetailRoute.GET,
+        makeRequest(`http://localhost/api/products/${PRODUCT_ID}`),
+        ctx(PRODUCT_ID.toString())
+      ),
   },
   {
     name: 'PUT /api/products/[id]',
@@ -336,15 +343,30 @@ const ALL_PHASE5_ROUTES: Array<{ name: string; call: () => Promise<Response> }> 
   {
     name: 'DELETE /api/products/[id]',
     call: () =>
-      invoke(productDetailRoute.DELETE, makeRequest('http://localhost/api/products/x', { method: 'DELETE' }), ctx(PRODUCT_ID.toString())),
+      invoke(
+        productDetailRoute.DELETE,
+        makeRequest('http://localhost/api/products/x', { method: 'DELETE' }),
+        ctx(PRODUCT_ID.toString())
+      ),
   },
-  { name: 'GET /api/stock', call: () => invoke(stockRoute.GET, makeRequest('http://localhost/api/stock')) },
+  {
+    name: 'GET /api/stock',
+    call: () => invoke(stockRoute.GET, makeRequest('http://localhost/api/stock')),
+  },
   {
     name: 'POST /api/stock (count adjustment)',
     call: () =>
       invoke(
         stockRoute.POST,
-        makeRequest('http://localhost/api/stock', json({ productId: PRODUCT_ID.toString(), location: 'sheikhupura', countedQuantity: 7, reason: 'Physical count' }))
+        makeRequest(
+          'http://localhost/api/stock',
+          json({
+            productId: PRODUCT_ID.toString(),
+            location: 'sheikhupura',
+            countedQuantity: 7,
+            reason: 'Physical count',
+          })
+        )
       ),
   },
   {
@@ -356,65 +378,115 @@ const ALL_PHASE5_ROUTES: Array<{ name: string; call: () => Promise<Response> }> 
     call: () =>
       invoke(
         reverseMovementRoute.POST,
-        makeRequest('http://localhost/api/stock/movements/x/reverse', json({ reason: 'Posted the wrong quantity' })),
+        makeRequest(
+          'http://localhost/api/stock/movements/x/reverse',
+          json({ reason: 'Posted the wrong quantity' })
+        ),
         ctx(MOVEMENT_ID.toString())
       ),
   },
   {
     name: 'POST /api/stock/transfer',
-    call: () => invoke(transferRoute.POST, makeRequest('http://localhost/api/stock/transfer', json(transferBody()))),
+    call: () =>
+      invoke(
+        transferRoute.POST,
+        makeRequest('http://localhost/api/stock/transfer', json(transferBody()))
+      ),
   },
   {
     name: 'POST /api/stock/damage',
     call: () =>
       invoke(
         damageRoute.POST,
-        makeRequest('http://localhost/api/stock/damage', json({ productId: PRODUCT_ID.toString(), location: 'sheikhupura', quantity: 1, type: 'damage', reason: 'Water damage in storage' }))
+        makeRequest(
+          'http://localhost/api/stock/damage',
+          json({
+            productId: PRODUCT_ID.toString(),
+            location: 'sheikhupura',
+            quantity: 1,
+            type: 'damage',
+            reason: 'Water damage in storage',
+          })
+        )
       ),
   },
   {
     name: 'GET /api/stock/summary',
     call: () => invoke(summaryRoute.GET, makeRequest('http://localhost/api/stock/summary')),
   },
-  { name: 'GET /api/purchases', call: () => invoke(purchasesRoute.GET, makeRequest('http://localhost/api/purchases')) },
+  {
+    name: 'GET /api/purchases',
+    call: () => invoke(purchasesRoute.GET, makeRequest('http://localhost/api/purchases')),
+  },
   {
     name: 'POST /api/purchases',
-    call: () => invoke(purchasesRoute.POST, makeRequest('http://localhost/api/purchases', json(purchaseBody()))),
+    call: () =>
+      invoke(
+        purchasesRoute.POST,
+        makeRequest('http://localhost/api/purchases', json(purchaseBody()))
+      ),
   },
   {
     name: 'POST /api/purchases/[id]/cancel',
     call: () =>
       invoke(
         purchaseCancelRoute.POST,
-        makeRequest('http://localhost/api/purchases/x/cancel', json({ reason: 'Order cancelled by supplier' })),
+        makeRequest(
+          'http://localhost/api/purchases/x/cancel',
+          json({ reason: 'Order cancelled by supplier' })
+        ),
         ctx(PURCHASE_ID.toString())
       ),
   },
-  { name: 'GET /api/orders', call: () => invoke(ordersRoute.GET, makeRequest('http://localhost/api/orders')) },
+  {
+    name: 'GET /api/orders',
+    call: () => invoke(ordersRoute.GET, makeRequest('http://localhost/api/orders')),
+  },
   {
     name: 'POST /api/orders',
-    call: () => invoke(ordersRoute.POST, makeRequest('http://localhost/api/orders', json(orderBody()))),
+    call: () =>
+      invoke(ordersRoute.POST, makeRequest('http://localhost/api/orders', json(orderBody()))),
   },
   {
     name: 'GET /api/orders/[id]',
-    call: () => invoke(orderDetailRoute.GET, makeRequest('http://localhost/api/orders/x'), ctx(PRODUCT_ID.toString())),
+    call: () =>
+      invoke(
+        orderDetailRoute.GET,
+        makeRequest('http://localhost/api/orders/x'),
+        ctx(PRODUCT_ID.toString())
+      ),
   },
   {
     name: 'PATCH /api/orders/[id]',
     call: () =>
-      invoke(orderDetailRoute.PATCH, makeRequest('http://localhost/api/orders/x', json({ orderStatus: 'shipped' })), ctx(PRODUCT_ID.toString())),
+      invoke(
+        orderDetailRoute.PATCH,
+        makeRequest('http://localhost/api/orders/x', json({ orderStatus: 'shipped' })),
+        ctx(PRODUCT_ID.toString())
+      ),
   },
   {
     name: 'PUT /api/orders/[id]',
     call: () =>
-      invoke(orderDetailRoute.PUT, makeRequest('http://localhost/api/orders/x', json({ customerCity: 'Karachi' })), ctx(PRODUCT_ID.toString())),
+      invoke(
+        orderDetailRoute.PUT,
+        makeRequest('http://localhost/api/orders/x', json({ customerCity: 'Karachi' })),
+        ctx(PRODUCT_ID.toString())
+      ),
   },
   {
     name: 'DELETE /api/orders/[id]',
     call: () =>
-      invoke(orderDetailRoute.DELETE, makeRequest('http://localhost/api/orders/x', { method: 'DELETE' }), ctx(PRODUCT_ID.toString())),
+      invoke(
+        orderDetailRoute.DELETE,
+        makeRequest('http://localhost/api/orders/x', { method: 'DELETE' }),
+        ctx(PRODUCT_ID.toString())
+      ),
   },
-  { name: 'GET /api/returns', call: () => invoke(returnsRoute.GET, makeRequest('http://localhost/api/returns')) },
+  {
+    name: 'GET /api/returns',
+    call: () => invoke(returnsRoute.GET, makeRequest('http://localhost/api/returns')),
+  },
   {
     name: 'POST /api/returns',
     call: () =>
@@ -422,33 +494,64 @@ const ALL_PHASE5_ROUTES: Array<{ name: string; call: () => Promise<Response> }> 
         returnsRoute.POST,
         makeRequest(
           'http://localhost/api/returns',
-          json({ orderId: PRODUCT_ID.toString(), items: [{ productId: PRODUCT_ID.toString(), quantity: 1, reason: 'Wrong size' }], refundAmount: 0 })
+          json({
+            orderId: PRODUCT_ID.toString(),
+            items: [{ productId: PRODUCT_ID.toString(), quantity: 1, reason: 'Wrong size' }],
+            refundAmount: 0,
+          })
         )
       ),
   },
   {
     name: 'GET /api/returns/[id]',
-    call: () => invoke(returnDetailRoute.GET, makeRequest('http://localhost/api/returns/x'), ctx(PRODUCT_ID.toString())),
+    call: () =>
+      invoke(
+        returnDetailRoute.GET,
+        makeRequest('http://localhost/api/returns/x'),
+        ctx(PRODUCT_ID.toString())
+      ),
   },
-  { name: 'GET /api/suppliers', call: () => invoke(suppliersRoute.GET, makeRequest('http://localhost/api/suppliers')) },
+  {
+    name: 'GET /api/suppliers',
+    call: () => invoke(suppliersRoute.GET, makeRequest('http://localhost/api/suppliers')),
+  },
   {
     name: 'POST /api/suppliers',
     call: () =>
-      invoke(suppliersRoute.POST, makeRequest('http://localhost/api/suppliers', json({ name: 'New Supplier', city: 'Gujranwala' }))),
+      invoke(
+        suppliersRoute.POST,
+        makeRequest(
+          'http://localhost/api/suppliers',
+          json({ name: 'New Supplier', city: 'Gujranwala' })
+        )
+      ),
   },
   {
     name: 'GET /api/suppliers/[id]',
-    call: () => invoke(supplierDetailRoute.GET, makeRequest('http://localhost/api/suppliers/x'), ctx(SUPPLIER_ID.toString())),
+    call: () =>
+      invoke(
+        supplierDetailRoute.GET,
+        makeRequest('http://localhost/api/suppliers/x'),
+        ctx(SUPPLIER_ID.toString())
+      ),
   },
   {
     name: 'PUT /api/suppliers/[id]',
     call: () =>
-      invoke(supplierDetailRoute.PUT, makeRequest('http://localhost/api/suppliers/x', json({ city: 'Multan' })), ctx(SUPPLIER_ID.toString())),
+      invoke(
+        supplierDetailRoute.PUT,
+        makeRequest('http://localhost/api/suppliers/x', json({ city: 'Multan' })),
+        ctx(SUPPLIER_ID.toString())
+      ),
   },
   {
     name: 'DELETE /api/suppliers/[id]',
     call: () =>
-      invoke(supplierDetailRoute.DELETE, makeRequest('http://localhost/api/suppliers/x', { method: 'DELETE' }), ctx(SUPPLIER_ID.toString())),
+      invoke(
+        supplierDetailRoute.DELETE,
+        makeRequest('http://localhost/api/suppliers/x', { method: 'DELETE' }),
+        ctx(SUPPLIER_ID.toString())
+      ),
   },
 ]
 
@@ -487,8 +590,12 @@ describe('403 on every Phase 5 route (TESTS: API)', () => {
 
 describe('a Partner without permission cannot write (TESTS: API)', () => {
   it('blocks a Sheikhupura purchase for a Lahore-only Partner and writes nothing', async () => {
-    vi.mocked(authorizeStockWrite).mockRejectedValueOnce(new AuthorizationError('inventory', 'create'))
-    const res = await purchasesRoute.POST(makeRequest('http://localhost/api/purchases', json(purchaseBody())))
+    vi.mocked(authorizeStockWrite).mockRejectedValueOnce(
+      new AuthorizationError('inventory', 'create')
+    )
+    const res = await purchasesRoute.POST(
+      makeRequest('http://localhost/api/purchases', json(purchaseBody()))
+    )
 
     expect(res.status).toBe(403)
     expect(cols.purchases().docs).toHaveLength(1) // the seed only
@@ -499,7 +606,9 @@ describe('a Partner without permission cannot write (TESTS: API)', () => {
 
   it('blocks an order create and reserves no stock', async () => {
     vi.mocked(authorize).mockRejectedValueOnce(new AuthorizationError('sales', 'create'))
-    const res = await ordersRoute.POST(makeRequest('http://localhost/api/orders', json(orderBody())))
+    const res = await ordersRoute.POST(
+      makeRequest('http://localhost/api/orders', json(orderBody()))
+    )
 
     expect(res.status).toBe(403)
     expect(cols.orders().docs).toHaveLength(0)
@@ -508,7 +617,9 @@ describe('a Partner without permission cannot write (TESTS: API)', () => {
 
   it('blocks a product create and stores no row', async () => {
     vi.mocked(authorize).mockRejectedValueOnce(new AuthorizationError('inventory', 'create'))
-    const res = await productsRoute.POST(makeRequest('http://localhost/api/products', json(productBody())))
+    const res = await productsRoute.POST(
+      makeRequest('http://localhost/api/products', json(productBody()))
+    )
 
     expect(res.status).toBe(403)
     expect(cols.products().docs).toHaveLength(1)
@@ -516,9 +627,14 @@ describe('a Partner without permission cannot write (TESTS: API)', () => {
 
   it('blocks a movement correction and leaves the ledger append-only', async () => {
     const before = cols.movements().docs.map((d) => ({ ...d }))
-    vi.mocked(authorizeStockWrite).mockRejectedValueOnce(new AuthorizationError('inventory', 'create'))
+    vi.mocked(authorizeStockWrite).mockRejectedValueOnce(
+      new AuthorizationError('inventory', 'create')
+    )
     const res = await reverseMovementRoute.POST(
-      makeRequest('http://localhost/api/stock/movements/x/reverse', json({ reason: 'Wrong quantity' })),
+      makeRequest(
+        'http://localhost/api/stock/movements/x/reverse',
+        json({ reason: 'Wrong quantity' })
+      ),
       ctx(MOVEMENT_ID.toString())
     )
 
@@ -573,7 +689,9 @@ describe('validation on the Phase 5 write routes (TESTS: API)', () => {
       purchaseBody({ productId: 'not-an-id' }),
     ]
     for (const body of cases) {
-      const res = await purchasesRoute.POST(makeRequest('http://localhost/api/purchases', json(body)))
+      const res = await purchasesRoute.POST(
+        makeRequest('http://localhost/api/purchases', json(body))
+      )
       expect(res.status).toBe(400)
     }
     expect(cols.purchases().docs).toHaveLength(1)
@@ -582,7 +700,10 @@ describe('validation on the Phase 5 write routes (TESTS: API)', () => {
 
   it('404s a purchase for an unknown product instead of inventing one', async () => {
     const res = await purchasesRoute.POST(
-      makeRequest('http://localhost/api/purchases', json(purchaseBody({ productId: new ObjectId().toString() })))
+      makeRequest(
+        'http://localhost/api/purchases',
+        json(purchaseBody({ productId: new ObjectId().toString() }))
+      )
     )
     expect(res.status).toBe(404)
   })
@@ -607,7 +728,18 @@ describe('validation on the Phase 5 write routes (TESTS: API)', () => {
     const res = await ordersRoute.POST(
       makeRequest(
         'http://localhost/api/orders',
-        json(orderBody({ items: [{ productId: PRODUCT_ID.toString(), quantity: 2, unitPrice: 1, productName: 'Free stuff' }] }))
+        json(
+          orderBody({
+            items: [
+              {
+                productId: PRODUCT_ID.toString(),
+                quantity: 2,
+                unitPrice: 1,
+                productName: 'Free stuff',
+              },
+            ],
+          })
+        )
       )
     )
     expect(res.status).toBe(201)
@@ -620,7 +752,10 @@ describe('validation on the Phase 5 write routes (TESTS: API)', () => {
 
   it('refuses a transfer to the same location', async () => {
     const res = await transferRoute.POST(
-      makeRequest('http://localhost/api/stock/transfer', json(transferBody({ toLocation: 'sheikhupura' })))
+      makeRequest(
+        'http://localhost/api/stock/transfer',
+        json(transferBody({ toLocation: 'sheikhupura' }))
+      )
     )
     expect(res.status).toBe(400)
   })
@@ -629,7 +764,12 @@ describe('validation on the Phase 5 write routes (TESTS: API)', () => {
     const res = await stockRoute.POST(
       makeRequest(
         'http://localhost/api/stock',
-        json({ productId: PRODUCT_ID.toString(), location: 'sheikhupura', countedQuantity: 5, reason: 'Recount' })
+        json({
+          productId: PRODUCT_ID.toString(),
+          location: 'sheikhupura',
+          countedQuantity: 5,
+          reason: 'Recount',
+        })
       )
     )
     expect(res.status).toBe(400)
@@ -637,9 +777,17 @@ describe('validation on the Phase 5 write routes (TESTS: API)', () => {
   })
 
   it('400s a malformed id and 404s an unknown one', async () => {
-    expect((await productDetailRoute.GET(makeRequest('http://localhost/api/products/x'), ctx('nope'))).status).toBe(400)
     expect(
-      (await productDetailRoute.GET(makeRequest('http://localhost/api/products/x'), ctx(new ObjectId().toString()))).status
+      (await productDetailRoute.GET(makeRequest('http://localhost/api/products/x'), ctx('nope')))
+        .status
+    ).toBe(400)
+    expect(
+      (
+        await productDetailRoute.GET(
+          makeRequest('http://localhost/api/products/x'),
+          ctx(new ObjectId().toString())
+        )
+      ).status
     ).toBe(404)
   })
 })
@@ -665,16 +813,43 @@ describe('idempotency keys (BUILD #7)', () => {
     expect(cols.products().docs).toHaveLength(2)
   })
 
+  it('accepts two keyless creates in a row (Phase 5 §5 null-key regression)', async () => {
+    // `idempotencyKey: undefined` used to be serialised to BSON `null`, and a
+    // unique *sparse* index does index nulls: the first keyless product planted
+    // a row that rejected every later keyless product with E11000, reported to
+    // the client as "SKU already exists". A keyless insert must omit the field
+    // entirely, which keeps it outside the index while real replays of a
+    // supplied key stay rejected by the test above.
+    const first = await productsRoute.POST(
+      makeRequest('http://localhost/api/products', json(productBody({ sku: 'KEYLESS-1' })))
+    )
+    expect(first.status).toBe(201)
+    const second = await productsRoute.POST(
+      makeRequest('http://localhost/api/products', json(productBody({ sku: 'KEYLESS-2' })))
+    )
+    expect(second.status).toBe(201)
+
+    const stored = cols.products().docs.filter((d) => String(d.sku).startsWith('KEYLESS-'))
+    expect(stored).toHaveLength(2)
+    for (const doc of stored) expect('idempotencyKey' in doc).toBe(false)
+  })
+
   it('replays a retried purchase without adding stock or a second expense', async () => {
     const key = freshKey()
     const first = await purchasesRoute.POST(
-      makeRequest('http://localhost/api/purchases', json(purchaseBody({ quantity: 3, unitCost: 60_000, idempotencyKey: key })))
+      makeRequest(
+        'http://localhost/api/purchases',
+        json(purchaseBody({ quantity: 3, unitCost: 60_000, idempotencyKey: key }))
+      )
     )
     expect(first.status).toBe(201)
     const afterFirst = stockQty(PRODUCT_ID.toString(), 'sheikhupura')
 
     const second = await purchasesRoute.POST(
-      makeRequest('http://localhost/api/purchases', json(purchaseBody({ quantity: 3, unitCost: 60_000, idempotencyKey: key })))
+      makeRequest(
+        'http://localhost/api/purchases',
+        json(purchaseBody({ quantity: 3, unitCost: 60_000, idempotencyKey: key }))
+      )
     )
     expect(second.status).toBe(200)
     expect((await second.json()).data.replay).toBe(true)
@@ -688,19 +863,39 @@ describe('idempotency keys (BUILD #7)', () => {
   it('replays a retried order without double-reserving stock', async () => {
     const key = freshKey()
     await purchasesRoute.POST(
-      makeRequest('http://localhost/api/purchases', json(purchaseBody({ quantity: 5, unitCost: 60_000 })))
+      makeRequest(
+        'http://localhost/api/purchases',
+        json(purchaseBody({ quantity: 5, unitCost: 60_000 }))
+      )
     )
     const before = stockQty(PRODUCT_ID.toString(), 'sheikhupura')
 
     const first = await ordersRoute.POST(
-      makeRequest('http://localhost/api/orders', json(orderBody({ quantity: undefined, items: [{ productId: PRODUCT_ID.toString(), quantity: 2 }], idempotencyKey: key })))
+      makeRequest(
+        'http://localhost/api/orders',
+        json(
+          orderBody({
+            quantity: undefined,
+            items: [{ productId: PRODUCT_ID.toString(), quantity: 2 }],
+            idempotencyKey: key,
+          })
+        )
+      )
     )
     expect(first.status).toBe(201)
     const reserved = before - stockQty(PRODUCT_ID.toString(), 'sheikhupura')
     expect(reserved).toBe(2)
 
     const second = await ordersRoute.POST(
-      makeRequest('http://localhost/api/orders', json(orderBody({ items: [{ productId: PRODUCT_ID.toString(), quantity: 2 }], idempotencyKey: key })))
+      makeRequest(
+        'http://localhost/api/orders',
+        json(
+          orderBody({
+            items: [{ productId: PRODUCT_ID.toString(), quantity: 2 }],
+            idempotencyKey: key,
+          })
+        )
+      )
     )
     expect(second.status).toBe(200)
     expect(stockQty(PRODUCT_ID.toString(), 'sheikhupura')).toBe(before - 2)
@@ -710,11 +905,19 @@ describe('idempotency keys (BUILD #7)', () => {
 
   it('replays a retried transfer', async () => {
     const key = freshKey()
-    await transferRoute.POST(makeRequest('http://localhost/api/stock/transfer', json(transferBody({ idempotencyKey: key }))))
+    await transferRoute.POST(
+      makeRequest(
+        'http://localhost/api/stock/transfer',
+        json(transferBody({ idempotencyKey: key }))
+      )
+    )
     const lahore = stockQty(PRODUCT_ID.toString(), 'lahore')
 
     const again = await transferRoute.POST(
-      makeRequest('http://localhost/api/stock/transfer', json(transferBody({ idempotencyKey: key })))
+      makeRequest(
+        'http://localhost/api/stock/transfer',
+        json(transferBody({ idempotencyKey: key }))
+      )
     )
     expect(again.status).toBe(200)
     expect((await again.json()).data.replay).toBe(true)
@@ -728,11 +931,20 @@ describe('idempotency keys (BUILD #7)', () => {
       ctx(order.id)
     )
     expect(first.status).toBe(200)
-    await orderDetailRoute.PATCH(makeRequest('http://localhost/api/orders/x', json({ cashReceived: true })), ctx(order.id))
-    await orderDetailRoute.PATCH(makeRequest('http://localhost/api/orders/x', json({ cashReceived: true })), ctx(order.id))
+    await orderDetailRoute.PATCH(
+      makeRequest('http://localhost/api/orders/x', json({ cashReceived: true })),
+      ctx(order.id)
+    )
+    await orderDetailRoute.PATCH(
+      makeRequest('http://localhost/api/orders/x', json({ cashReceived: true })),
+      ctx(order.id)
+    )
 
     expect(ledgerByCategory('sales_revenue')).toHaveLength(1)
-    const latest = await orderDetailRoute.GET(makeRequest('http://localhost/api/orders/x'), ctx(order.id))
+    const latest = await orderDetailRoute.GET(
+      makeRequest('http://localhost/api/orders/x'),
+      ctx(order.id)
+    )
     const doc = (await latest.json()).data
     expect(doc.paymentStatus).toBe('received')
   })
@@ -764,7 +976,9 @@ describe('concurrency: two simultaneous sales of the last unit (BUILD #7)', () =
     const statuses = responses.map((r) => r.status).sort()
     expect(statuses).toEqual([201, 409])
 
-    const failures = await Promise.all(responses.filter((r) => r.status !== 201).map((r) => r.json()))
+    const failures = await Promise.all(
+      responses.filter((r) => r.status !== 201).map((r) => r.json())
+    )
     expect(failures[0].error.code).toBe('INSUFFICIENT_STOCK')
 
     expect(cols.orders().docs).toHaveLength(1)
@@ -783,13 +997,26 @@ describe('concurrency: two simultaneous sales of the last unit (BUILD #7)', () =
     })
     const loserKey = freshKey('loser')
     const [a, b] = await Promise.all([
-      ordersRoute.POST(makeRequest('http://localhost/api/orders', json(orderBody({ shipFromLocation: 'lahore', idempotencyKey: freshKey('w-a') })))),
-      ordersRoute.POST(makeRequest('http://localhost/api/orders', json(orderBody({ shipFromLocation: 'lahore', idempotencyKey: loserKey })))),
+      ordersRoute.POST(
+        makeRequest(
+          'http://localhost/api/orders',
+          json(orderBody({ shipFromLocation: 'lahore', idempotencyKey: freshKey('w-a') }))
+        )
+      ),
+      ordersRoute.POST(
+        makeRequest(
+          'http://localhost/api/orders',
+          json(orderBody({ shipFromLocation: 'lahore', idempotencyKey: loserKey }))
+        )
+      ),
     ])
     expect([a.status, b.status].sort()).toEqual([201, 409])
 
     const loser = await ordersRoute.POST(
-      makeRequest('http://localhost/api/orders', json(orderBody({ shipFromLocation: 'sheikhupura', idempotencyKey: loserKey })))
+      makeRequest(
+        'http://localhost/api/orders',
+        json(orderBody({ shipFromLocation: 'sheikhupura', idempotencyKey: loserKey }))
+      )
     )
     // The rolled-back attempt left no order behind, so the same key now creates
     // a fresh order rather than replaying a phantom.
@@ -801,7 +1028,10 @@ describe('concurrency: two simultaneous sales of the last unit (BUILD #7)', () =
 describe('negative stock is blocked unless the Founder allows it (BUILD #3)', () => {
   it('refuses to sell what is not there', async () => {
     const res = await ordersRoute.POST(
-      makeRequest('http://localhost/api/orders', json(orderBody({ items: [{ productId: PRODUCT_ID.toString(), quantity: 50 }] })))
+      makeRequest(
+        'http://localhost/api/orders',
+        json(orderBody({ items: [{ productId: PRODUCT_ID.toString(), quantity: 50 }] }))
+      )
     )
     expect(res.status).toBe(409)
     expect((await res.json()).error.code).toBe('INSUFFICIENT_STOCK')
@@ -821,7 +1051,10 @@ describe('negative stock is blocked unless the Founder allows it (BUILD #3)', ()
     cols.settings().docs[0].allowNegativeStock = true
 
     const res = await ordersRoute.POST(
-      makeRequest('http://localhost/api/orders', json(orderBody({ items: [{ productId: PRODUCT_ID.toString(), quantity: 8 }] })))
+      makeRequest(
+        'http://localhost/api/orders',
+        json(orderBody({ items: [{ productId: PRODUCT_ID.toString(), quantity: 8 }] }))
+      )
     )
     expect(res.status).toBe(201)
     expect(stockQty(PRODUCT_ID.toString(), 'sheikhupura')).toBe(-3)
@@ -835,7 +1068,12 @@ describe('negative stock is blocked unless the Founder allows it (BUILD #3)', ()
 
 describe('order lifecycle (BUILD #5)', () => {
   it('a cancelled order restores its reservation exactly once', async () => {
-    const created = await ordersRoute.POST(makeRequest('http://localhost/api/orders', json(orderBody({ items: [{ productId: PRODUCT_ID.toString(), quantity: 2 }] }))))
+    const created = await ordersRoute.POST(
+      makeRequest(
+        'http://localhost/api/orders',
+        json(orderBody({ items: [{ productId: PRODUCT_ID.toString(), quantity: 2 }] }))
+      )
+    )
     expect(created.status).toBe(201)
     const orderId = (await created.json()).data.order._id
     expect(stockQty(PRODUCT_ID.toString(), 'sheikhupura')).toBe(3)
@@ -846,7 +1084,9 @@ describe('order lifecycle (BUILD #5)', () => {
     )
     expect(cancel.status).toBe(200)
     expect(stockQty(PRODUCT_ID.toString(), 'sheikhupura')).toBe(5)
-    expect(cols.movements().docs.filter((d) => d.movementType === 'sale_out' && d.isReversal)).toHaveLength(1)
+    expect(
+      cols.movements().docs.filter((d) => d.movementType === 'sale_out' && d.isReversal)
+    ).toHaveLength(1)
 
     // Cancelling again cannot restore a second time.
     const again = await orderDetailRoute.PATCH(
@@ -855,7 +1095,9 @@ describe('order lifecycle (BUILD #5)', () => {
     )
     expect(again.status).toBe(200)
     expect(stockQty(PRODUCT_ID.toString(), 'sheikhupura')).toBe(5)
-    expect(cols.movements().docs.filter((d) => d.movementType === 'sale_out' && d.isReversal)).toHaveLength(1)
+    expect(
+      cols.movements().docs.filter((d) => d.movementType === 'sale_out' && d.isReversal)
+    ).toHaveLength(1)
   })
 
   it('refuses to cancel an order whose cash is already in the ledger', async () => {
@@ -869,7 +1111,9 @@ describe('order lifecycle (BUILD #5)', () => {
   })
 
   it('refuses an impossible transition', async () => {
-    const created = await ordersRoute.POST(makeRequest('http://localhost/api/orders', json(orderBody())))
+    const created = await ordersRoute.POST(
+      makeRequest('http://localhost/api/orders', json(orderBody()))
+    )
     const orderId = (await created.json()).data.order._id
     const res = await orderDetailRoute.PATCH(
       makeRequest('http://localhost/api/orders/x', json({ orderStatus: 'delivered' })),
@@ -880,11 +1124,17 @@ describe('order lifecycle (BUILD #5)', () => {
 
   it('dispatch posts the courier expense once and the cost is ours regardless of COD', async () => {
     const created = await ordersRoute.POST(
-      makeRequest('http://localhost/api/orders', json(orderBody({ courierCharges: 15_000, shippingCost: 20_000 })))
+      makeRequest(
+        'http://localhost/api/orders',
+        json(orderBody({ courierCharges: 15_000, shippingCost: 20_000 }))
+      )
     )
     const orderId = (await created.json()).data.order._id
     for (let attempt = 0; attempt < 2; attempt++) {
-      const ship = await orderDetailRoute.PATCH(makeRequest('http://localhost/api/orders/x', json({ orderStatus: 'shipped' })), ctx(String(orderId)))
+      const ship = await orderDetailRoute.PATCH(
+        makeRequest('http://localhost/api/orders/x', json({ orderStatus: 'shipped' })),
+        ctx(String(orderId))
+      )
       expect(ship.status).toBe(200)
     }
     expect(ledgerByCategory('shipping_courier')).toHaveLength(1)
@@ -928,7 +1178,11 @@ describe('returns (BUILD #5)', () => {
     const res = await returnsRoute.POST(
       makeRequest(
         'http://localhost/api/returns',
-        json({ orderId: order.id, items: [{ productId: PRODUCT_ID.toString(), quantity: 2, reason: 'Both broken' }], refundAmount: 0 })
+        json({
+          orderId: order.id,
+          items: [{ productId: PRODUCT_ID.toString(), quantity: 2, reason: 'Both broken' }],
+          refundAmount: 0,
+        })
       )
     )
     expect(res.status).toBe(400)
@@ -940,7 +1194,11 @@ describe('returns (BUILD #5)', () => {
     const res = await returnsRoute.POST(
       makeRequest(
         'http://localhost/api/returns',
-        json({ orderId: order.id, items: [{ productId: PRODUCT_ID.toString(), quantity: 1, reason: 'Damaged in transit' }], refundAmount: 999_999_999 })
+        json({
+          orderId: order.id,
+          items: [{ productId: PRODUCT_ID.toString(), quantity: 1, reason: 'Damaged in transit' }],
+          refundAmount: 999_999_999,
+        })
       )
     )
     expect(res.status).toBe(400)
@@ -953,7 +1211,12 @@ describe('returns (BUILD #5)', () => {
     const res = await returnsRoute.POST(
       makeRequest(
         'http://localhost/api/returns',
-        json({ orderId: order.id, items: [{ productId: PRODUCT_ID.toString(), quantity: 1, reason: 'Snapped' }], outcome: 'damaged', refundAmount: 0 })
+        json({
+          orderId: order.id,
+          items: [{ productId: PRODUCT_ID.toString(), quantity: 1, reason: 'Snapped' }],
+          outcome: 'damaged',
+          refundAmount: 0,
+        })
       )
     )
     expect(res.status).toBe(403)
@@ -967,7 +1230,14 @@ describe('returns (BUILD #5)', () => {
         'http://localhost/api/returns',
         json({
           orderId: order.id,
-          items: [{ productId: PRODUCT_ID.toString(), quantity: 1, reason: 'Fabric torn', outcome: 'damaged' }],
+          items: [
+            {
+              productId: PRODUCT_ID.toString(),
+              quantity: 1,
+              reason: 'Fabric torn',
+              outcome: 'damaged',
+            },
+          ],
           refundAmount: 0,
         })
       )
@@ -982,12 +1252,18 @@ describe('returns (BUILD #5)', () => {
   })
 
   it('refuses a return on an order that was never delivered', async () => {
-    const created = await ordersRoute.POST(makeRequest('http://localhost/api/orders', json(orderBody())))
+    const created = await ordersRoute.POST(
+      makeRequest('http://localhost/api/orders', json(orderBody()))
+    )
     const orderId = (await created.json()).data.order._id
     const res = await returnsRoute.POST(
       makeRequest(
         'http://localhost/api/returns',
-        json({ orderId: String(orderId), items: [{ productId: PRODUCT_ID.toString(), quantity: 1, reason: 'No' }], refundAmount: 0 })
+        json({
+          orderId: String(orderId),
+          items: [{ productId: PRODUCT_ID.toString(), quantity: 1, reason: 'No' }],
+          refundAmount: 0,
+        })
       )
     )
     expect(res.status).toBe(400)
@@ -1001,23 +1277,38 @@ describe('returns (BUILD #5)', () => {
 describe('movement corrections are linked reversals (BUILD #3)', () => {
   it('a reversal cancels the original in every derived figure', async () => {
     const res = await reverseMovementRoute.POST(
-      makeRequest('http://localhost/api/stock/movements/x/reverse', json({ reason: 'Supplier shipped 4, we counted 5' })),
+      makeRequest(
+        'http://localhost/api/stock/movements/x/reverse',
+        json({ reason: 'Supplier shipped 4, we counted 5' })
+      ),
       ctx(MOVEMENT_ID.toString())
     )
     expect(res.status).toBe(200)
 
     expect(cols.movements().docs).toHaveLength(2)
     const reversal = cols.movements().docs[1]
-    expect(reversal).toMatchObject({ isReversal: true, movementType: 'purchase_in', quantity: 5, reversesId: MOVEMENT_ID })
+    expect(reversal).toMatchObject({
+      isReversal: true,
+      movementType: 'purchase_in',
+      quantity: 5,
+      reversesId: MOVEMENT_ID,
+    })
     expect(cols.movements().docs[0].status).toBe('reversed')
 
-    expect(derivedPools().get(`${PRODUCT_ID}|sheikhupura`)).toMatchObject({ available: 0, damaged: 0, returned: 0 })
+    expect(derivedPools().get(`${PRODUCT_ID}|sheikhupura`)).toMatchObject({
+      available: 0,
+      damaged: 0,
+      returned: 0,
+    })
     expect(stockQty(PRODUCT_ID.toString(), 'sheikhupura')).toBe(0)
   })
 
   it('refuses to reverse a reversal and refuses a double correction', async () => {
     await reverseMovementRoute.POST(
-      makeRequest('http://localhost/api/stock/movements/x/reverse', json({ reason: 'Wrong count' })),
+      makeRequest(
+        'http://localhost/api/stock/movements/x/reverse',
+        json({ reason: 'Wrong count' })
+      ),
       ctx(MOVEMENT_ID.toString())
     )
     const again = await reverseMovementRoute.POST(
@@ -1028,7 +1319,10 @@ describe('movement corrections are linked reversals (BUILD #3)', () => {
 
     const reversalId = cols.movements().docs[1]._id as ObjectId
     const reverseTheReversal = await reverseMovementRoute.POST(
-      makeRequest('http://localhost/api/stock/movements/x/reverse', json({ reason: 'Undo the undo' })),
+      makeRequest(
+        'http://localhost/api/stock/movements/x/reverse',
+        json({ reason: 'Undo the undo' })
+      ),
       ctx(reversalId.toString())
     )
     expect(reverseTheReversal.status).toBe(400)
@@ -1057,7 +1351,9 @@ describe('no hard deletes (BUILD #1, #2)', () => {
     expect(cols.products().docs).toHaveLength(1)
     expect(cols.products().docs[0].isActive).toBe(false)
 
-    const order = await ordersRoute.POST(makeRequest('http://localhost/api/orders', json(orderBody())))
+    const order = await ordersRoute.POST(
+      makeRequest('http://localhost/api/orders', json(orderBody()))
+    )
     expect(order.status).toBe(400)
   })
 
@@ -1081,7 +1377,10 @@ describe('reconciliation after a full sequence (TESTS: Reconciliation)', () => {
   it('purchase → transfer → sale → deliver → return → damage closes on every figure', async () => {
     // A product with no history at all: the first receipt sets the WAC.
     const made = await productsRoute.POST(
-      makeRequest('http://localhost/api/products', json(productBody({ sku: 'RECON-1', cost: 50_000, sellingPrice: 120_000 })))
+      makeRequest(
+        'http://localhost/api/products',
+        json(productBody({ sku: 'RECON-1', cost: 50_000, sellingPrice: 120_000 }))
+      )
     )
     const product = (await made.json()).data as Doc & { _id: string; cost: number }
     expect(made.status).toBe(201)
@@ -1090,7 +1389,10 @@ describe('reconciliation after a full sequence (TESTS: Reconciliation)', () => {
 
     // 1. Purchase 10 @ 60.00 into Sheikhupura.
     const purch = await purchasesRoute.POST(
-      makeRequest('http://localhost/api/purchases', json({ productId: pid, location: 'sheikhupura', quantity: 10, unitCost: 60_000 }))
+      makeRequest(
+        'http://localhost/api/purchases',
+        json({ productId: pid, location: 'sheikhupura', quantity: 10, unitCost: 60_000 })
+      )
     )
     expect(purch.status).toBe(201)
     const purchaseResult = await purch.json()
@@ -1099,12 +1401,17 @@ describe('reconciliation after a full sequence (TESTS: Reconciliation)', () => {
 
     // 2. Transfer 4 to Lahore. Not a purchase, not a sale: no ledger row.
     const transfer = await transferRoute.POST(
-      makeRequest('http://localhost/api/stock/transfer', json({ productId: pid, quantity: 4, fromLocation: 'sheikhupura', toLocation: 'lahore' }))
+      makeRequest(
+        'http://localhost/api/stock/transfer',
+        json({ productId: pid, quantity: 4, fromLocation: 'sheikhupura', toLocation: 'lahore' })
+      )
     )
     expect(transfer.status).toBe(200)
     expect(stockQty(pid, 'sheikhupura')).toBe(6)
     expect(stockQty(pid, 'lahore')).toBe(4)
-    expect(cols.ledger().docs.filter((d) => d.category === undefined || d.category === null)).toHaveLength(0)
+    expect(
+      cols.ledger().docs.filter((d) => d.category === undefined || d.category === null)
+    ).toHaveLength(0)
 
     // 3. Order 2 from Lahore, 20.00 shipping paid by the customer, 15.00 courier cost to us.
     const orderRes = await ordersRoute.POST(
@@ -1131,11 +1438,32 @@ describe('reconciliation after a full sequence (TESTS: Reconciliation)', () => {
     expect(stockQty(pid, 'lahore')).toBe(2)
 
     // 4. Dispatch, then deliver, then confirm the COD cash.
-    expect((await orderDetailRoute.PATCH(makeRequest('http://localhost/api/orders/x', json({ orderStatus: 'shipped' })), ctx(orderId))).status).toBe(200)
+    expect(
+      (
+        await orderDetailRoute.PATCH(
+          makeRequest('http://localhost/api/orders/x', json({ orderStatus: 'shipped' })),
+          ctx(orderId)
+        )
+      ).status
+    ).toBe(200)
     expect(ledgerByCategory('shipping_courier')).toHaveLength(1)
-    expect((await orderDetailRoute.PATCH(makeRequest('http://localhost/api/orders/x', json({ orderStatus: 'delivered' })), ctx(orderId))).status).toBe(200)
+    expect(
+      (
+        await orderDetailRoute.PATCH(
+          makeRequest('http://localhost/api/orders/x', json({ orderStatus: 'delivered' })),
+          ctx(orderId)
+        )
+      ).status
+    ).toBe(200)
     expect(ledgerByCategory('sales_revenue')).toHaveLength(0) // income waits for cash
-    expect((await orderDetailRoute.PATCH(makeRequest('http://localhost/api/orders/x', json({ cashReceived: true })), ctx(orderId))).status).toBe(200)
+    expect(
+      (
+        await orderDetailRoute.PATCH(
+          makeRequest('http://localhost/api/orders/x', json({ cashReceived: true })),
+          ctx(orderId)
+        )
+      ).status
+    ).toBe(200)
     expect(ledgerByCategory('sales_revenue')).toHaveLength(1)
     expect(sum(ledgerByCategory('sales_revenue'))).toBe(260_000)
 
@@ -1159,7 +1487,16 @@ describe('reconciliation after a full sequence (TESTS: Reconciliation)', () => {
 
     // 6. One unit in the Sheikhupura store is found broken.
     const dmg = await damageRoute.POST(
-      makeRequest('http://localhost/api/stock/damage', json({ productId: pid, location: 'sheikhupura', quantity: 1, type: 'damage', reason: 'Water damage' }))
+      makeRequest(
+        'http://localhost/api/stock/damage',
+        json({
+          productId: pid,
+          location: 'sheikhupura',
+          quantity: 1,
+          type: 'damage',
+          reason: 'Water damage',
+        })
+      )
     )
     expect(dmg.status).toBe(200)
 
@@ -1181,12 +1518,16 @@ describe('reconciliation after a full sequence (TESTS: Reconciliation)', () => {
     expect(freshProduct.cost).toBe(60_000)
 
     const expectedCogs = 2 * 60_000 - 1 * 60_000 // the restocked unit's cost comes back
-    expect(cogsFromMovements(movements.map((m) => ({ ...m, productId: String(m.productId) })))).toBe(expectedCogs)
+    expect(
+      cogsFromMovements(movements.map((m) => ({ ...m, productId: String(m.productId) })))
+    ).toBe(expectedCogs)
     const totalAvailable = sheikhupura.available + lahore.available
     const expectedValuation = totalAvailable * 60_000
     expect(expectedValuation).toBe(8 * 60_000)
 
-    const summary = await summaryRoute.GET(makeRequest(`http://localhost/api/stock/summary?includeArchived=true`))
+    const summary = await summaryRoute.GET(
+      makeRequest(`http://localhost/api/stock/summary?includeArchived=true`)
+    )
     const summaryData = (await summary.json()).data
     const summaryRow = summaryData.items.find((i: Doc) => i._id === pid)
     expect(summaryRow.valuation).toBe(expectedValuation)
@@ -1195,7 +1536,9 @@ describe('reconciliation after a full sequence (TESTS: Reconciliation)', () => {
     expect(summaryRow.totalReturned).toBe(2)
 
     /* ---- the P&L carries the real COGS, not the provisional one ---- */
-    const pl = await plRoute.GET(makeRequest(`http://localhost/api/finance/pl?period=month&date=${TODAY_ISO}`))
+    const pl = await plRoute.GET(
+      makeRequest(`http://localhost/api/finance/pl?period=month&date=${TODAY_ISO}`)
+    )
     expect(pl.status).toBe(200)
     const plData = (await pl.json()).data
     expect(plData.profitLoss.cogsProvisional).toBe(false)
@@ -1214,18 +1557,19 @@ describe('reconciliation after a full sequence (TESTS: Reconciliation)', () => {
     expect(sum(ledgerByCategory('product_purchasing'))).toBe(600_000)
     expect(sum(ledgerByCategory('shipping_courier'))).toBe(15_000)
     expect(sum(ledgerByCategory('refunds_return_costs'))).toBe(125_000)
-    const cash = cols
-      .ledger()
-      .docs.reduce((balance, d) => {
-        const amount = Number(d.amount)
-        if (d.type === 'income') return balance + amount
-        if (d.type === 'expense') return balance - amount
-        return balance
-      }, 0)
+    const cash = cols.ledger().docs.reduce((balance, d) => {
+      const amount = Number(d.amount)
+      if (d.type === 'income') return balance + amount
+      if (d.type === 'expense') return balance - amount
+      return balance
+    }, 0)
     expect(cash).toBe(260_000 - 600_000 - 15_000 - 125_000)
 
     /* ---- nothing was counted twice: every movement has a unique key ---- */
-    const keys = cols.movements().docs.map((d) => d.idempotencyKey).filter(Boolean)
+    const keys = cols
+      .movements()
+      .docs.map((d) => d.idempotencyKey)
+      .filter(Boolean)
     expect(new Set(keys).size).toBe(keys.length)
     expect(cols.orders().docs).toHaveLength(1)
     expect(cols.purchases().docs.filter((d) => String(d.productId) === pid)).toHaveLength(1)
@@ -1233,7 +1577,13 @@ describe('reconciliation after a full sequence (TESTS: Reconciliation)', () => {
 
     /* ---- and the audit trail recorded each change ---- */
     const actions = cols.audit().docs.map((d) => d.action)
-    for (const expected of ['purchase_created', 'stock_transfer_completed', 'order_created', 'order_status_changed', 'return_created']) {
+    for (const expected of [
+      'purchase_created',
+      'stock_transfer_completed',
+      'order_created',
+      'order_status_changed',
+      'return_created',
+    ]) {
       expect(actions).toContain(expected)
     }
   })
@@ -1243,7 +1593,9 @@ describe('reconciliation after a full sequence (TESTS: Reconciliation)', () => {
 
 /** Every movement in the fake, re-derived through the pure engine. */
 function derivedPools(): Map<string, { available: number; damaged: number; returned: number }> {
-  const movements = cols.movements().docs.map((m) => ({ ...m, productId: String(m.productId) })) as unknown as MovementLike[]
+  const movements = cols
+    .movements()
+    .docs.map((m) => ({ ...m, productId: String(m.productId) })) as unknown as MovementLike[]
   return deriveStock(movements)
 }
 
@@ -1257,21 +1609,51 @@ function derivedPoolsFor(_productId: ObjectId) {
  */
 async function createDeliveredOrder(quantity = 1): Promise<{ id: string }> {
   await purchasesRoute.POST(
-    makeRequest('http://localhost/api/purchases', json(purchaseBody({ quantity: 10, unitCost: 60_000 })))
+    makeRequest(
+      'http://localhost/api/purchases',
+      json(purchaseBody({ quantity: 10, unitCost: 60_000 }))
+    )
   )
   const created = await ordersRoute.POST(
     makeRequest(
       'http://localhost/api/orders',
-      json(orderBody({ items: [{ productId: PRODUCT_ID.toString(), quantity }], shippingCost: 20_000, courierCharges: 15_000 }))
+      json(
+        orderBody({
+          items: [{ productId: PRODUCT_ID.toString(), quantity }],
+          shippingCost: 20_000,
+          courierCharges: 15_000,
+        })
+      )
     )
   )
   expect(created.status).toBe(201)
   const body = (await created.json()).data
   const id = String((body.order as Doc)._id)
   expect(id).toMatch(/^[0-9a-f]{24}$/)
-  expect((await orderDetailRoute.PATCH(makeRequest('http://localhost/api/orders/x', json({ orderStatus: 'shipped' })), ctx(id))).status).toBe(200)
-  expect((await orderDetailRoute.PATCH(makeRequest('http://localhost/api/orders/x', json({ orderStatus: 'delivered' })), ctx(id))).status).toBe(200)
-  expect((await orderDetailRoute.PATCH(makeRequest('http://localhost/api/orders/x', json({ cashReceived: true })), ctx(id))).status).toBe(200)
+  expect(
+    (
+      await orderDetailRoute.PATCH(
+        makeRequest('http://localhost/api/orders/x', json({ orderStatus: 'shipped' })),
+        ctx(id)
+      )
+    ).status
+  ).toBe(200)
+  expect(
+    (
+      await orderDetailRoute.PATCH(
+        makeRequest('http://localhost/api/orders/x', json({ orderStatus: 'delivered' })),
+        ctx(id)
+      )
+    ).status
+  ).toBe(200)
+  expect(
+    (
+      await orderDetailRoute.PATCH(
+        makeRequest('http://localhost/api/orders/x', json({ cashReceived: true })),
+        ctx(id)
+      )
+    ).status
+  ).toBe(200)
   return { id }
 }
 
@@ -1282,8 +1664,18 @@ async function createDeliveredOrder(quantity = 1): Promise<{ id: string }> {
 describe('harness', () => {
   it('the fake enforces a unique idempotency index like production', async () => {
     const key = freshKey('uniq')
-    await productsRoute.POST(makeRequest('http://localhost/api/products', json(productBody({ sku: 'UNIQ-1', idempotencyKey: key }))))
-    await productsRoute.POST(makeRequest('http://localhost/api/products', json(productBody({ sku: 'UNIQ-2', idempotencyKey: key }))))
+    await productsRoute.POST(
+      makeRequest(
+        'http://localhost/api/products',
+        json(productBody({ sku: 'UNIQ-1', idempotencyKey: key }))
+      )
+    )
+    await productsRoute.POST(
+      makeRequest(
+        'http://localhost/api/products',
+        json(productBody({ sku: 'UNIQ-2', idempotencyKey: key }))
+      )
+    )
     expect(cols.products().docs.filter((d) => d.idempotencyKey === key)).toHaveLength(1)
   })
 

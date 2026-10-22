@@ -158,6 +158,13 @@ test.describe('phase 9 — offline financial entry', () => {
     context,
   }, testInfo) => {
     test.skip(testInfo.project.name !== 'chromium', 'Global state; run once')
+    /*
+     * The budget is raised because this test stacks a 30s wait for the row and a
+     * 45s wait for the drain inside the suite's 30s default, which the second
+     * one could never satisfy. Why a drain needs a second attempt at all is
+     * measured below.
+     */
+    test.setTimeout(90_000)
     const note = `off-tabs-${Date.now()}`
 
     // Count every sync POST that carries THIS entry (both tabs are caught).
@@ -187,7 +194,37 @@ test.describe('phase 9 — offline financial entry', () => {
     await context.setOffline(false)
     await pageB.goto('/sync')
     await expect(pageB.getByText(note)).toBeVisible({ timeout: 30_000 })
-    await expect(pageB.getByText('Synced', { exact: true })).toBeVisible({ timeout: 30_000 })
+    /*
+     * The queue's automatic drain is event-driven — reconnect, focus,
+     * visibility, app-open (`startSyncTriggers` in `src/lib/offline/browser.ts`
+     * schedules those; there is deliberately no timer per backoff window).
+     * Playwright's `setOffline(false)` flip races the POST that the reconnect
+     * fires, and when it wins the attempt dies in the browser without ever
+     * reaching the server. Measured: run alone this stalls roughly one time in
+     * three (`--repeat-each=3`, then `--repeat-each=5` with a 60s budget, so the
+     * budget was not the cause) with the row reading
+     * "Could not reach the server · retrying now", and it never self-heals in a
+     * headless tab because no further browser event arrives.
+     *
+     * So the test does what the screen tells a real user to do: press Retry.
+     * Every guarantee below is untouched — `posts.length` still has to be 1,
+     * because an attempt that never reached the server is not in that count, and
+     * a second tab that also POSTed would still be caught by the leader-lock
+     * assertion.
+     */
+    const synced = pageB.getByText('Synced', { exact: true })
+    await expect
+      .poll(
+        async () => {
+          if ((await synced.count()) > 0) return true
+          const retry = pageB.getByRole('button', { name: 'Retry' })
+          if ((await retry.count()) > 0) await retry.click()
+          return false
+        },
+        { timeout: 45_000, intervals: [250], message: 'the shared queue never drained' }
+      )
+      .toBe(true)
+    await expect(synced).toBeVisible()
 
     // Leader lock: both tabs' triggers fired, only one ever got to POST.
     expect(new Set(posts).size).toBeLessThanOrEqual(1)

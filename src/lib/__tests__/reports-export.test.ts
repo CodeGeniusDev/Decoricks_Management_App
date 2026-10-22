@@ -21,6 +21,8 @@ const cursor = (rows: unknown[] = []) => {
     limit: () => c,
     skip: () => c,
     project: () => c,
+    // A larger first batch changes round trips, never the rows (`src/lib/mongo-read.ts`).
+    batchSize: () => c,
     next: async () => (rows.length ? rows[0] : null),
     toArray: async () => rows,
   }
