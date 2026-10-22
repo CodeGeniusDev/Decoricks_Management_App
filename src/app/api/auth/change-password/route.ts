@@ -36,7 +36,7 @@ const changeSchema = z
 export async function POST(request: Request) {
   try {
     const meta = await getRequestMeta()
-    const auth = await requireAuth()
+    const auth = await requireAuth({ allowPasswordChange: true })
 
     // Per-IP rate limit on password changes (Phase 10).
     const ipKey = meta.ipAddress ? `ip:${meta.ipAddress}` : null

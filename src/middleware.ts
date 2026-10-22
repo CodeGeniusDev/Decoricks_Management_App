@@ -16,7 +16,9 @@ const SESSION_COOKIE = 'decoricks_session'
 const CSRF_REQUIRED_HEADER = 'x-csrf-required'
 
 /** Public paths — the login/change-password screens, login API, health probe. */
-const PUBLIC_PATHS = ['/login', '/change-password', '/api/auth/login', '/api/health']
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/health']
+/** Change-password screen/API require a session but allow forced-change users. */
+const SESSION_PROTECTED_PUBLIC = ['/change-password', '/api/auth/change-password']
 
 /**
  * Methods that cannot change state. `SameSite=Lax` already blocks cross-site
@@ -28,6 +30,9 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 const isPublic = (pathname: string): boolean =>
   PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))
 
+const isSessionProtectedPublic = (pathname: string): boolean =>
+  SESSION_PROTECTED_PUBLIC.some((path) => pathname === path || pathname.startsWith(`${path}/`))
+
 /** API routes answer with JSON status codes, never a redirect. */
 const wantsJson = (request: NextRequest): boolean => request.nextUrl.pathname.startsWith('/api/')
 
@@ -38,7 +43,26 @@ export function middleware(request: NextRequest) {
 
   const hasSessionCookie = Boolean(request.cookies.get(SESSION_COOKIE)?.value)
 
-  if (hasSessionCookie) return withCsrfRequirement(request)
+  if (hasSessionCookie) {
+    if (isSessionProtectedPublic(pathname)) return NextResponse.next()
+    return withCsrfRequirement(request)
+  }
+
+  if (isSessionProtectedPublic(pathname)) {
+    if (wantsJson(request)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { message: 'Authentication required', code: 'UNAUTHENTICATED' },
+          timestamp: new Date().toISOString(),
+        },
+        { status: 401 }
+      )
+    }
+    const loginUrl = new URL('/login', request.url)
+    if (pathname !== '/') loginUrl.searchParams.set('next', pathname)
+    return NextResponse.redirect(loginUrl)
+  }
 
   if (wantsJson(request)) {
     return NextResponse.json(

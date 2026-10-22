@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET() {
   try {
-    const auth = await requireAuth()
+    const auth = await requireAuth({ allowPasswordChange: true })
     const db = await getDatabase()
     const role = await getRole(auth.user.role, db)
 
@@ -52,7 +52,7 @@ const profileSchema = z
 export async function PATCH(request: Request) {
   try {
     const meta = await getRequestMeta()
-    const auth = await requireAuth()
+    const auth = await requireAuth({ allowPasswordChange: true })
 
     const parsed = profileSchema.safeParse(await request.json().catch(() => null))
     if (!parsed.success) {
