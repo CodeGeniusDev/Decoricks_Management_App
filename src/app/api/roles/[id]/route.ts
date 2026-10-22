@@ -57,7 +57,11 @@ export async function PUT(request: Request, context: RouteContext) {
       return validationError('Invalid permissions payload', parsed.error.flatten().fieldErrors)
     }
 
-    const auth = await requireFounder({ entityId: id, ipAddress: meta.ipAddress, userAgent: meta.userAgent })
+    const auth = await requireFounder({
+      entityId: id,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
 
     if (!isValidObjectId(id)) return notFoundError('Role not found')
 
@@ -75,7 +79,10 @@ export async function PUT(request: Request, context: RouteContext) {
     const before = existing.permissions
     const after = { ...before, ...parsed.data.permissions }
 
-    await roles.updateOne({ _id: existing._id }, { $set: { permissions: after, updatedAt: new Date() } })
+    await roles.updateOne(
+      { _id: existing._id },
+      { $set: { permissions: after, updatedAt: new Date() } }
+    )
 
     // Immediate revocation.
     invalidateRoleCache()

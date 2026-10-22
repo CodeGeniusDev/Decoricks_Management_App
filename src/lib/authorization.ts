@@ -4,6 +4,7 @@ import { headers } from 'next/headers'
 import { getDatabase, withMongoRetry } from '@/lib/mongodb'
 import { recordAuditEntry } from '@/lib/audit'
 import { getAuthenticatedUser, type AuthenticatedUser } from '@/lib/auth/session'
+import { timeStage } from '@/lib/timing'
 import {
   getRoleCollection,
   requiresPasswordChange,
@@ -179,12 +180,19 @@ export const authorize = async (
   options: AuthorizeOptions = {}
 ): Promise<AuthorizationResult> => {
   const db = await getDatabase()
-  const auth = await getAuthenticatedUser(db)
+  /*
+   * `auth:session` is named in the diagnostics because it is paid by every
+   * protected request before that request touches its own data: an uncached
+   * `$lookup` of the session and its user. `auth:role` reads the role table, which
+   * is process-cached for 2s and so normally reports ~0ms — seeing it is the point
+   * (Phase 6 §4.1), not the guess.
+   */
+  const auth = await timeStage('auth:session', () => getAuthenticatedUser(db))
 
   if (!auth) throw new AuthenticationError()
   assertPasswordChanged(auth)
 
-  const role = await getRole(auth.user.role, db)
+  const role = await timeStage('auth:role', () => getRole(auth.user.role, db))
   if (!role) {
     // A user whose role document vanished must never fall through to a
     // permissive default.
@@ -216,7 +224,7 @@ export const authorize = async (
 /** Authentication only, for endpoints that need a caller but no module grant. */
 export const requireAuth = async (): Promise<AuthenticatedUser> => {
   const db = await getDatabase()
-  const auth = await getAuthenticatedUser(db)
+  const auth = await timeStage('auth:session', () => getAuthenticatedUser(db))
   if (!auth) throw new AuthenticationError()
   return auth
 }
@@ -376,6 +384,72 @@ export const resolveViewScopes = async (
   }
 
   return { ...auth, role, permissions: role.permissions, viewable }
+}
+
+export interface ScopeDiscovery {
+  /** Caller id, so the caller can filter user-scoped signals to its own. */
+  userId: string
+  email: string
+  /** Requested modules the caller may view. May be empty — that is not a denial. */
+  viewable: PermissionModule[]
+  /**
+   * SPEC §10.1.1: the account is still on a temporary password. Discovery does
+   * not refuse these — this is not an access decision — but it reports the flag,
+   * so a caller can reproduce the gate `authorize()` applies to every data read.
+   */
+  mustChangePassword: boolean
+}
+
+/**
+ * Session + role resolution for *scope discovery*, not for an access decision.
+ *
+ * `/api/events` needs to know which modules' change signals a caller should
+ * receive before opening the stream. It previously called `authorize()` once per
+ * module, which measured 472 ms of connect time in production: every one of
+ * those calls re-ran `getDatabase()` + `getAuthenticatedUser()`, i.e. five or six
+ * identical session aggregates in series, and each missing grant wrote a
+ * `permission_denied` audit row for what is really "this user has no finance
+ * widget" — a non-event that blurred the genuine denied-attempt signal SPEC
+ * §3.1.19 asks the log to carry.
+ *
+ * Difference from `resolveViewScopes`, deliberate and load-bearing:
+ *   - Authentication is still enforced: no valid session → `AuthenticationError`
+ *     (401). Unauthenticated connections are never served.
+ *   - NO audit write and NO throw on partial or zero scope. A caller with no view
+ *     grants still gets their own user-scoped signals; the stream is not an
+ *     authorization boundary for any record — it carries dataless marks only,
+ *     and every subscriber re-fetches its contents through the normal
+ *     permission-checked endpoints. So omitting a module here can only ever
+ *     *reduce* what a caller is told about, never widen it.
+ *   - The password-change gate is not *thrown* here, unlike `authorize()`. It is
+ *     reported as `mustChangePassword` instead: an SSE stream is not a data
+ *     endpoint, so refusing it outright would be a different contract, and
+ *     ignoring the flag would silently widen one. Callers that mirror an
+ *     `authorize()`-gated surface (the events route) use the flag to withhold
+ *     module signals until the password is set — exactly what the per-module
+ *     `authorize()` calls did before, when each one threw
+ *     `PasswordChangeRequiredError` and the caller's `catch` omitted the module.
+ *
+ * One session aggregate + one (process-cached) role read, for any number of
+ * modules.
+ */
+export const discoverViewScopes = async (modules: PermissionModule[]): Promise<ScopeDiscovery> => {
+  const db = await getDatabase()
+  const auth = await getAuthenticatedUser(db)
+  if (!auth) throw new AuthenticationError()
+
+  const role = await getRole(auth.user.role, db)
+  const mustChangePassword = requiresPasswordChange(auth.user)
+  const viewable = mustChangePassword
+    ? []
+    : modules.filter((module) => hasPermission(role, module, 'view'))
+
+  return {
+    userId: String(auth.user._id),
+    email: auth.user.email,
+    viewable,
+    mustChangePassword,
+  }
 }
 
 /**

@@ -23,9 +23,7 @@ const SAFE_METHODS = new Set(['GET', 'HEAD'])
  */
 export function getCsrfToken(): string {
   if (typeof document === 'undefined') return ''
-  const match = document.cookie.match(
-    new RegExp(`(?:^|;\\s*)${CSRF_COOKIE}=([^;]*)`)
-  )
+  const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${CSRF_COOKIE}=([^;]*)`))
   return match ? decodeURIComponent(match[1]) : ''
 }
 
@@ -50,10 +48,7 @@ export class ApiError extends Error {
   }
 }
 
-export const apiFetch = async (
-  input: string,
-  init: RequestInit = {}
-): Promise<Response> => {
+export const apiFetch = async (input: string, init: RequestInit = {}): Promise<Response> => {
   const method = (init.method ?? 'GET').toUpperCase()
   const headers = new Headers(init.headers)
 
@@ -73,10 +68,7 @@ export const apiFetch = async (
  * `apiFetch` plus JSON decoding, throwing `ApiError` on a non-`success` body so
  * callers can use try/catch instead of branching on a wrapper object.
  */
-export const apiJson = async <T = unknown>(
-  input: string,
-  init: RequestInit = {}
-): Promise<T> => {
+export const apiJson = async <T = unknown>(input: string, init: RequestInit = {}): Promise<T> => {
   const res = await apiFetch(input, init)
 
   let body: unknown = null
@@ -91,6 +83,7 @@ export const apiJson = async <T = unknown>(
   const envelope = body as {
     success?: boolean
     data?: T
+    timestamp?: string
     error?: { message?: string; code?: string; details?: unknown }
   } | null
 
@@ -104,6 +97,69 @@ export const apiJson = async <T = unknown>(
   }
 
   return envelope?.data as T
+}
+
+/**
+ * `apiJson` plus the server's own completion time for THIS response, and how
+ * long the client waited for it.
+ *
+ * Every envelope already carries `timestamp` (set server-side when the response
+ * was built); it is normally discarded because no screen needs it. The realtime
+ * layer does: `SyncCoordinator.settleRead` has to prove, in *server* time, that a
+ * module was read after the newest write inside it before it can swallow the
+ * first cursor snapshot. A client `Date.now()` cannot prove that — the cursor
+ * timestamps come from the server's clock, and comparing a client clock to a
+ * server clock is exactly the skew that would silently drop a colleague's change.
+ *
+ * That is why `durationMs` belongs with it. The envelope marks when the handler
+ * *finished*, which is after the rows were selected by however long the handler
+ * took; the pair `serverTime - durationMs` is the instant the request can at the
+ * earliest have begun, which is the only instant that can prove it already saw a
+ * given write. The client-side interval is deliberately wider than the server's
+ * query window (it includes connecting, transferring and parsing), so the proof
+ * errs towards revalidating.
+ *
+ * `serverTime` is `null` when the response carried no parseable timestamp, which
+ * makes `settleRead` record no proof and leaves the revalidate-on-first-snapshot
+ * behaviour fully intact.
+ */
+export const apiJsonMeta = async <T = unknown>(
+  input: string,
+  init: RequestInit = {}
+): Promise<{ data: T; serverTime: number | null; durationMs: number }> => {
+  const startedAt = Date.now()
+  const res = await apiFetch(input, init)
+
+  let body: unknown = null
+  try {
+    body = await res.json()
+  } catch {
+    if (!res.ok) throw new ApiError(`Request failed (${res.status})`, res.status)
+    return { data: undefined as T, serverTime: null, durationMs: Date.now() - startedAt }
+  }
+
+  const envelope = body as {
+    success?: boolean
+    data?: T
+    timestamp?: string
+    error?: { message?: string; code?: string; details?: unknown }
+  } | null
+
+  if (!res.ok || envelope?.success === false) {
+    throw new ApiError(
+      envelope?.error?.message ?? `Request failed (${res.status})`,
+      res.status,
+      envelope?.error?.code,
+      envelope?.error?.details
+    )
+  }
+
+  const stamp = envelope?.timestamp ? Date.parse(envelope.timestamp) : NaN
+  return {
+    data: envelope?.data as T,
+    serverTime: Number.isFinite(stamp) ? stamp : null,
+    durationMs: Date.now() - startedAt,
+  }
 }
 
 export const apiPost = <T = unknown>(input: string, body?: unknown) =>

@@ -67,3 +67,11 @@ export class SlidingWindowRateLimiter {
  * above real human typing for a 4-person team, low enough to blunt an auto-loop.
  */
 export const messageSendLimiter = new SlidingWindowRateLimiter(20, 10_000)
+
+/**
+ * Cross-module record search budget: 40 lookups per 10s per user. The reference
+ * picker debounces keystrokes, so this is far above interactive use; it exists
+ * because one search fans out across every module the user can view and a stuck
+ * client should not be able to hammer all of them at message-send volume.
+ */
+export const recordSearchLimiter = new SlidingWindowRateLimiter(40, 10_000)

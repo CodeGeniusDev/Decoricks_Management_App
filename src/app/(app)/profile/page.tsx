@@ -4,13 +4,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { Button } from '@/components/ui/Button'
-import {
-  IconAlert,
-  IconCheck,
-  IconKey,
-  IconLogout,
-  IconShieldCheck,
-} from '@/components/ui/icons'
+import { IconAlert, IconCheck, IconKey, IconLogout, IconShieldCheck } from '@/components/ui/icons'
 import { usePageEnter, useRevealOnMount } from '@/lib/gsap'
 import { roleLabel } from '@/lib/roles'
 import { can } from '@/lib/permissions-client'
@@ -68,7 +62,9 @@ export default function ProfilePage() {
       await signOut()
     } finally {
       setSigningOut(false)
-      window.location.href = '/login'
+      // `replace`, not `href`: same deliberate document hand-off as the header
+      // sign-out, and Back must not return to an authenticated screen.
+      window.location.replace('/login')
     }
   }
 
@@ -167,7 +163,11 @@ function Detail({
       <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</dt>
       <dd
         className={`mt-1 flex items-center gap-1.5 text-sm font-medium ${
-          tone === 'success' ? 'text-status-success' : tone === 'danger' ? 'text-status-danger' : 'text-ink'
+          tone === 'success'
+            ? 'text-status-success'
+            : tone === 'danger'
+              ? 'text-status-danger'
+              : 'text-ink'
         }`}
       >
         {tone === 'success' && <IconCheck size={14} />}

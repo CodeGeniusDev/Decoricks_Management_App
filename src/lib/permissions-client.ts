@@ -1,4 +1,4 @@
-import type { PermissionSet } from '@/lib/models/User';
+import type { PermissionSet } from '@/lib/models/User'
 import {
   LAHORE_STOCK_ROLES,
   PERMISSION_MODULES,
@@ -8,7 +8,7 @@ import {
   SCOPED_SALES_FULL_EDIT,
   isFounderRole,
   type PermissionModule,
-} from '@/lib/roles';
+} from '@/lib/roles'
 
 /**
  * Client-side permission check.
@@ -27,8 +27,8 @@ import {
  */
 
 export interface NavPermissionSource {
-  role: string;
-  permissions?: PermissionSet;
+  role: string
+  permissions?: PermissionSet
 }
 
 /**
@@ -51,25 +51,24 @@ export const setLivePermissions = (permissions?: PermissionSet | null): void => 
 }
 
 /** Explicit source permissions, else the live session matrix, else undefined. */
-const resolvePermissions = (
-  source: NavPermissionSource,
-): PermissionSet | undefined => source.permissions ?? livePermissions ?? undefined
+const resolvePermissions = (source: NavPermissionSource): PermissionSet | undefined =>
+  source.permissions ?? livePermissions ?? undefined
 
 export const can = (source: NavPermissionSource, module: string, action: string): boolean => {
   // The Founder is the root of the trust model and always passes.
-  if (isFounderRole(source.role)) return true;
+  if (isFounderRole(source.role)) return true
 
-  const permissions = resolvePermissions(source);
+  const permissions = resolvePermissions(source)
   if (permissions) {
-    const modulePermissions = permissions[module];
-    if (!modulePermissions) return false;
-    return modulePermissions[action] === true;
+    const modulePermissions = permissions[module]
+    if (!modulePermissions) return false
+    return modulePermissions[action] === true
   }
 
   // Fall back to the SPEC defaults when neither an explicit matrix nor a live
   // session matrix is available.
-  return SPEC_DEFAULT_MATRIX[source.role]?.[module]?.[action] === true;
-};
+  return SPEC_DEFAULT_MATRIX[source.role]?.[module]?.[action] === true
+}
 
 /** SPEC Appendix A, flattened for direct lookup. */
 const SPEC_DEFAULT_MATRIX: Record<
@@ -115,7 +114,7 @@ const SPEC_DEFAULT_MATRIX: Record<
             users: { view: false, create: false, edit: false, delete: false },
           },
   ])
-);
+)
 
 /**
  * Route → module/action pairs guarding it. Drives nav visibility for screens
@@ -149,7 +148,7 @@ export const ROUTE_PERMISSIONS: Record<string, { module: PermissionModule; actio
   '/weekly-summary': [{ module: 'finance', action: 'view' }],
   // SPEC §4.2 Settings and Users rows are Founder-only.
   '/settings': [{ module: 'settings', action: 'view' }],
-};
+}
 
 /**
  * Routes gated on the Founder ROLE rather than any module grant (brief §8 —
@@ -158,13 +157,13 @@ export const ROUTE_PERMISSIONS: Record<string, { module: PermissionModule; actio
  * The server still enforces it with `requireFounder` (a role check, not a
  * grant) — hiding the nav item is a convenience, never the control.
  */
-export const FOUNDER_ONLY_ROUTES = new Set<string>(['/reconciliation']);
+export const FOUNDER_ONLY_ROUTES = new Set<string>(['/reconciliation'])
 
 /** Every check for a route must pass. */
 export const canAccessRoute = (source: NavPermissionSource, pathname: string): boolean => {
   const route = normaliseRoute(pathname)
   // Founder-only screens are decided by the role, before any module lookup.
-  if (FOUNDER_ONLY_ROUTES.has(route)) return isFounderRole(source.role);
+  if (FOUNDER_ONLY_ROUTES.has(route)) return isFounderRole(source.role)
   // Detail routes inherit their section's guard via the longest registered
   // prefix: /budgets/<id> is treated as /budgets, /distributions/<id> as
   // /distributions. Routes with no match at all (e.g. /profile) stay open —
@@ -173,18 +172,18 @@ export const canAccessRoute = (source: NavPermissionSource, pathname: string): b
     ROUTE_PERMISSIONS[route] ??
     Object.entries(ROUTE_PERMISSIONS)
       .filter(([prefix]) => prefix !== '/' && route.startsWith(`${prefix}/`))
-      .sort((a, b) => b[0].length - a[0].length)[0]?.[1];
-  if (!requirements) return true; // no declared requirement, e.g. /profile
-  return requirements.every((req) => can(source, req.module, req.action));
-};
+      .sort((a, b) => b[0].length - a[0].length)[0]?.[1]
+  if (!requirements) return true // no declared requirement, e.g. /profile
+  return requirements.every((req) => can(source, req.module, req.action))
+}
 
 const normaliseRoute = (pathname: string): string => {
-  if (pathname === '/') return '/';
-  const withoutQuery = pathname.split('?')[0].replace(/\/+$/, '');
-  return withoutQuery || '/';
-};
+  if (pathname === '/') return '/'
+  const withoutQuery = pathname.split('?')[0].replace(/\/+$/, '')
+  return withoutQuery || '/'
+}
 
-export const isFounder = (role?: string): boolean => isFounderRole(role);
+export const isFounder = (role?: string): boolean => isFounderRole(role)
 
 /**
  * Display-only mirror of the server's `authorizeStockWrite`
@@ -195,18 +194,15 @@ export const isFounder = (role?: string): boolean => isFounderRole(role);
  * grant covers Lahore *alone*, so a transfer with a Sheikhupura leg is hidden
  * from a Lahore-only Partner exactly as it is refused by the API.
  */
-export const canWriteStockLocation = (
-  source: NavPermissionSource,
-  location: string
-): boolean => {
-  if (isFounderRole(source.role)) return true;
-  if (can(source, 'inventory', 'create')) return true;
-  if (location.toLowerCase() !== 'lahore') return false;
+export const canWriteStockLocation = (source: NavPermissionSource, location: string): boolean => {
+  if (isFounderRole(source.role)) return true
+  if (can(source, 'inventory', 'create')) return true
+  if (location.toLowerCase() !== 'lahore') return false
 
-  const scoped = resolvePermissions(source)?.[SCOPED_LAHORE_STOCK_PERMISSION];
-  if (scoped && typeof scoped.create === 'boolean') return scoped.create;
-  return LAHORE_STOCK_ROLES[source.role] === true;
-};
+  const scoped = resolvePermissions(source)?.[SCOPED_LAHORE_STOCK_PERMISSION]
+  if (scoped && typeof scoped.create === 'boolean') return scoped.create
+  return LAHORE_STOCK_ROLES[source.role] === true
+}
 
 /**
  * Display-only mirror of the `sales.full_edit` grant that guards editing an
@@ -214,11 +210,11 @@ export const canWriteStockLocation = (
  * COD state, so the order form is opened by a different button.
  */
 export const canFullEditOrder = (source: NavPermissionSource): boolean => {
-  if (isFounderRole(source.role)) return true;
-  const scoped = resolvePermissions(source)?.[SCOPED_SALES_FULL_EDIT];
-  if (scoped && typeof scoped.create === 'boolean') return scoped.create;
-  return SALES_FULL_EDIT_ROLES[source.role] === true;
-};
+  if (isFounderRole(source.role)) return true
+  const scoped = resolvePermissions(source)?.[SCOPED_SALES_FULL_EDIT]
+  if (scoped && typeof scoped.create === 'boolean') return scoped.create
+  return SALES_FULL_EDIT_ROLES[source.role] === true
+}
 
 /** Re-exported so the settings screens show the same scoped grants the API checks. */
 export {
@@ -226,4 +222,4 @@ export {
   SALES_FULL_EDIT_ROLES,
   SCOPED_LAHORE_STOCK_PERMISSION,
   SCOPED_SALES_FULL_EDIT,
-};
+}

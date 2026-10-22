@@ -1,13 +1,6 @@
 'use client'
 
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import type { PermissionSet } from '@/lib/models/User'
 import { setLivePermissions } from '@/lib/permissions-client'

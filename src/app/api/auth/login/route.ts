@@ -7,11 +7,7 @@ import { getRequestMeta, handleRouteError } from '@/lib/http'
 import { getRole } from '@/lib/authorization'
 import { verifyPassword } from '@/lib/auth/password'
 import { createSession, writeSessionCookies } from '@/lib/auth/session'
-import {
-  clearLoginAttempts,
-  getLockoutStatus,
-  recordLoginAttempt,
-} from '@/lib/auth/lockout'
+import { clearLoginAttempts, getLockoutStatus, recordLoginAttempt } from '@/lib/auth/lockout'
 import { recordAuditEntry } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
@@ -93,7 +89,8 @@ export async function POST(request: Request) {
         action: 'login_failed',
         entityType: 'user',
         entityId: user?._id ?? null,
-        details: user && !user.isActive ? 'Login attempt on a deactivated account' : 'Invalid credentials',
+        details:
+          user && !user.isActive ? 'Login attempt on a deactivated account' : 'Invalid credentials',
         outcome: 'failure',
         ipAddress: meta.ipAddress,
         userAgent: meta.userAgent,

@@ -10,6 +10,7 @@ import {
 import { CsrfError } from '@/lib/auth/session'
 import { errorResponse } from '@/lib/api-response'
 import { isTransientMongoError } from '@/lib/mongo-errors'
+import { labelFromArgs, withTrace } from '@/lib/timing'
 
 /**
  * Shared route plumbing.
@@ -50,9 +51,34 @@ export class HttpError extends Error {
 export const getRequestMeta = async (): Promise<RequestMeta> => {
   const h = await headers()
   const forwarded = h.get('x-forwarded-for')
-  const ipAddress =
-    forwarded?.split(',')[0]?.trim() || h.get('x-real-ip') || undefined
+  const ipAddress = forwarded?.split(',')[0]?.trim() || h.get('x-real-ip') || undefined
   return { ipAddress, userAgent: h.get('user-agent') ?? undefined }
+}
+
+/**
+ * Did the CLIENT give up on this request before the handler finished?
+ *
+ * Observed in the Phase 5 production-build Playwright run as
+ * `[api-error <id>] Error: aborted`, thrown while a tab was being taken offline
+ * mid-flight (`phase7-chat.spec.ts › going offline …`). In production the same
+ * shape appears whenever a user closes a tab or a proxy drops a slow connection.
+ * That is a normal event, not a server fault, and logging it in the same
+ * `[api-error]` format makes the 5xx signal an operator watches lie — the exact
+ * misleading-status problem Phase 5 §6 asks to remove.
+ *
+ * The response is unchanged (the client is gone; whatever we answer is
+ * discarded), and the event is still logged with its name and message, so a real
+ * abort-like failure is never swallowed — it is only labelled as what it is.
+ */
+const isClientDisconnect = (error: unknown): boolean => {
+  const candidate = error as { name?: string; message?: string; code?: string } | null
+  if (!candidate) return false
+  return (
+    candidate.name === 'AbortError' ||
+    candidate.message === 'aborted' ||
+    candidate.code === 'ERR_ABORTED' ||
+    candidate.code === 'ERR_STREAM_PREMATURE_CLOSE'
+  )
 }
 
 /**
@@ -67,10 +93,60 @@ const logServerError = (error: unknown, traceId: string): void => {
   const name = error instanceof Error ? error.name : typeof error
   const message = error instanceof Error ? error.message : String(error)
   const stack = error instanceof Error ? error.stack : undefined
+  if (isClientDisconnect(error)) {
+    console.warn(`[api-abort] ${name}: ${message}`)
+    return
+  }
   console.error(`[api-error ${traceId}] ${name}: ${message}`)
   if (stack && process.env.NODE_ENV !== 'production') {
     console.error(stack)
   }
+}
+
+/**
+ * The status a thrown error will be answered with, or `undefined` when the
+ * error is unexpected and `handleRouteError` will mint a 500/503 for it.
+ *
+ * Kept next to `handleRouteError` rather than beside the route handlers so the
+ * two can never disagree about what a given error means.
+ */
+const expectedRejection = (error: unknown): { status: number; code: string } | undefined => {
+  if (error instanceof AuthenticationError) return { status: 401, code: 'UNAUTHENTICATED' }
+  if (error instanceof PasswordChangeRequiredError) {
+    return { status: 403, code: 'PASSWORD_CHANGE_REQUIRED' }
+  }
+  if (error instanceof AuthorizationError) return { status: 403, code: 'FORBIDDEN' }
+  if (error instanceof CsrfError) return { status: 403, code: 'INVALID_CSRF' }
+  if (error instanceof ZodError) return { status: 400, code: 'VALIDATION_ERROR' }
+  if (error instanceof HttpError) return { status: error.status, code: error.code }
+  // A duplicate key on the idempotency/concurrency guards is an expected race,
+  // answered 409 by the handler that caught it — not a server fault.
+  if ((error as { code?: number } | null)?.code === 11000) return { status: 409, code: 'CONFLICT' }
+  return undefined
+}
+
+/**
+ * Records a refused request in the server log: one line, no stack.
+ *
+ * Route handlers used to open every catch with `console.error('<route> failed:',
+ * error)`, which logged a full stack for refusals that are the correct answer —
+ * an expired session (401), a Partner poking a Founder-only route (403), a form
+ * submitted with an invalid field (400). On a production server that drowns out
+ * the 5xx entries an operator actually needs, and Phase 5 §6 asks for the
+ * recurring-401/403/404/409 signal specifically.
+ *
+ * So: expected rejections get a compact, greppable line. Anything unexpected
+ * logs nothing here, because `handleRouteError` follows immediately and emits the
+ * full record with the trace id the client was given — logging it twice would
+ * just double the noise.
+ */
+export const logRouteFailure = (context: string, error: unknown): void => {
+  const rejection = expectedRejection(error)
+  // No expected rejection, or an `HttpError` that carries a 5xx: in both cases
+  // this is a server fault and `handleRouteError` owns the record.
+  if (!rejection || rejection.status >= 500) return
+  const message = error instanceof Error ? error.message : String(error)
+  console.warn(`[api-refusal] ${context} ${rejection.status} ${rejection.code}: ${message}`)
 }
 
 /**
@@ -113,7 +189,10 @@ export const handleRouteError = (error: unknown): NextResponse => {
   const traceId = randomUUID()
   logServerError(error, traceId)
 
-  if (isTransientMongoError(error) || (error instanceof Error && error.message === 'Database connection failed')) {
+  if (
+    isTransientMongoError(error) ||
+    (error instanceof Error && error.message === 'Database connection failed')
+  ) {
     return errorResponse(
       'The database is temporarily unavailable. Please try again.',
       503,
@@ -122,12 +201,9 @@ export const handleRouteError = (error: unknown): NextResponse => {
     )
   }
 
-  return errorResponse(
-    'Something went wrong. Please try again.',
-    500,
-    'INTERNAL_ERROR',
-    { traceId }
-  )
+  return errorResponse('Something went wrong. Please try again.', 500, 'INTERNAL_ERROR', {
+    traceId,
+  })
 }
 
 /**
@@ -140,12 +216,16 @@ export const handleRouteError = (error: unknown): NextResponse => {
  * Note this is *not* where CSRF is enforced: that happens inside
  * `getAuthenticatedUser` so it cannot be forgotten by a route that does not use
  * this wrapper.
+ *
+ * It is also where a `API_TIMING=1` trace opens — one per request, labelled with
+ * the method and pathname — because this is the only seam every protected handler
+ * passes through. With the flag off `withTrace` is a bare call.
  */
 export const withAuth =
   <T extends unknown[]>(handler: (...args: T) => Promise<Response>) =>
   async (...args: T): Promise<Response> => {
     try {
-      return await handler(...args)
+      return await withTrace(labelFromArgs(args), () => handler(...args))
     } catch (error) {
       return handleRouteError(error)
     }

@@ -4,12 +4,7 @@ import { ObjectId } from 'mongodb'
 import type { Db } from 'mongodb'
 import { getEnv } from '@/lib/env'
 import { getDatabase, withMongoRetry } from '@/lib/mongodb'
-import {
-  getSessionCollection,
-  getUserCollection,
-  type Session,
-  type User,
-} from '@/lib/models/User'
+import { getSessionCollection, getUserCollection, type Session, type User } from '@/lib/models/User'
 
 /**
  * Re-runs a read against a freshly acquired handle. A transient driver failure
@@ -36,8 +31,7 @@ export const SESSION_BACKGROUND_HEADER = 'x-session-background'
 const SESSION_TTL_MS = () => getEnv().SESSION_TTL_MINUTES * 60 * 1000
 
 /** Session tokens are stored hashed so a database leak cannot be replayed. */
-export const hashToken = (token: string): string =>
-  createHash('sha256').update(token).digest('hex')
+export const hashToken = (token: string): string => createHash('sha256').update(token).digest('hex')
 
 export const generateToken = (): string => randomBytes(32).toString('base64url')
 
@@ -95,7 +89,11 @@ export const writeSessionCookies = async (token: string, csrfToken: string) => {
   const opts = sessionCookieOptions()
   const store = await cookies()
 
-  store.set(SESSION_COOKIE, token, { ...baseCookie, secure: opts.secure, maxAge: opts.maxAgeSeconds })
+  store.set(SESSION_COOKIE, token, {
+    ...baseCookie,
+    secure: opts.secure,
+    maxAge: opts.maxAgeSeconds,
+  })
   // Readable by JS on purpose: the client echoes this exact value back in the
   // CSRF header. Stored signed so an attacker-injected cookie fails validation.
   store.set(CSRF_COOKIE, buildCsrfCookieValue(csrfToken), {
@@ -113,9 +111,7 @@ export const writeSessionCookies = async (token: string, csrfToken: string) => {
  * Signing it with SESSION_SECRET means an injected value will not validate.
  */
 export const signCsrfToken = (csrfToken: string): string =>
-  createHash('sha256')
-    .update(`${csrfToken}:${getEnv().SESSION_SECRET}`)
-    .digest('hex')
+  createHash('sha256').update(`${csrfToken}:${getEnv().SESSION_SECRET}`).digest('hex')
 
 /**
  * Cookie payload: `<csrfToken>.<hmac>`. Keeping the token alongside the
@@ -229,19 +225,41 @@ export const getAuthenticatedUser = async (
   const resolved = token ?? store.get(SESSION_COOKIE)?.value
   if (!resolved) return null
 
-  const session = await withDbRetry((database) =>
-    getSessionCollection(database).findOne({ tokenHash: hashToken(resolved) })
+  // ONE round trip, not two. An indexed read against this cluster costs ~65ms
+  // and it is almost entirely network, not query work (measured in Phase 4 §1 by
+  // `scripts/db-probe.ts`), so the previous session-then-user sequence charged
+  // every authenticated request double that — including the small ones the shell
+  // fires several times per page. `$lookup` joins on `users._id` (the primary
+  // key) after the unique `sessions.tokenHash` index has already narrowed the
+  // session to one document, so the plan is unchanged, only the number of
+  // back-and-forths.
+  const records = await withDbRetry((database) =>
+    getSessionCollection(database)
+      .aggregate<Session & { linkedUser?: User[] }>([
+        { $match: { tokenHash: hashToken(resolved) } },
+        { $limit: 1 },
+        {
+          $lookup: {
+            from: getUserCollection(database).collectionName,
+            localField: 'userId',
+            foreignField: '_id',
+            as: 'linkedUser',
+          },
+        },
+      ])
+      .toArray()
   )
-  if (!session) return null
+  const joined = records[0]
+  if (!joined) return null
 
+  const { linkedUser, ...sessionRecord } = joined
+  const session: Session = sessionRecord
   if (session.expiresAt.getTime() <= Date.now()) {
     await withDbRetry((database) => getSessionCollection(database).deleteOne({ _id: session._id }))
     return null
   }
 
-  const user = await withDbRetry((database) =>
-    getUserCollection(database).findOne({ _id: session.userId })
-  )
+  const user = linkedUser?.[0]
   if (!user || !user.isActive) return null
   if (user.sessionVersion !== session.sessionVersion) return null
 

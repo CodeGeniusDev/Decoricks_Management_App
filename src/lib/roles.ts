@@ -255,10 +255,7 @@ export const PERMISSION_ACTIONS = ['view', 'create', 'edit', 'delete', 'approve'
 export const TASK_BOARD_ACTIONS = ['editOthers', 'deleteOthers', 'comment', 'manage'] as const
 
 /** Every action key a stored role may legitimately contain, across all modules. */
-export const ALL_PERMISSION_ACTIONS = [
-  ...PERMISSION_ACTIONS,
-  ...TASK_BOARD_ACTIONS,
-] as const
+export const ALL_PERMISSION_ACTIONS = [...PERMISSION_ACTIONS, ...TASK_BOARD_ACTIONS] as const
 
 /**
  * Human labels used by the permissions matrix screen.

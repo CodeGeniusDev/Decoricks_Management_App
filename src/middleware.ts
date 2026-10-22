@@ -29,8 +29,7 @@ const isPublic = (pathname: string): boolean =>
   PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`))
 
 /** API routes answer with JSON status codes, never a redirect. */
-const wantsJson = (request: NextRequest): boolean =>
-  request.nextUrl.pathname.startsWith('/api/')
+const wantsJson = (request: NextRequest): boolean => request.nextUrl.pathname.startsWith('/api/')
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -89,6 +88,7 @@ export const config = {
   // must likewise be reachable without a session. This is a usability gate, not
   // the security boundary (authorization stays in `src/lib/authorization.ts`),
   // so letting unauthenticated *static files* through is safe.
-  matcher:
-    ['/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|offline.html|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest)$).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|offline.html|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest)$).*)',
+  ],
 }
