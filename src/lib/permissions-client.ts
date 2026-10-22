@@ -1,11 +1,10 @@
 import type { PermissionSet } from '@/lib/models/User'
 import {
   LAHORE_STOCK_ROLES,
-  PERMISSION_MODULES,
-  ROLE_NAMES,
   SALES_FULL_EDIT_ROLES,
   SCOPED_LAHORE_STOCK_PERMISSION,
   SCOPED_SALES_FULL_EDIT,
+  SPEC_ROLES,
   isFounderRole,
   type PermissionModule,
 } from '@/lib/roles'
@@ -54,10 +53,16 @@ export const setLivePermissions = (permissions?: PermissionSet | null): void => 
 const resolvePermissions = (source: NavPermissionSource): PermissionSet | undefined =>
   source.permissions ?? livePermissions ?? undefined
 
+/**
+ * Defaults visible to the UI before `/api/auth/me` resolves.
+ *
+ * The Founder is deliberately *not* short-circuited to `true`: the server's
+ * `authorize()` reads the stored role document and denies what it does not
+ * grant, including for the Founder (the seeded Founder role is full on every
+ * module except `settings`, which is view+edit only). Mirroring that keeps a
+ * button from appearing in front of a request that would 403.
+ */
 export const can = (source: NavPermissionSource, module: string, action: string): boolean => {
-  // The Founder is the root of the trust model and always passes.
-  if (isFounderRole(source.role)) return true
-
   const permissions = resolvePermissions(source)
   if (permissions) {
     const modulePermissions = permissions[module]
@@ -65,55 +70,23 @@ export const can = (source: NavPermissionSource, module: string, action: string)
     return modulePermissions[action] === true
   }
 
-  // Fall back to the SPEC defaults when neither an explicit matrix nor a live
-  // session matrix is available.
+  // Fall back to the seeded role defaults when neither an explicit matrix nor
+  // a live session matrix is available.
   return SPEC_DEFAULT_MATRIX[source.role]?.[module]?.[action] === true
 }
 
-/** SPEC Appendix A, flattened for direct lookup. */
-const SPEC_DEFAULT_MATRIX: Record<
-  string,
-  Record<string, Record<string, boolean>>
-> = Object.fromEntries(
-  ROLE_NAMES.map((role) => [
-    role,
-    role === 'founder'
-      ? Object.fromEntries(
-          PERMISSION_MODULES.map((module) => [
-            module,
-            {
-              view: true,
-              create: true,
-              edit: true,
-              delete: true,
-              approve: true,
-            },
-          ])
-        )
-      : role === 'partner_hasnat'
-        ? {
-            finance: { view: true, create: false, edit: false, delete: false, approve: false },
-            budget: { view: true, create: false, edit: false, delete: false, approve: false },
-            inventory: { view: true, create: false, edit: false, delete: false },
-            sales: { view: true, create: true, edit: true, delete: false },
-            tasks: { view: true, create: true, edit: true, delete: true },
-            chat: { view: true, create: true, edit: true, delete: true },
-            suppliers: { view: true, create: false, edit: false, delete: false },
-            settings: { view: false, create: false, edit: false, delete: false },
-            users: { view: false, create: false, edit: false, delete: false },
-          }
-        : {
-            finance: { view: true, create: false, edit: false, delete: false, approve: false },
-            budget: { view: true, create: false, edit: false, delete: false, approve: false },
-            inventory: { view: true, create: false, edit: false, delete: false },
-            sales: { view: true, create: false, edit: false, delete: false },
-            tasks: { view: true, create: true, edit: true, delete: true },
-            chat: { view: true, create: true, edit: true, delete: true },
-            suppliers: { view: true, create: false, edit: false, delete: false },
-            settings: { view: false, create: false, edit: false, delete: false },
-            users: { view: false, create: false, edit: false, delete: false },
-          },
-  ])
+/**
+ * SPEC Appendix A defaults, taken straight from the same `SPEC_ROLES` the
+ * server seeds into the `roles` collection.
+ *
+ * This used to be a second, hand-written copy of the matrix, which inevitably
+ * drifted: the fallback gave partners no `tasks.comment`, and gave the Founder
+ * `create`/`delete` on `settings` that the seeded role does not have. Deriving
+ * it removes the duplication — there is now exactly one source of truth for
+ * the defaults.
+ */
+const SPEC_DEFAULT_MATRIX: Record<string, PermissionSet> = Object.fromEntries(
+  SPEC_ROLES.map((role) => [role.name, role.permissions])
 )
 
 /**
