@@ -8,9 +8,9 @@ export const AUTH_DIR = path.join(__dirname, '.auth')
 export const FOUNDER_STATE = path.join(AUTH_DIR, 'founder.json')
 export const AFNAN_STATE = path.join(AUTH_DIR, 'afnan.json')
 
-export const FOUNDER_EMAIL = process.env.E2E_FOUNDER_EMAIL ?? 'abdullah@decoricks.com'
+export const FOUNDER_EMAIL = process.env.E2E_FOUNDER_EMAIL ?? process.env.E2E_EMAIL ?? ''
 export const AFNAN_EMAIL = process.env.E2E_AFNAN_EMAIL ?? 'afnan@decoricks.com'
-export const E2E_PASSWORD = process.env.E2E_PASSWORD ?? 'Decoricks2026'
+export const E2E_PASSWORD = process.env.E2E_PASSWORD ?? ''
 
 export const CSRF_COOKIE = 'decoricks_csrf'
 export const CSRF_HEADER = 'x-csrf-token'

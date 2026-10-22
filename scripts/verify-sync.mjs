@@ -3,7 +3,7 @@
 // two independent authenticated sessions (separate cookie jars = separate
 // "devices"). Used because Chromium cannot launch in this sandbox.
 const BASE = process.env.VERIFY_BASE || 'http://localhost:3222'
-const PASSWORD = process.env.E2E_PASSWORD || 'Decoricks2026'
+const PASSWORD = process.env.E2E_PASSWORD || ''
 
 let failures = 0
 const ok = (label) => console.log(`  PASS  ${label}`)
@@ -57,7 +57,7 @@ const tasksCursor = async (cookies) => {
 ;(async () => {
   console.log(`\nRealtime cross-device verification @ ${BASE} (isolated test DB)\n`)
 
-  const deviceA = await login('abdullah@decoricks.com') // Founder — writes
+  const deviceA = await login(process.env.E2E_FOUNDER_EMAIL || '') // Founder — writes
   const deviceB = await login('afnan@decoricks.com') // Partner — separate session/device
   ok('two independent authenticated sessions established')
 

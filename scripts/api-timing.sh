@@ -17,8 +17,8 @@
 # answers 404 in about 3ms and looks like the fastest endpoint on the app.
 BASE=http://localhost:3111
 JAR=/tmp/probe-cookies.txt
-EMAIL=${E2E_FOUNDER_EMAIL:-abdullah@decoricks.com}
-PASSWORD=${E2E_PASSWORD:-Decoricks2026}
+EMAIL=${E2E_FOUNDER_EMAIL:-}
+PASSWORD=${E2E_PASSWORD:-}
 
 curl -s -c "$JAR" -o /dev/null -X POST "$BASE/api/auth/login" \
   -H 'Content-Type: application/json' \

@@ -23,8 +23,8 @@ import { chromium, type Browser, type BrowserContext, type Page } from '@playwri
 import fs from 'node:fs'
 
 const BASE = process.env.PERF_BASE_URL ?? 'http://localhost:3111'
-const EMAIL = process.env.E2E_FOUNDER_EMAIL ?? 'abdullah@decoricks.com'
-const PASSWORD = process.env.E2E_PASSWORD ?? 'Decoricks2026'
+const EMAIL = process.env.E2E_FOUNDER_EMAIL ?? ''
+const PASSWORD = process.env.E2E_PASSWORD ?? ''
 
 /**
  * Route selector. `RESP_ROUTES=/,/tasks` runs an exact set — a full 23-route ×

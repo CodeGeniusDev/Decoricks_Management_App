@@ -26,8 +26,8 @@
 import { chromium } from '@playwright/test'
 
 const BASE_URL = process.env.PROBE_BASE_URL ?? 'http://localhost:3111'
-const EMAIL = process.env.E2E_FOUNDER_EMAIL ?? 'abdullah@decoricks.com'
-const PASSWORD = process.env.E2E_PASSWORD ?? 'Decoricks2026'
+const EMAIL = process.env.E2E_FOUNDER_EMAIL ?? ''
+const PASSWORD = process.env.E2E_PASSWORD ?? ''
 const LABEL = process.argv.includes('--label')
   ? process.argv[process.argv.indexOf('--label') + 1]
   : 'baseline'

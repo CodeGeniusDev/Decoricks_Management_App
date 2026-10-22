@@ -64,9 +64,9 @@ const loadEnvLocal = (): void => {
 loadEnvLocal()
 
 const E2E_DB = process.env.E2E_DB ?? process.env.MONGODB_TEST_DB ?? 'decoricks_test'
-const FOUNDER_EMAIL = (process.env.E2E_FOUNDER_EMAIL ?? 'abdullah@decoricks.com').toLowerCase()
+const FOUNDER_EMAIL = (process.env.E2E_FOUNDER_EMAIL ?? '').toLowerCase()
 const AFNAN_EMAIL = (process.env.E2E_AFNAN_EMAIL ?? 'afnan@decoricks.com').toLowerCase()
-const E2E_PASSWORD = process.env.E2E_PASSWORD ?? 'Decoricks2026'
+const E2E_PASSWORD = process.env.E2E_PASSWORD ?? ''
 
 const SPEC_EXPENSE_CATEGORIES: Array<[name: string, label: string]> = [
   ['meta_ads', 'Meta Ads'],

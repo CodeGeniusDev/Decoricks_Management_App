@@ -41,8 +41,8 @@ import {
 import fs from 'node:fs'
 
 const BASE = process.env.PERF_BASE_URL ?? 'http://localhost:3111'
-const EMAIL = process.env.E2E_FOUNDER_EMAIL ?? 'abdullah@decoricks.com'
-const PASSWORD = process.env.E2E_PASSWORD ?? 'Decoricks2026'
+const EMAIL = process.env.E2E_FOUNDER_EMAIL ?? ''
+const PASSWORD = process.env.E2E_PASSWORD ?? ''
 const REPEATS = Number(process.env.PERF_REPEATS ?? 3)
 
 /** The screens named in Phase 4 §7, plus the sub-pages reachable from them. */
