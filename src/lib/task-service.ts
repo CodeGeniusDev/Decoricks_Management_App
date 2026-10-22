@@ -319,7 +319,7 @@ export async function createBoardWithDefaults(
  */
 export async function createTaskNumber(col: Collection<TaskDoc>): Promise<string> {
   const now = new Date()
-  const ym = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+  const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
   const prefix = `TASK-${ym}`
 
   for (let attempt = 0; attempt < 5; attempt++) {

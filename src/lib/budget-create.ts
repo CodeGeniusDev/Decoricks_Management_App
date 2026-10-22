@@ -43,7 +43,7 @@ const isIdempotencyDuplicate = (e: unknown) =>
 /** Builds `BUDGET-YYYYMM-NNNN` from the highest existing number in the month. */
 async function nextBudgetNumber(col: Collection<Budget>): Promise<string> {
   const now = getKarachiDate()
-  const prefix = `BUDGET-${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+  const prefix = `BUDGET-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const highest = await col

@@ -35,7 +35,7 @@ export interface SerialSpec {
 
 /** `SO-YYYYMM` for the given base label, using the same clock as the records. */
 export const monthPrefix = (base: string, date = getKarachiDate()): string =>
-  `${base}-${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+  `${base}-${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`
 
 const parseSeq = (value: unknown, prefix: string): number => {
   const text = typeof value === 'string' ? value : ''
