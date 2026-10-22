@@ -627,6 +627,9 @@ export const reverseLedgerEntry = async (
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
     })
+  } else if (opts.session) {
+    // When called inside a transaction, defer audit until after commit in
+    // the route to keep the write set transactional and consistent.
   }
 
   return { doc: reversal, created: true }

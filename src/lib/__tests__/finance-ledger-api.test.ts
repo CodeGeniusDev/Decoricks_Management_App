@@ -48,12 +48,23 @@ const collections: Record<string, unknown> = {
 vi.mock('@/lib/mongodb', () => ({
   getDatabase: vi.fn(async () => ({ collection: (name: string) => collections[name] })),
   withMongoRetry: vi.fn(async (fn: () => Promise<unknown>) => fn()),
-}));
+  getMongoClient: vi.fn(async () => ({
+    startSession: vi.fn(() => ({
+      withTransaction: vi.fn(async (fn: (s: unknown) => Promise<void>) => fn({ id: 'tx' })),
+      endSession: vi.fn(async () => undefined),
+    })),
+  })),
+}))
 
-vi.mock('@/lib/models/Ledger', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/models/Ledger')>('@/lib/models/Ledger');
-  return { ...actual, ensureLedgerIndexes: vi.fn(async () => undefined) };
-});
+vi.mock('@/lib/stock-service', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/stock-service')>(
+    '@/lib/stock-service'
+  )
+  return {
+    ...actual,
+    runInTransaction: vi.fn(async (fn: (session: unknown) => Promise<unknown>) => fn({ id: 'tx' })),
+  }
+})
 
 /* ------------------------------- fixtures --------------------------------- */
 
