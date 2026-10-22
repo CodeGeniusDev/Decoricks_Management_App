@@ -1,9 +1,37 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { syncCoordinator } from './coordinator'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { syncCoordinator, type SyncSubscription } from './coordinator'
 import { subscribeConnection, type ConnectionState, type ConnectionMode } from './connection'
 import type { SyncModule } from './types'
+
+/**
+ * The read-tracking handle `useRealtimeSync` hands to a component.
+ *
+ * Three calls around one read let the sync layer tell a change that needs
+ * re-fetching apart from a duplicate of a request already in flight:
+ *
+ * ```ts
+ * const sync = useRealtimeSync('finance', refresh)
+ * sync.begin()
+ * try {
+ *   const { data, serverTime, durationMs } = await apiJsonMeta('/api/finance/transactions')
+ *   sync.settle(serverTime, durationMs)
+ *   setData(data)
+ * } catch {
+ *   sync.abandon()
+ * }
+ * ```
+ *
+ * `begin`/`abandon` are optional in the sense that omitting them cannot lose a
+ * change: with no outstanding-read bookkeeping the coordinator behaves exactly
+ * as it did before, refetching on the first snapshot.
+ */
+export interface RealtimeReadTracker {
+  begin: () => void
+  settle: (serverTime: number | null | undefined, durationMs?: number) => void
+  abandon: () => void
+}
 
 /**
  * Subscribe a component to cross-device changes for one module.
@@ -18,23 +46,50 @@ import type { SyncModule } from './types'
  * `enabled` lets a page stop listening while it's not safe to refresh (a modal
  * open, a drag in flight) without tearing down the shared transport for other
  * subscribers.
+ *
+ * Returns the read tracker for this subscription (see `RealtimeReadTracker`).
+ * It exists because the correctness rule in `sync/coordinator.ts` cannot tell,
+ * on its own, that the page has *just* been served the rows the baseline is
+ * offering to re-fetch — or that a read carrying them is still on the wire.
+ * Measured on the production build, that missing evidence cost an identical
+ * second wave of requests on every document load.
  */
 export function useRealtimeSync(
   module: SyncModule,
   onChanged: () => void | Promise<unknown>,
   enabled = true
-): void {
+): RealtimeReadTracker {
   const callbackRef = useRef(onChanged)
   useEffect(() => {
     callbackRef.current = onChanged
   }, [onChanged])
 
+  const subscriptionRef = useRef<SyncSubscription | null>(null)
+
   useEffect(() => {
     if (!enabled) return
-    return syncCoordinator.subscribe(module, () => {
+    const subscription = syncCoordinator.register(module, () => {
       void callbackRef.current()
     })
+    subscriptionRef.current = subscription
+    return () => {
+      if (subscriptionRef.current === subscription) subscriptionRef.current = null
+      subscription.dispose()
+    }
   }, [module, enabled])
+
+  // Stable identity, so callers can keep it in a `useCallback` dependency list.
+  // Marks made while unsubscribed are dropped rather than remembered: a component
+  // that stopped listening has no claim about what is on screen.
+  return useMemo<RealtimeReadTracker>(
+    () => ({
+      begin: () => subscriptionRef.current?.beginRead(),
+      settle: (serverTime, durationMs) =>
+        subscriptionRef.current?.settleRead(serverTime, durationMs),
+      abandon: () => subscriptionRef.current?.abandonRead(),
+    }),
+    []
+  )
 }
 
 /**

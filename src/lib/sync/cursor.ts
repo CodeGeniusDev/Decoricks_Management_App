@@ -24,7 +24,13 @@ type Source = {
   filter?: Document
 }
 
-const SOURCES: Record<Exclude<SyncModule, 'notifications'>, Source[]> = {
+/**
+ * Exported solely so the realtime contract test can read it: every collection
+ * named here must also appear in `COLLECTION_MODULES`, because a write the
+ * polling cursor sees but the change stream does not map is a write that never
+ * arrives live. That divergence (finance) is a real defect Phase 5 found.
+ */
+export const SOURCES: Record<Exclude<SyncModule, 'notifications'>, Source[]> = {
   tasks: [
     // Rides the existing `{ isArchived: 1, updatedAt: -1 }` compound index.
     {
@@ -158,7 +164,4 @@ export async function computeCursor(
   return cursor
 }
 
-export const SYNC_MODULES = [
-  ...(Object.keys(SOURCES) as SyncModule[]),
-  ...USER_SCOPED_MODULES,
-]
+export const SYNC_MODULES = [...(Object.keys(SOURCES) as SyncModule[]), ...USER_SCOPED_MODULES]

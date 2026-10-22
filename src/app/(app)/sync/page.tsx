@@ -170,6 +170,7 @@ export default function SyncPage() {
         />
       </MetricGrid>
 
+
       <PageSection
         title="Queue"
         description="Newest attempts at the bottom; rows stay until resolved."
@@ -183,7 +184,7 @@ export default function SyncPage() {
           <EmptyState
             icon={<IconCheck size={20} />}
             title="Nothing waiting"
-            description="Entries appear here the moment you save one offline and disappear once the server confirms them."
+            description="Entries appear here the moment you save one offline and leave once the server confirms them. Nothing is waiting, so nothing is unsynced on this device."
           />
         ) : (
           <div className="space-y-2">

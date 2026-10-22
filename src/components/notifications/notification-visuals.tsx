@@ -4,6 +4,7 @@ import React from 'react'
 import {
   IconAlert,
   IconBudgets,
+  IconChat,
   IconClock,
   IconInventory,
   IconMoney,
@@ -31,9 +32,17 @@ const VISUALS: Record<NotificationType, { Icon: IconType; className: string }> =
   sync_failure: { Icon: IconOffline, className: 'bg-status-danger-bg text-status-danger' },
   sync_conflict: { Icon: IconSwap, className: 'bg-status-warning-bg text-status-warning' },
   financial_event: { Icon: IconMoney, className: 'bg-status-info-bg text-status-info' },
+  // Neutral/info pair: a mention is a request for attention, never an error.
+  mention: { Icon: IconChat, className: 'bg-status-info-bg text-status-info' },
 }
 
-export const NotificationGlyph = ({ type, size = 16 }: { type: NotificationType; size?: number }) => {
+export const NotificationGlyph = ({
+  type,
+  size = 16,
+}: {
+  type: NotificationType
+  size?: number
+}) => {
   const { Icon, className } = VISUALS[type]
   return (
     <span

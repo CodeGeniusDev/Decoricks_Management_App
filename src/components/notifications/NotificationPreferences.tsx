@@ -41,6 +41,7 @@ const DESCRIPTIONS: Record<NotificationType, string> = {
   sync_failure: 'An offline entry you queued could not be saved.',
   sync_conflict: 'An offline entry clashes with server data and needs you.',
   financial_event: 'Withdrawals, locked distributions, and large expenses.',
+  mention: 'When someone types @your name in a team chat message.',
 }
 
 export const NotificationPreferences = () => {
@@ -56,7 +57,9 @@ export const NotificationPreferences = () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await apiJson<{ preferences: NotificationPrefs }>('/api/notifications/preferences')
+      const res = await apiJson<{ preferences: NotificationPrefs }>(
+        '/api/notifications/preferences'
+      )
       setPrefs(res.preferences)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load your notification settings')
@@ -69,30 +72,39 @@ export const NotificationPreferences = () => {
     void load()
   }, [load])
 
-  const toggle = useCallback(async (type: NotificationType, enabled: boolean) => {
-    if (NON_MUTEABLE_TYPES.has(type)) return
-    if (savingRef.current.has(type)) return
-    savingRef.current.add(type)
-    const previous = prefs
-    // Optimistic — the switch responds instantly, then the server confirms.
-    setPrefs((current) => (current ? { ...current, [type]: { enabled } } : current))
-    try {
-      const res = await apiJson<{ preferences: NotificationPrefs }>('/api/notifications/preferences', {
-        method: 'PATCH',
-        body: JSON.stringify({ preferences: { [type]: { enabled } } }),
-      })
-      setPrefs(res.preferences)
-      setToast({ type: 'success', message: `${NOTIFICATION_TYPE_LABELS[type]} ${enabled ? 'on' : 'off'}.` })
-    } catch (err) {
-      if (previous) setPrefs(previous)
-      setToast({
-        type: 'error',
-        message: err instanceof Error ? err.message : 'Could not save that change.',
-      })
-    } finally {
-      savingRef.current.delete(type)
-    }
-  }, [prefs])
+  const toggle = useCallback(
+    async (type: NotificationType, enabled: boolean) => {
+      if (NON_MUTEABLE_TYPES.has(type)) return
+      if (savingRef.current.has(type)) return
+      savingRef.current.add(type)
+      const previous = prefs
+      // Optimistic — the switch responds instantly, then the server confirms.
+      setPrefs((current) => (current ? { ...current, [type]: { enabled } } : current))
+      try {
+        const res = await apiJson<{ preferences: NotificationPrefs }>(
+          '/api/notifications/preferences',
+          {
+            method: 'PATCH',
+            body: JSON.stringify({ preferences: { [type]: { enabled } } }),
+          }
+        )
+        setPrefs(res.preferences)
+        setToast({
+          type: 'success',
+          message: `${NOTIFICATION_TYPE_LABELS[type]} ${enabled ? 'on' : 'off'}.`,
+        })
+      } catch (err) {
+        if (previous) setPrefs(previous)
+        setToast({
+          type: 'error',
+          message: err instanceof Error ? err.message : 'Could not save that change.',
+        })
+      } finally {
+        savingRef.current.delete(type)
+      }
+    },
+    [prefs]
+  )
 
   if (loading) {
     return (

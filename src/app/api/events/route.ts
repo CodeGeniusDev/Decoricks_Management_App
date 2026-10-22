@@ -1,12 +1,12 @@
 import { NextRequest } from 'next/server'
-import { authorize, requireAuth } from '@/lib/authorization'
+import { discoverViewScopes } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { handleRouteError } from '@/lib/http'
-import { computeCursor, ensureSyncIndexes, SYNC_MODULES } from '@/lib/sync/cursor'
+import { computeCursor, ensureSyncIndexes } from '@/lib/sync/cursor'
 import type { SyncModule } from '@/lib/sync/types'
 import type { PermissionModule } from '@/lib/models/User'
 import { realtimeBus } from '@/lib/realtime/bus'
-import { ensureChangeStreamWatcher } from '@/lib/realtime/watcher'
+import { awaitChangeStreamOpen, ensureChangeStreamWatcher } from '@/lib/realtime/watcher'
 import type { RealtimeSignal } from '@/lib/realtime/types'
 
 /**
@@ -22,7 +22,10 @@ import type { RealtimeSignal } from '@/lib/realtime/types'
  *   event: hello           { modules, id } — the scope we agreed to serve
  *   event: cursor          { module: ts }  — authoritative baseline on connect
  *   event: change          id + { module, ts } — one advanced high-water mark
- *   event: reconcile       resume token was a gap → client must poll once
+ *   event: reconcile       no replay for this gap → client must poll once. Reasons:
+ *                          `watcher-not-ready` (stream still connecting, so no
+ *                          baseline is claimed), `cursor-unavailable` (the DB read
+ *                          failed), `resume-window-expired` (Last-Event-ID aged out)
  *   : ping                 heartbeat comment, keeps proxies from closing us
  *
  * Resume: a reconnecting client sends `Last-Event-ID`. If the bus still holds
@@ -39,6 +42,20 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const HEARTBEAT_MS = 20_000
+
+/**
+ * How long a connection waits for the change stream before degrading itself to
+ * polling. Kept well under the client's 8 s handshake watchdog so the client
+ * never has to guess: either a baseline lands here, or a `reconcile` does.
+ */
+const WATCHER_READY_TIMEOUT_MS = 3_000
+
+/**
+ * Second, non-blocking chance for a stream that was slower than
+ * `WATCHER_READY_TIMEOUT_MS`. Polling already covers this window, so the only
+ * cost of waiting longer is a slightly later switch to the instant carrier.
+ */
+const LATE_BASELINE_TIMEOUT_MS = 15_000
 
 const PERMISSION: Record<Exclude<SyncModule, 'notifications'>, [PermissionModule, string]> = {
   tasks: ['tasks', 'view'],
@@ -62,26 +79,34 @@ async function __GET(request: NextRequest): Promise<Response> {
   // --- Resolve the caller and their per-module view scope BEFORE opening the
   // stream. A missing session throws AuthenticationError → 401 (never a stream),
   // which is exactly the "unauthenticated connection rejected" contract.
-  const auth = await requireAuth()
-  const callerId = auth.user._id?.toString()
+  //
+  // ONE resolution for the whole module set. This used to be `requireAuth()` plus
+  // a serial `authorize()` per module: six identical session aggregates back to
+  // back (472 ms of measured connect time) to answer a question the single role
+  // document already answers, and one `permission_denied` audit row per module the
+  // caller merely doesn't have a widget for. `discoverViewScopes` keeps the 401,
+  // drops the rest, and still withholds every gated module from an account that
+  // has not changed its temporary password — the net effect the per-module
+  // `authorize()` throws had, because each one was caught and omitted its module.
+  const { userId: callerId, viewable } = await discoverViewScopes(
+    Object.values(PERMISSION).map(([module]) => module)
+  )
+  const granted = new Set(viewable)
 
-  const permitted = new Set<SyncModule>()
-  for (const mod of SYNC_MODULES) {
+  const GATED = Object.entries(PERMISSION) as [
+    Exclude<SyncModule, 'notifications'>,
+    [PermissionModule, string],
+  ][]
+
+  // Order matches the previous SYNC_MODULES iteration, so the `hello` handshake
+  // and the baseline cursor keep describing the same module list.
+  const permitted = new Set<SyncModule>([
     // `notifications` is user-scoped, not module-gated: any authenticated user
     // may subscribe because its cursor/signal can only ever describe *their own*
     // newest notification (see §2.6 of the design doc).
-    if (mod === 'notifications') {
-      permitted.add(mod)
-      continue
-    }
-    const [permModule, action] = PERMISSION[mod]
-    try {
-      await authorize(permModule, action)
-      permitted.add(mod)
-    } catch {
-      // No grant for this module: omit its signals rather than fail the stream.
-    }
-  }
+    ...GATED.filter(([, [permModule]]) => granted.has(permModule)).map(([mod]) => mod),
+    'notifications',
+  ])
 
   // A `notifications` signal must reach ONLY its recipient's streams — it is
   // fanned in-process to every connection, so we filter by the caller here. Any
@@ -94,7 +119,7 @@ async function __GET(request: NextRequest): Promise<Response> {
   ensureChangeStreamWatcher()
 
   const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
+    async start(controller) {
       let closed = false
       const safeEnqueue = (chunk: Uint8Array) => {
         if (closed) return
@@ -110,11 +135,46 @@ async function __GET(request: NextRequest): Promise<Response> {
       safeEnqueue(encoder.encode(`retry: 3000\n\n`))
       safeEnqueue(frame('hello', { modules: [...permitted], id: realtimeBus.latestId() }))
 
+      // Subscribe BEFORE waiting for the watcher and before snapshotting the
+      // baseline: a write that lands during either wait must not fall between the
+      // two, or its signal is dropped and the client sits on stale data until the
+      // polling fallback happens to catch up. Frames may then arrive out of order
+      // relative to the baseline, which the coordinator absorbs by taking the max
+      // per module — an advance-only merge, never a regression.
+      const onSignal = (signal: RealtimeSignal) => {
+        if (!canDeliver(signal)) return
+        safeEnqueue(frame('change', { module: signal.module, ts: signal.ts }, signal.id))
+      }
+      const unsubscribe = realtimeBus.subscribe(onSignal)
+
       // Baseline cursor so the coordinator adopts silently instead of firing a
       // refetch for changes that happened before this tab connected.
-      void computeCursor(db, [...permitted], callerId)
-        .then((cursor) => safeEnqueue(frame('cursor', cursor)))
-        .catch(() => safeEnqueue(frame('reconcile', { reason: 'cursor-unavailable' })))
+      //
+      // Gate the claim on the watcher actually watching. A `cursor` frame is what
+      // tells the client to stand its polling down (`onLiveSignal()` in
+      // `sync/sse-transport.ts`), so emitting it from a process whose change
+      // stream has not completed its server-side handshake would silently remove
+      // the only working carrier during exactly the window where nothing can be
+      // signalled — reproduced in Phase 5 §3 as a remote write that never reached
+      // an open tab on a freshly started server, while passing seconds later on a
+      // warm one. Not ready yet therefore means "keep polling", not "trust me".
+      const sendBaseline = (): void => {
+        void computeCursor(db, [...permitted], callerId)
+          .then((cursor) => safeEnqueue(frame('cursor', cursor)))
+          .catch(() => safeEnqueue(frame('reconcile', { reason: 'cursor-unavailable' })))
+      }
+
+      if (await awaitChangeStreamOpen(WATCHER_READY_TIMEOUT_MS)) {
+        sendBaseline()
+      } else {
+        safeEnqueue(frame('reconcile', { reason: 'watcher-not-ready' }))
+        // Keep waiting off-thread: if the stream does come up, the baseline it
+        // unlocks is what stands polling down. A caller that never becomes ready
+        // (no change streams at all) simply leaves polling as the carrier.
+        void awaitChangeStreamOpen(LATE_BASELINE_TIMEOUT_MS).then((ready) => {
+          if (ready) sendBaseline()
+        })
+      }
 
       // Resume: replay anything the client missed since `Last-Event-ID`.
       const lastEventId = request.headers.get('last-event-id') ?? undefined
@@ -130,12 +190,6 @@ async function __GET(request: NextRequest): Promise<Response> {
           }
         }
       }
-
-      const onSignal = (signal: RealtimeSignal) => {
-        if (!canDeliver(signal)) return
-        safeEnqueue(frame('change', { module: signal.module, ts: signal.ts }, signal.id))
-      }
-      const unsubscribe = realtimeBus.subscribe(onSignal)
 
       const heartbeat = setInterval(() => safeEnqueue(encoder.encode(`: ping\n\n`)), HEARTBEAT_MS)
 

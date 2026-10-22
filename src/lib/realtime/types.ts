@@ -34,6 +34,11 @@ export interface RealtimeSignal {
 /** Mongo collection name → the sync module a write to it should refresh. */
 export const COLLECTION_MODULES: Record<string, SyncModule> = {
   messages: 'chat',
+  // Phase 3: archiving or restoring a channel rewrites `chatChannels`, not
+  // `messages`. Without this entry the move was invisible to every other
+  // device until a page refresh — the channel list and the Archived view both
+  // re-fetch on a `chat` signal, so the same one refresh path covers them.
+  chatChannels: 'chat',
   tasks: 'tasks',
   taskComments: 'tasks',
   taskActivity: 'tasks',
@@ -42,7 +47,17 @@ export const COLLECTION_MODULES: Record<string, SyncModule> = {
   products: 'inventory',
   stock: 'inventory',
   stockMovements: 'inventory',
-  ledger: 'finance',
+  purchases: 'inventory',
+  accounts: 'finance',
+  financeCategories: 'finance',
+  budgets: 'finance',
+  profitDistributions: 'finance',
+  // The finance module's cursor is computed from `transactions`
+  // (`getLedgerCollection` in `sync/cursor.ts`). This entry used to read
+  // `ledger`, which is not a collection in any database — so every ledger write
+  // was published under a namespace the change stream never reports and finance
+  // had no live signal at all: it refreshed only on the polling fallback.
+  transactions: 'finance',
 }
 
 /**

@@ -195,6 +195,45 @@ describe('createSseTransport', () => {
     t.stop()
   })
 
+  it('reports a healthy poll as live-through-polling, never as a stream', () => {
+    const t = createSseTransport({ handshakeTimeoutMs: 1000 })
+    t.start(vi.fn())
+    vi.advanceTimersByTime(1000) // watchdog engages the polling carrier
+    expect(setConnection).toHaveBeenLastCalledWith('reconnecting', 'polling')
+
+    // The mocked polling transport receives `deliver` as its callback; invoke it
+    // the way a completed cursor request would.
+    const carrier = pollingStart.mock.calls[0][0] as (cursor: SyncCursor) => void
+    carrier({ chat: 5 })
+    // Sync is genuinely working, so the chip must not read "Reconnecting…" —
+    // the wording on a host that cannot hold a stream (serverless) was a
+    // permanent false alarm before this.
+    expect(setConnection).toHaveBeenLastCalledWith('live', 'polling')
+
+    // A real stream frame takes authority back and stands the poll down…
+    latest().fireCursor({ chat: 9 })
+    expect(setConnection).toHaveBeenLastCalledWith('live', 'sse')
+    // …so a late response from the already-stopped poll must not downgrade it.
+    carrier({ chat: 12 })
+    expect(setConnection).toHaveBeenLastCalledWith('live', 'sse')
+    t.stop()
+  })
+
+  it('a stream retry never downgrades a poll that is already delivering', () => {
+    const t = createSseTransport()
+    t.start(vi.fn())
+    latest().fireClosedError() // hard failure → poll carries updates, reopen scheduled
+    const carrier = pollingStart.mock.calls[0][0] as (cursor: SyncCursor) => void
+    carrier({ chat: 5 })
+    setConnection.mockClear()
+
+    vi.advanceTimersByTime(3000) // the backoff reopen fires while the poll is live
+    expect(FakeEventSource.instances).toHaveLength(2)
+    // No "connecting" claim: the carrier is working, so the UI stays honest.
+    expect(setConnection).not.toHaveBeenCalledWith('connecting', 'sse')
+    t.stop()
+  })
+
   it('tears everything down on stop — closes the stream, stops polling, clears timers', () => {
     const t = createSseTransport({ handshakeTimeoutMs: 1000 })
     t.start(vi.fn())

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth, getRequestMeta } from '@/lib/http'
+import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { requireAuth } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { recordAuditEntry } from '@/lib/audit'
@@ -65,7 +65,7 @@ async function __POST(request: NextRequest) {
 
     return successResponse({ discarded: true })
   } catch (error) {
-    console.error('POST /api/offline/discard failed:', error)
+    logRouteFailure('POST /api/offline/discard', error)
     return handleRouteError(error)
   }
 }

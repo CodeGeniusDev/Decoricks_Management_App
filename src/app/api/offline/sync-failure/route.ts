@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { ObjectId } from 'mongodb'
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
 import { requireAuth } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { successResponse, validationError } from '@/lib/api-response'
@@ -45,7 +45,7 @@ async function __POST(request: NextRequest) {
 
     return successResponse({ queued: emitted > 0, deduped: emitted === 0 })
   } catch (error) {
-    console.error('POST /api/offline/sync-failure failed:', error)
+    logRouteFailure('POST /api/offline/sync-failure', error)
     return handleRouteError(error)
   }
 }

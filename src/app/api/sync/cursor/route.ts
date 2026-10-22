@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { handleRouteError, withAuth } from '@/lib/http'
+import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
 import { authorize, requireAuth } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { successResponse } from '@/lib/api-response'
@@ -77,7 +77,7 @@ async function __GET(request: NextRequest) {
     res.headers.set('Cache-Control', 'no-store')
     return res
   } catch (error) {
-    console.error('GET /api/sync/cursor failed:', error)
+    logRouteFailure('GET /api/sync/cursor', error)
     return handleRouteError(error)
   }
 }

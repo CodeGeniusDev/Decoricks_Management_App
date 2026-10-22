@@ -43,11 +43,29 @@ async function __GET(request: NextRequest) {
   const db = await getDatabase()
   await ensureNotificationIndexes(db)
 
-  // Lazy time-sweep (design §2.8): the bell is a natural catch-up point. Awaited
-  // (throttled to once per interval, shared across concurrent callers, never
-  // rejects) so any overdue / due-soon / low-stock events that crossed while the
-  // server slept appear in THIS response rather than arriving as a second paint.
-  await maybeRunNotificationSweep(db)
+  /*
+   * Lazy time-sweep (design §2.8): the bell is a natural catch-up point. Run it
+   * in the BACKGROUND rather than awaiting it.
+   *
+   * It used to be awaited "so the caught-up rows appear in THIS response". That
+   * made the user's own list wait on unrelated, write-heavy work: the sweep reads
+   * every done column and every open task and, per overdue/due-soon task, fans
+   * out one `emitNotification` per assignee — each a user read, a role read and
+   * an insert — then does the same per low-stock product. The whole fan-out is
+   * serial, and on the first bell open after the 15-minute throttle it measured
+   * ~1.1-1.7s, all of it before a single one of the caller's OWN notifications
+   * could render (the brief's "a slow secondary request must not block the main
+   * content").
+   *
+   * Nothing is lost by decoupling: every row the sweep writes still calls
+   * `realtimeBus.publish('notifications', …)`, so the SSE stream signals the
+   * client and the list refetches within one round trip — the catch-up appears a
+   * moment later instead of holding the first paint hostage. The 15-minute
+   * throttle, the shared in-flight promise and the per-event dedupe are
+   * unchanged, and the sweep still never rejects. This mirrors the exact pattern
+   * `/api/dashboard/summary` already uses.
+   */
+  void maybeRunNotificationSweep(db).catch(() => undefined)
 
   const col = getNotificationCollection(db)
 

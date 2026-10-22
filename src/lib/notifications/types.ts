@@ -8,9 +8,10 @@
  * toggle. The document shape and collection accessors live in
  * `@/lib/models/Notifications`.
  *
- * The nine types are exactly the events the brief enumerates:
+ * The types are exactly the events the briefs enumerate:
  * low stock · overdue / due-soon tasks · budget warning / critical ·
- * pending approvals · sync failures / conflicts · financial events.
+ * pending approvals · sync failures / conflicts · financial events ·
+ * chat mentions (Phase 3).
  */
 
 import type { PermissionModule } from '@/lib/models/User'
@@ -25,6 +26,8 @@ export type NotificationType =
   | 'sync_failure'
   | 'sync_conflict'
   | 'financial_event'
+  // Phase 3: a team member typed an @mention of the recipient in Chat.
+  | 'mention'
 
 export const NOTIFICATION_TYPES: NotificationType[] = [
   'low_stock',
@@ -36,6 +39,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'sync_failure',
   'sync_conflict',
   'financial_event',
+  'mention',
 ]
 
 /** Human label shown in the preferences panel and the notification list. */
@@ -49,6 +53,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   sync_failure: 'Sync failures',
   sync_conflict: 'Sync conflicts',
   financial_event: 'Financial events',
+  mention: 'Chat mentions',
 }
 
 /**
@@ -78,6 +83,10 @@ export const NOTIFICATION_PERMISSION: Record<NotificationType, [PermissionModule
     budget_critical: ['budget', 'view'],
     pending_approval: ['finance', 'view'],
     financial_event: ['finance', 'view'],
+    // A mention is only actionable if the recipient can actually open Chat, so
+    // the same grant that gates reading the message gates the alert about it.
+    // `sync_*` are about the recipient's own data, hence `null` there.
+    mention: ['chat', 'view'],
     sync_failure: null,
     sync_conflict: null,
   }
@@ -124,7 +133,15 @@ export function resolveNotificationPrefs(
  * permission-checked read (mirrors REALTIME.md's dataless-signal invariant).
  */
 export interface NotificationData {
-  entityType: 'product' | 'task' | 'transaction' | 'budget' | 'distribution' | 'sync'
+  entityType:
+    | 'product'
+    | 'task'
+    | 'transaction'
+    | 'budget'
+    | 'distribution'
+    | 'sync'
+    // Phase 3: `entityId` is the message id, `link` is the channel it lives in.
+    | 'chat_message'
   entityId?: string
   /** In-app route to open, e.g. `/inventory?product=<id>`. */
   link?: string

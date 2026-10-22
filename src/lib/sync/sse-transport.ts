@@ -54,6 +54,13 @@ export function createSseTransport(options: SseTransportOptions = {}): SyncTrans
       merged[module] = Math.max(merged[module] ?? 0, ts)
     }
     markSeen(patch)
+    // Liveness reported by the carrier that actually produced this patch. A
+    // stream frame calls `onLiveSignal()` (which nulls `poll`) before it
+    // delivers, so this branch only runs while the poll is the carrier — and a
+    // healthy poll is *live*, merely not instant. Leaving it at `reconnecting`
+    // would put every user on a host that cannot hold a stream (any serverless
+    // deploy) into a permanent false alarm.
+    if (poll) setConnection('live', 'polling')
     onCursor?.({ ...merged })
   }
 
@@ -95,7 +102,10 @@ export function createSseTransport(options: SseTransportOptions = {}): SyncTrans
     }
 
     clearHandshake()
-    setConnection('connecting', 'sse')
+    // Only claim "connecting" while nothing is carrying updates. A retry of the
+    // stream must not downgrade a poll that is already delivering — that churn
+    // would flash "Connecting…" over a working connection every few seconds.
+    if (!poll) setConnection('connecting', 'sse')
     es = new EventSource(url, { withCredentials: true })
 
     // Arm the watchdog the moment we try; a live `cursor` cancels it.

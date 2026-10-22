@@ -24,7 +24,6 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { IconAlert } from '@/components/ui/icons'
 import { useAuth } from '@/components/auth/AuthProvider'
-import { useRouter } from 'next/navigation'
 import { discardQueueEntry, drainQueueNow } from '@/lib/offline/browser'
 import { clearAllLocalData } from '@/lib/offline/db'
 import { useOfflineQueue } from '@/hooks/useOfflineQueue'
@@ -36,15 +35,16 @@ interface SignOutModalProps {
 
 export const SignOutModal = ({ isOpen, onClose }: SignOutModalProps) => {
   const { user, signOut } = useAuth()
-  const router = useRouter()
   const { entries } = useOfflineQueue(user?._id)
   const [busy, setBusy] = useState<null | 'sync' | 'discard' | 'keep'>(null)
   const [error, setError] = useState<string | null>(null)
 
   const finish = async () => {
     await signOut()
-    router.replace('/login')
-    router.refresh()
+    // Same deliberate document hand-off as the header sign-out: one request, and
+    // a fresh document so this user's queue view, permissions cache and sync
+    // subscriptions cannot survive into the next session in this tab.
+    window.location.replace('/login')
   }
 
   const handleSyncNow = async () => {

@@ -68,3 +68,17 @@ export function syncConflictKey(idempotencyKey: string): string {
 export function financialEventKey(kind: string, entityId: string): string {
   return `fin:${kind}:${entityId}`
 }
+
+/**
+ * Phase 3 chat mention: one alert per mentioned user per message, forever.
+ *
+ * Keyed on the persisted message id rather than the sender's `clientId`, so
+ * every path that can re-run the mention (an edit that re-derives mentions, a
+ * retried POST that returns the original row, a second notification attempt) is
+ * absorbed by the unique `{ userId, dedupeKey }` index instead of alerting
+ * twice. Editing a message to add a *different* person produces a different key
+ * for that person only.
+ */
+export function mentionKey(messageId: string, userId: string): string {
+  return `mention:${messageId}:${userId}`
+}

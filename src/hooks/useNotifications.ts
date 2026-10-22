@@ -1,8 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { apiJson } from '@/lib/api-client'
+import { apiJson, apiJsonMeta } from '@/lib/api-client'
 import { useRealtimeSync } from '@/lib/sync/useRealtime'
+import type { RealtimeReadTracker } from '@/lib/sync/useRealtime'
 import type { NotificationData, NotificationType } from '@/lib/notifications/types'
 
 /**
@@ -39,6 +40,18 @@ interface ListResponse {
 const PAGE_LIMIT = 20
 
 /**
+ * Placeholder for the read tracker while the subscription effect has not run
+ * yet. Every method is a no-op, so a read that races the effect simply goes
+ * unannounced — which costs the one extra revalidation the tracker exists to
+ * remove, never a missed notification.
+ */
+const IDLE_TRACKER: RealtimeReadTracker = {
+  begin: () => {},
+  settle: () => {},
+  abandon: () => {},
+}
+
+/**
  * Client state for the notification bell.
  *
  * Responsibilities kept deliberately small and honest:
@@ -68,7 +81,57 @@ export function useNotifications(active: boolean) {
 
   const pageRef = useRef(1)
   const mountedRef = useRef(true)
-  const inFlightRef = useRef<Promise<void> | null>(null)
+  /*
+   * The newest-window request while it is in flight, shared by `load` and
+   * `refresh`. Both read the byte-identical URL (`?limit=PAGE_LIMIT`, page one)
+   * and nothing else does, so overlapping them is unambiguous.
+   *
+   * This exists because of a measurement, not a theory: the Phase 4 network
+   * probe caught `/api/notifications` requested twice inside 500ms on the
+   * dashboard. `load()` fires from the mount effect while `refresh()` can fire
+   * the same instant from a real-time signal, a focus or an online event — and
+   * the old coalescing lived inside `refresh` only, so it could not see the
+   * mount fetch. Cleared in `finally`, so this is request overlap, never a
+   * cache: nothing is served after the response has landed.
+   */
+  const windowRef = useRef<Promise<ListResponse> | null>(null)
+
+  /*
+   * Read tracker for the `notifications` subscription, held in a ref so
+   * `fetchWindow` — which is defined above the subscription to keep the shared
+   * promise in one place — can use it without an ordering cycle. The subscription
+   * effect assigns it before any response can land, and if a read somehow
+   * completes first it is simply unannounced, which costs the one extra
+   * revalidation this removes rather than risking a missed notification.
+   */
+  const syncRef = useRef<RealtimeReadTracker>(IDLE_TRACKER)
+
+  const fetchWindow = useCallback(() => {
+    if (!windowRef.current) {
+      const tracker = syncRef.current
+      // Announced before it goes out. One network read per shared promise, so
+      // exactly one `begin` even though `load` and `refresh` both await it.
+      tracker.begin()
+      windowRef.current = apiJsonMeta<ListResponse>(`/api/notifications?limit=${PAGE_LIMIT}`)
+        .then(({ data, serverTime, durationMs }) => {
+          // Server time of THIS window plus the client-measured wait, so the sync
+          // layer can tell a genuine new notification from the baseline it is
+          // about to hand us for rows we already hold. Every consumer of the
+          // shared promise is a read of the same window, so one mark covers them.
+          tracker.settle(serverTime, durationMs)
+          return data
+        })
+        .catch((err: unknown) => {
+          // A read that failed proves nothing; release anything it held back.
+          tracker.abandon()
+          throw err
+        })
+        .finally(() => {
+          windowRef.current = null
+        })
+    }
+    return windowRef.current
+  }, [])
 
   useEffect(() => {
     mountedRef.current = true
@@ -100,7 +163,7 @@ export function useNotifications(active: boolean) {
     pageRef.current = 1
     setError(null)
     try {
-      const res = await apiJson<ListResponse>(`/api/notifications?limit=${PAGE_LIMIT}`)
+      const res = await fetchWindow()
       applyResponse(res, 'replace')
     } catch (err) {
       if (mountedRef.current) {
@@ -109,43 +172,38 @@ export function useNotifications(active: boolean) {
     } finally {
       if (mountedRef.current) setLoading(false)
     }
-  }, [applyResponse])
+  }, [applyResponse, fetchWindow])
 
   /**
    * Background refresh: reload the newest window and MERGE. De-duplicated by a
    * shared promise so a burst of events (real-time + focus + online firing
    * together) collapses into a single network round-trip — this is what keeps
-   * the badge from double-counting and the list from churning.
+   * the badge from double-counting and the list from churning. The same shared
+   * promise is what `load` uses, so a burst that overlaps the mount fetch
+   * collapses too. Merging a window that has already been applied is a no-op:
+   * the de-dupe by `_id` below drops every row it already has.
    */
   const refresh = useCallback(async () => {
-    if (inFlightRef.current) return inFlightRef.current
-    const run = (async () => {
-      setRefreshing(true)
-      try {
-        const res = await apiJson<ListResponse>(`/api/notifications?limit=${PAGE_LIMIT}`)
-        applyResponse(res, 'merge')
-        setError(null)
-      } catch {
-        // A transient refresh failure is not surfaced over content that already
-        // rendered; the next real-time tick or focus retries. Initial load errors
-        // are the ones the user sees (via `load`).
-      } finally {
-        if (mountedRef.current) setRefreshing(false)
-        inFlightRef.current = null
-      }
-    })()
-    inFlightRef.current = run
-    return run
-  }, [applyResponse])
+    setRefreshing(true)
+    try {
+      const res = await fetchWindow()
+      applyResponse(res, 'merge')
+      setError(null)
+    } catch {
+      // A transient refresh failure is not surfaced over content that already
+      // rendered; the next real-time tick or focus retries. Initial load errors
+      // are the ones the user sees (via `load`).
+    } finally {
+      if (mountedRef.current) setRefreshing(false)
+    }
+  }, [applyResponse, fetchWindow])
 
   const loadMore = useCallback(async () => {
     if (!hasMore || loadMoreLoading) return
     setLoadMoreLoading(true)
     const next = pageRef.current + 1
     try {
-      const res = await apiJson<ListResponse>(
-        `/api/notifications?limit=${PAGE_LIMIT}&page=${next}`
-      )
+      const res = await apiJson<ListResponse>(`/api/notifications?limit=${PAGE_LIMIT}&page=${next}`)
       if (!mountedRef.current) return
       pageRef.current = next
       setUnreadCount(res.unreadCount)
@@ -164,29 +222,40 @@ export function useNotifications(active: boolean) {
     }
   }, [hasMore, loadMoreLoading])
 
-  const markRead = useCallback(async (id: string) => {
-    const target = items.find((n) => n._id === id)
-    if (!target || target.isRead) return
-    // Optimistic: flip locally and drop the badge by one, then reconcile.
-    setItems((prev) => prev.map((n) => (n._id === id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n)))
-    setUnreadCount((c) => Math.max(0, c - 1))
-    try {
-      await apiJson<NotificationItem>(`/api/notifications/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ isRead: true }),
-      })
-    } catch {
-      // Roll the single row back if the server refused.
-      setItems((prev) => prev.map((n) => (n._id === id ? { ...n, isRead: false, readAt: null } : n)))
-      setUnreadCount((c) => c + 1)
-    }
-  }, [items])
+  const markRead = useCallback(
+    async (id: string) => {
+      const target = items.find((n) => n._id === id)
+      if (!target || target.isRead) return
+      // Optimistic: flip locally and drop the badge by one, then reconcile.
+      setItems((prev) =>
+        prev.map((n) =>
+          n._id === id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n
+        )
+      )
+      setUnreadCount((c) => Math.max(0, c - 1))
+      try {
+        await apiJson<NotificationItem>(`/api/notifications/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ isRead: true }),
+        })
+      } catch {
+        // Roll the single row back if the server refused.
+        setItems((prev) =>
+          prev.map((n) => (n._id === id ? { ...n, isRead: false, readAt: null } : n))
+        )
+        setUnreadCount((c) => c + 1)
+      }
+    },
+    [items]
+  )
 
   const markAllRead = useCallback(async () => {
     if (unreadCount === 0) return
     const before = items
     const beforeCount = unreadCount
-    setItems((prev) => prev.map((n) => (n.isRead ? n : { ...n, isRead: true, readAt: new Date().toISOString() })))
+    setItems((prev) =>
+      prev.map((n) => (n.isRead ? n : { ...n, isRead: true, readAt: new Date().toISOString() }))
+    )
     setUnreadCount(0)
     try {
       await apiJson<{ marked: number }>('/api/notifications/read-all', { method: 'POST' })
@@ -208,7 +277,10 @@ export function useNotifications(active: boolean) {
   // emit and on mark-all-read. `useRealtimeSync` fires only when that module's
   // timestamp advanced, and its transport already falls back to polling when
   // SSE is unavailable (the brief's "polling fallback").
-  useRealtimeSync('notifications', refresh, active)
+  const notificationsSync = useRealtimeSync('notifications', refresh, active)
+  useEffect(() => {
+    syncRef.current = notificationsSync
+  }, [notificationsSync])
 
   // Fallbacks the brief asks to be explicit about: refreshing when the tab
   // regains focus or the browser regains connectivity catches the case where
