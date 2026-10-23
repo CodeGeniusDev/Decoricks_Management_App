@@ -1,11 +1,12 @@
 import type { Collection, Db, Document } from 'mongodb'
 import { ObjectId } from 'mongodb'
 import { getBudgetCollection } from '@/lib/models/Operations'
-import { getTaskDocCollection } from '@/lib/models/Tasks'
+import { getProfitDistributionCollection } from '@/lib/models/Distribution'
+import { getTaskCommentCollection, getTaskDocCollection } from '@/lib/models/Tasks'
 import { getMessageCollection } from '@/lib/models/Chat'
 import { getOrderCollection, getReturnCollection } from '@/lib/models/Sales'
 import { getProductCollection, getStockCollection } from '@/lib/models/Product'
-import { getLedgerCollection } from '@/lib/models/Ledger'
+import { getAccountCollection, getFinanceCategoryCollection, getLedgerCollection } from '@/lib/models/Ledger'
 import { getNotificationCollection } from '@/lib/models/Notifications'
 import type { SyncCursor, SyncModule } from './types'
 
@@ -38,6 +39,10 @@ export const SOURCES: Record<Exclude<SyncModule, 'notifications'>, Source[]> = {
       get: (db) => getTaskDocCollection(db) as unknown as Collection<Document>,
       field: 'updatedAt',
       filter: { isArchived: false },
+    },
+    {
+      get: (db) => getTaskCommentCollection(db) as unknown as Collection<Document>,
+      field: 'createdAt',
     },
   ],
   chat: [
@@ -72,6 +77,18 @@ export const SOURCES: Record<Exclude<SyncModule, 'notifications'>, Source[]> = {
       get: (db) => getBudgetCollection(db) as unknown as Collection<Document>,
       field: 'updatedAt',
     },
+    {
+      get: (db) => getAccountCollection(db) as unknown as Collection<Document>,
+      field: 'updatedAt',
+    },
+    {
+      get: (db) => getFinanceCategoryCollection(db) as unknown as Collection<Document>,
+      field: 'updatedAt',
+    },
+    {
+      get: (db) => getProfitDistributionCollection(db) as unknown as Collection<Document>,
+      field: 'updatedAt',
+    },
   ],
 }
 
@@ -103,6 +120,10 @@ export function ensureSyncIndexes(db: Db): Promise<void> {
           getStockCollection(db).createIndex({ updatedAt: -1 }),
           getLedgerCollection(db).createIndex({ updatedAt: -1 }),
           getBudgetCollection(db).createIndex({ updatedAt: -1 }),
+          getAccountCollection(db).createIndex({ updatedAt: -1 }),
+          getFinanceCategoryCollection(db).createIndex({ updatedAt: -1 }),
+          getProfitDistributionCollection(db).createIndex({ updatedAt: -1 }),
+          getTaskCommentCollection(db).createIndex({ createdAt: -1 }),
           // Per-user notifications cursor: newest of the caller's own rows.
           getNotificationCollection(db).createIndex(
             { userId: 1, createdAt: -1 },
