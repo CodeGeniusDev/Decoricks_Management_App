@@ -209,7 +209,7 @@ export class SyncCoordinator {
         this.notify(module, ts)
         continue
       }
-      if (ts > prev) {
+      if (ts !== prev) {
         this.cursor[module] = ts
         this.notify(module)
       }
