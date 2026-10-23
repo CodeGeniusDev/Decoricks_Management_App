@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
+import { ensureFinanceDefaults } from '@/lib/finance-defaults'
+import { ObjectId } from 'mongodb'
 import { getRequestMeta, handleRouteError, withAuth } from '@/lib/http'
 import { successResponse, validationError } from '@/lib/api-response'
 import { ledgerEntrySchema, transactionQuerySchema } from '@/lib/schemas/finance'
@@ -40,6 +42,7 @@ async function __GET(request: NextRequest) {
     }
 
     const db = await getDatabase()
+    await ensureFinanceDefaults(db)
     const { filter, range } = buildLedgerFilter(parsed.data)
     const result = await listLedger(db, {
       filter,
@@ -87,6 +90,7 @@ async function __POST(request: NextRequest) {
     }
 
     const db = await getDatabase()
+    await ensureFinanceDefaults(db)
     const meta = await getRequestMeta()
     const auth = await authorize(
       'finance',
