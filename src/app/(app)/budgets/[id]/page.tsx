@@ -64,6 +64,10 @@ export default function BudgetDetailPage() {
   const [actionBusy, setActionBusy] = useState(false);
   const actionRef = useRef(false);
 
+  useRealtimeSync('finance', () => {
+    void load()
+  })
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);

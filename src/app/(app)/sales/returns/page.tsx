@@ -30,6 +30,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { apiJson } from '@/lib/api-client'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
 import { formatPaisa } from '@/lib/money'
 import { formatKarachiDate } from '@/lib/date'
 import {

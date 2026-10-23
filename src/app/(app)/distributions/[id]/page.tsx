@@ -83,6 +83,10 @@ export default function DistributionDetailPage() {
   const [reason, setReason] = useState('');
   const [adjustErrors, setAdjustErrors] = useState<Record<string, string>>({});
 
+  useRealtimeSync('finance', () => {
+    void load()
+  })
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);

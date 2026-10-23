@@ -59,6 +59,10 @@ export default function FinanceCategoriesPage() {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
 
+  useRealtimeSync('finance', () => {
+    void load()
+  })
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);

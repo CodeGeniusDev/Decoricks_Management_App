@@ -81,6 +81,10 @@ export default function CashFlowPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  useRealtimeSync('finance', () => {
+    void load()
+  })
+
   const load = useCallback(async () => {
     if (!periodFilterReady(filter)) {
       setLoading(false);

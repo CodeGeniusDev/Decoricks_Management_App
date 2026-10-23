@@ -104,6 +104,10 @@ export default function ProfitLossPage() {
     return map;
   }, [categories]);
 
+  useRealtimeSync('finance', () => {
+    void load()
+  })
+
   const load = useCallback(async () => {
     if (!periodFilterReady(filter)) {
       setLoading(false);
