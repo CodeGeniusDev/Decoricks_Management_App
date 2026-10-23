@@ -45,7 +45,7 @@ already agrees with the brief on chat.
   SPEC §6.9 that has real business value beyond finance. My default: **out of
   scope for Phase 9**, revisit as its own phase.
 
-> **DECISION D1:** Confirm offline scope = finance + budget creates only (no
+> **DECISION D1:** Offline scope = finance + budget creates only (no
 > orders/tasks/chat offline). Confirm offline *order* creation is deferred.
 
 ### D2 — The server `offlineQueue` collection (SPEC §3.1.20) is redundant
@@ -74,7 +74,7 @@ are **already enforced** by mechanisms shipped in Phase 3:
   reason) purely for Founder visibility — not a queue, no re-execution. Only if
   you ask for it.
 
-> **DECISION D2:** Confirm we drop the durable server `offlineQueue` and rely on
+> **DECISION D2:** Drop the durable server `offlineQueue` and rely on
 > the existing ledger idempotency + audit + notifications. (Optional transient
 > sync-attempt log: yes/no.)
 
@@ -96,7 +96,7 @@ success is exactly the ambiguity we must avoid).
   replayed key. We forgo the ≤10 batching as a premature optimization for a
   4-person tool.
 
-> **DECISION D3:** Confirm sequential one-at-a-time sync (SPEC §6.7 batching
+> **DECISION D3:** Sequential one-at-a-time sync (SPEC §6.7 batching
 > dropped).
 
 ### D4 — Queue gains a `syncing` state (SPEC §6.3/§6.5 have only four)
@@ -154,7 +154,7 @@ change-streams and a global per-module cursor
 **per-user**, not per-module, so they do not fit that cursor model unchanged.
 
 - **Recommendation (detailed in §2.6):** reuse the same SSE `/api/events` +
-  polling transport, but add a **user-scoped** `notifications` stream whose
+  polling transport, but add a **user-scoped** `notifications` module/stream whose
   cursor is "newest `createdAt` among *this user's* notifications". No record
   content rides the signal — the client refetches `/api/notifications` through
   the normal authed route, preserving the dataless/permission-safe invariant from
@@ -165,7 +165,7 @@ change-streams and a global per-module cursor
 - `SPEC.md` §1.2 defers "Email/SMS notifications" and "Export to PDF/Excel" out
   of Phase 1 — consistent with this brief (no email/SMS; PDF was added in Phase
   8 as its own phase).
-- `SPEC.md` §6.10 line 1468 says "Real-time updates via **WebSocket**"; REALTIME.md
+- `SPEC.md`/REALTIME reconciled to custom auth (no NextAuth), SSE + polling (no WebSocket), notifications user-scoped, D1–D3, no server offlineQueue, §8 open until Step 5.
   already corrects this to SSE. Phase 9 uses SSE. No action.
 
 ---

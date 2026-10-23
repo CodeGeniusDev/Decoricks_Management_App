@@ -9,7 +9,7 @@ expands and, where the two differ, refines `SPEC.md` §7.
 **Server-Sent Events (SSE) driven by a MongoDB change stream, with an automatic
 per-module cursor-polling fallback.** This is option (A) from the architecture
 comparison and matches `SPEC.md` §7.1, which already prescribed SSE over
-WebSockets. Client → server writes stay on ordinary authenticated HTTP API
+SSE/polling (no WebSocket). Client → server writes stay on ordinary authenticated HTTP API
 routes; the live channel is one-way server → client, which is exactly what SSE
 is for. A separate always-on WebSocket host (option B) was rejected: it needs a
 second process to deploy, keep awake, secure and reconnect-manage for a
@@ -57,7 +57,7 @@ event: reconcile { reason }      # resume gap → client must poll once
 
 - **Runtime:** `nodejs`, `force-dynamic`. Needs the driver-backed change stream
   and a response that outlives one request — this is why the app is deployed to
-  a **single persistent Node host**, not a serverless function.
+  a **single persistent Node host**, not a serverless function (Vercel/serverless not reliable for long-lived SSE/change streams). Polling fallback works on any host.
 - **Heartbeat:** a `: ping` comment frame every 20s keeps intermediate proxies
   from closing an idle stream.
 - **No-transform:** `X-Accel-Buffering: no` and `Cache-Control: no-transform`
@@ -164,7 +164,7 @@ internal tool, not bugs to hide.
 - **Serverless/edge SSE limits** (if ever forced onto a serverless host):
   connection-time caps and per-account concurrent-stream limits would make the
   primary stream unreliable — which is precisely why polling exists and why the
-  recommendation is a persistent host.
+  recommendation is a persistent host (§8 remains open until Step 5).
 
 ## Verification
 

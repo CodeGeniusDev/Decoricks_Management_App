@@ -890,31 +890,16 @@ Indexes:
 - createdAt: -1
 ```
 
-#### 3.1.20 offlineQueue
+#### 3.1.20 offlineQueue *(dropped — DECISION D2)*
 
-```javascript
-{
-  _id: ObjectId,
-  userId: ObjectId,
-  operation: String, // e.g., 'create_order', 'update_expense'
-  payload: Object, // the data to sync
-  idempotencyKey: String, // unique per operation
-  status: String, // 'pending', 'synced', 'failed', 'conflict'
-  attempts: Number, // default 0
-  lastAttemptAt: Date,
-  errorMessage: String, // optional
-  conflictData: Object, // optional, server state at conflict
-  createdAt: Date,
-  updatedAt: Date
-}
+The durable server-side `offlineQueue` collection is **not used** by the shipped
+design. Offline sync relies on client-side queuing + ledger idempotency keys +
+audit/logging and notifications; there is no server collection for replay.
+(`docs/OFFLINE_AND_NOTIFICATIONS.md` §D2)
 
-Indexes:
-- userId: 1, status: 1
-- idempotencyKey: unique
-- createdAt: -1
-```
+#### 3.1.21 notifications *(user-scoped module — shipped)*
 
-#### 3.1.21 notifications
+Notifications are a **user-scoped** sync/realtime module (delivered via **SSE + polling fallback**). Events are filtered per connection by the caller's user id and carry dataless signals where appropriate; clients re-fetch via guarded REST routes.
 
 ```javascript
 {
@@ -931,6 +916,7 @@ Indexes:
 
 Indexes:
 - userId: 1, isRead: 1
+- userId: 1, createdAt: -1
 - createdAt: -1
 ```
 
@@ -977,7 +963,7 @@ Indexes:
 - `taskLabels` → (standalone; joined via `tasks.labelIds`)
 - `messages` → `users` (senderId)
 - `auditLog` → `users` (userId)
-- `offlineQueue` → `users` (userId)
+- `offlineQueue` → `users` (userId) *(dropped; no server collection used — D2)*
 - `notifications` → `users` (userId)
 
 ---
@@ -1399,24 +1385,9 @@ user123_order_create_1728038400000_abc123
 **Automatic Sync:**
 
 - Triggered on: app foreground, network reconnection, every 5 minutes when online
-- Process: Send all pending operations in batch
-- Batching: Group up to 10 operations per request to reduce overhead
+- Process: Send pending operations **sequentially (one at a time)** (DECISION D3 — no batching)
 
-**Retry Logic:**
-
-- Attempt 1: Immediate
-- Attempt 2: 5 seconds later
-- Attempt 3: 30 seconds later
-- Attempt 4: 5 minutes later
-- Attempt 5: 30 minutes later
-- After 5 failures: Mark as failed, notify user
-
-**Exponential Backoff:**
-
-```
-delay = baseDelay × (2 ^ (attempts - 1))
-where baseDelay = 5 seconds
-```
+**Retry Logic (sequential):** exponential backoff per operation; idempotency keys prevent duplicates on retry.
 
 ### 6.8 Data Consistency Guarantees
 
@@ -1436,24 +1407,28 @@ where baseDelay = 5 seconds
 - Financial operations are wrapped in database transactions
 - If any part fails, entire operation is rolled back
 
-### 6.9 Offline Capabilities
+### 6.9 Offline Capabilities *(DECISIONS D1–D3)*
 
-**Supported Offline Operations:**
+**DECISION D1:** Offline scope = **finance + budget creates only** (offline chat is **online-only**; offline order creation is not in the shipped offline scope).
 
-- Create orders
-- Create expenses
-- Create tasks
-- Create chat messages
-- Update tasks (status, assignee)
-- Update own user profile
+**DECISION D2:** No durable **server `offlineQueue`** collection (dropped). Offline relies on client-side queuing + server idempotency keys + audit.
 
-**Blocked Offline Operations:**
+**DECISION D3:** Sync is **sequential (one-at-a-time)**, not batched.
 
+**Supported Offline Operations (shipped):**
+
+- Create finance entries (expenses/income/transfers as implemented)
+- Create budgets
+
+**Blocked/Online-Only:**
+
+- Chat (online-only)
+- Orders/sales/tasks offline creation (not in shipped offline scope per D1)
 - Delete operations (require server confirmation)
 - Permission changes (require online)
 - Role assignments (require online)
 - Budget approvals (require online)
-- Profit distribution calculations (require online)
+- Profit distribution calculations/approvals (require online)
 
 ### 6.10 Data Freshness
 
@@ -1465,7 +1440,7 @@ where baseDelay = 5 seconds
 
 **Cache Invalidation:**
 
-- Real-time updates via WebSocket when online
+- Real-time updates via SSE + polling fallback (no WebSocket)
 - When offline, show "Last synced: X minutes ago" indicator
 - After sync, refresh all displayed data
 
@@ -1475,24 +1450,7 @@ where baseDelay = 5 seconds
 
 ### 7.1 Approach
 
-> **Implementation status (Phase 7):** the shipping design — SSE driven by a
-> MongoDB change stream with an automatic per-module cursor-polling fallback —
-> is documented authoritatively in [`docs/REALTIME.md`](./REALTIME.md). Where
-> the illustrative snippets below differ from what was built (per-record event
-> payloads, a 30s poll), `REALTIME.md` is correct. The live stream carries
-> **dataless change signals** ("module X advanced") rather than record data, so
-> a user is never sent information their permissions would hide; the client
-> reacts by re-fetching through the same guarded REST routes it uses normally.
-
-Given free tier constraints, use **Server-Sent Events (SSE)** for real-time updates instead of WebSockets.
-
-**Rationale:**
-
-- SSE is simpler to implement
-- Works better with HTTP/2 and modern browsers
-- Easier to scale on free hosting tiers
-- Sufficient for one-way server → client updates
-- No need for bidirectional communication (client → server uses standard HTTP API)
+> **Implementation status (Phase 7/10):** the shipping design — **SSE + polling (not WebSocket)** driven by a MongoDB change stream with an automatic per-module cursor-polling fallback — is documented authoritatively in [`docs/REALTIME.md`](./REALTIME.md). The live stream carries **dataless change signals** ("module X advanced") rather than record data, so a user is never sent information their permissions would hide; the client reacts by re-fetching through the same guarded REST routes it uses normally. Auth is **custom session+CSRF** (no NextAuth).
 
 ### 7.2 Implementation
 
@@ -1621,7 +1579,7 @@ same per-module cursor shape, so switching is transparent to subscribers.
   unauthenticated request is a `401` JSON error (never a stream), an
   all-modules-refused session is `403`
 - Heartbeat comment frame every 20s to keep proxies from closing an idle stream
-- Runs on the Node runtime on a single persistent host (see `REALTIME.md`);
+- Runs on the Node runtime on a **single persistent host** recommended for SSE/change streams (see `REALTIME.md`); polling fallback works everywhere.
   the replay buffer and rate limiter are process-local
 
 ### 7.7 Chat Module Real-Time Behaviour (Phase 7)
@@ -1645,7 +1603,7 @@ same per-module cursor shape, so switching is transparent to subscribers.
 
 ### 8.1 Hosting Providers
 
-**Application Hosting: Vercel (Free Tier)**
+**Application Hosting: To be decided (Step 5) — persistent Node host recommended for SSE/change streams**
 
 - Next.js native support
 - Automatic deployments from Git
@@ -1660,7 +1618,7 @@ same per-module cursor shape, so switching is transparent to subscribers.
 - Geo-distributed (choose region closest to Pakistan: Mumbai)
 - Limitations: No automated backups, connection pooling restrictions
 
-**Asset Storage: Vercel Blob (Free Tier)**
+**Asset Storage: To be decided**
 
 - For storing exported backup files
 - 1GB storage limit
@@ -1672,8 +1630,8 @@ same per-module cursor shape, so switching is transparent to subscribers.
 
 ```env
 MONGODB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/decoricks
-NEXTAUTH_SECRET=<random-secret>
-NEXTAUTH_URL=https://decoricks-app.vercel.app
+# Auth uses custom sessions (no NextAuth)
+# SESSION_TTL_MINUTES / SESSION_MAX_LIFETIME_MINUTES configurable
 NODE_ENV=production
 ```
 
@@ -1694,23 +1652,23 @@ git add .
 git commit -m "Initial commit"
 ```
 
-**2. Connect to Vercel:**
+**2. Connect to host:**
 
-- Install Vercel CLI: `npm i -g vercel`
+- Install host CLI as applicable
 - Login: `vercel login`
 - Deploy: `vercel`
 
 **3. Configure Environment Variables:**
 
-- In Vercel dashboard, add environment variables
+- Add environment variables in host dashboard
 - Set MongoDB connection string
-- Generate NEXTAUTH_SECRET: `openssl rand -base64 32`
+# No NextAuth secret required (custom sessions)
 
 **4. Setup MongoDB Atlas:**
 
 - Create free M0 cluster
 - Create database user with read/write permissions
-- Whitelist Vercel IP addresses (or use 0.0.0.0/0 for simplicity)
+- Configure IP/firewall as needed
 - Get connection string
 
 **5. Deploy:**
@@ -1721,7 +1679,7 @@ vercel --prod
 
 **6. Configure Custom Domain (Optional):**
 
-- Add domain in Vercel dashboard
+- Add domain in host/dashboard
 - Update DNS records
 
 ### 8.4 CI/CD Pipeline
@@ -1758,7 +1716,7 @@ jobs:
 
 **Free Tier Monitoring:**
 
-- Vercel Analytics (free)
+- Monitoring as configured
 - MongoDB Atlas Metrics (free)
 - Custom error logging to MongoDB (auditLog collection)
 
@@ -1774,18 +1732,18 @@ jobs:
 
 - "Export Now" button triggers server-side export
 - Export format: JSON dump of all collections
-- Stored in Vercel Blob
+- Stored in configured backup location
 - Downloadable by Founder
 
 **Scheduled Backup:**
 
-- Cron job (Vercel Cron Jobs) triggers export at scheduled time
+- Scheduled export/backup as configured
 - Same export process as manual
 - Stored with timestamp in filename
 
 **Restore Procedure:**
 
-1. Download backup file from Vercel Blob
+1. Download backup file from configured backup storage
 2. Upload to restore endpoint (Founder-only)
 3. Server validates backup format
 4. Server drops existing collections (after confirmation)
@@ -1830,13 +1788,13 @@ jobs:
 - Use connection pooling to minimize connections
 - Monitor storage usage and alert at 80% capacity
 
-### 9.2 Vercel Free Tier
+### 9.2 Hosting notes (Step 5 open)
 
 **Limitations:**
 
 - **Function Timeout:** 10 seconds (may not be sufficient for large exports)
 - **Execution Time:** 10,000 minutes/month (may be insufficient for heavy usage)
-- **Bandwidth:** 100GB/month (may be insufficient for backup downloads/uploads)
+- **Bandwidth:** Host-dependent (may be insufficient for backup downloads/uploads)
 - **Serverless Functions:** Cold starts on first request (1-2 second delay)
 - **Build Time:** 6,000 minutes/month
 - **Team Members:** Unlimited on Hobby plan
@@ -1847,7 +1805,7 @@ jobs:
 - **Function Timeout:** Large backup exports may timeout
 - **Execution Limit:** Heavy real-time sync may hit execution time limit
 - **Bandwidth Limit:** Frequent backup downloads may exceed 100GB
-- **WebSocket Support:** Vercel does not support raw WebSockets (use SSE instead)
+- **Realtime:** SSE + polling fallback (no raw WebSockets); change streams require a persistent host in production.
 
 **Mitigation:**
 
@@ -1855,7 +1813,7 @@ jobs:
 - Implement server-side batching for exports
 - Optimize sync frequency to reduce execution time
 - Compress backup files before download
-- Use SSE instead of WebSockets
+- Use SSE + polling fallback instead of WebSockets
 
 ### 9.3 iOS Push Notification Limits
 
@@ -2022,7 +1980,7 @@ jobs:
 - **Mitigation:**
   - Rate limiting per IP (100 requests/minute)
   - Rate limiting per user (200 requests/minute)
-  - Vercel's built-in DDoS protection
+  - Host-provided protections as available
   - Implement caching for read-heavy operations
 
 **Threat 11: Resource Exhaustion**
@@ -2224,7 +2182,7 @@ jobs:
 
 - Never commit secrets to Git
 - Use `.env.local` for local development
-- Use Vercel environment variables for production
+- Use host environment variables for production
 - Rotate secrets regularly
 
 **2. Dependency Management:**
