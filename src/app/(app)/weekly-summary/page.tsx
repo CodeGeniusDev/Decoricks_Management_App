@@ -127,6 +127,10 @@ export default function WeeklySummaryPage() {
     }
   }, [period])
 
+  useRealtimeSync('finance', () => {
+    // best effort refresh
+  })
+
   useEffect(() => {
     fetchSummary()
   }, [fetchSummary, period])
