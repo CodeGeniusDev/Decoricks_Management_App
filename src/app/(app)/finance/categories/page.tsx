@@ -1,5 +1,6 @@
 'use client';
 
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { PageTransition } from '@/components/PageTransition';
