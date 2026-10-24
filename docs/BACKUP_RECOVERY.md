@@ -136,21 +136,22 @@ better because it runs missed jobs on wake.
 - **A "Export now" button inside the app.** The Founder-only, audit-logged export
   is specified, but it is a new product feature and is being held for separate
   sign-off. The CLI in step 2 already produces the same encrypted archive.
-- **Renaming the live database from `test` to `decoricks`.** This is a real change
+- **Renaming the live database from `test` to `decoricks_prod`.** This is a real change
   to production data and is intentionally left for an approved, backed-up step —
-  it has NOT been done. Take a verified backup (steps 2 and 3) before it is
+  it has NOT been done. The full copy-and-switch runbook (and rollback) is
+  `docs/DB_MIGRATION.md`; take a verified backup (steps 2 and 3) before it is
   attempted.
 
 ---
 
 ## Reference
 
-| Command | Purpose | Writes? |
-|---|---|---|
-| `npm run backup` | encrypted full-database dump + meta | reads only |
-| `npm run restore -- --from X` | preview a restore | reads only |
-| `npm run restore -- --from X --into test_check --apply` | restore into a sandbox + reconcile | new empty DB only |
-| `scripts/backup.sh` | scheduled wrapper, prunes to 30 newest | reads only |
+| Command                                                 | Purpose                                | Writes?           |
+| ------------------------------------------------------- | -------------------------------------- | ----------------- |
+| `npm run backup`                                        | encrypted full-database dump + meta    | reads only        |
+| `npm run restore -- --from X`                           | preview a restore                      | reads only        |
+| `npm run restore -- --from X --into test_check --apply` | restore into a sandbox + reconcile     | new empty DB only |
+| `scripts/backup.sh`                                     | scheduled wrapper, prunes to 30 newest | reads only        |
 
 Environment: `DECORICKS_BACKUP_KEY_FILE` (preferred) or `DECORICKS_BACKUP_KEY`
 (ephemeral), `BACKUP_DIR` (where archives land). The source database is resolved
