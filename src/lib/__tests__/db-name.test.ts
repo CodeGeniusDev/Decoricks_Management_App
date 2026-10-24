@@ -4,6 +4,8 @@ import {
   resolveDatabase,
   uriDefaultDatabase,
   validateDatabaseName,
+  assertScriptDatabaseConsent,
+  PROD_DB_CONSENT_FLAG,
   type DatabaseNameSource,
 } from '@/lib/db-name'
 
@@ -211,5 +213,47 @@ describe('looksLikeTestDatabase', () => {
     expect(looksLikeTestDatabase('test')).toBe(false)
     expect(looksLikeTestDatabase('decoricks')).toBe(false)
     expect(looksLikeTestDatabase('decoricks_test_backup')).toBe(false)
+  })
+})
+
+describe('assertScriptDatabaseConsent', () => {
+  // An explicit `env` is passed everywhere so the guard is tested without
+  // mutating the real `process.env`.
+  const consent = { [PROD_DB_CONSENT_FLAG]: '1' }
+  const none = {}
+
+  it('always allows a test-shaped sandbox, flag or not', () => {
+    expect(() => assertScriptDatabaseConsent('decoricks_test', { script: 'x.ts' })).not.toThrow()
+    expect(() => assertScriptDatabaseConsent('test_phase5', { script: 'x.ts' })).not.toThrow()
+    expect(() =>
+      assertScriptDatabaseConsent('decoricks_test', { script: 'x.ts', env: none })
+    ).not.toThrow()
+  })
+
+  it('refuses the real production database ("test") without the consent flag', () => {
+    expect(() =>
+      assertScriptDatabaseConsent('test', { script: 'scripts/seed.ts', env: none })
+    ).toThrow(/Refusing to run scripts\/seed\.ts against "test"/)
+    expect(() =>
+      assertScriptDatabaseConsent('decoricks', { script: 'scripts/seed.ts', env: none })
+    ).toThrow(/DECORICKS_ALLOW_PROD_DB/)
+  })
+
+  it('permits a non-test database only when DECORICKS_ALLOW_PROD_DB=1', () => {
+    expect(() =>
+      assertScriptDatabaseConsent('test', { script: 'x.ts', env: consent })
+    ).not.toThrow()
+    expect(() =>
+      assertScriptDatabaseConsent('decoricks', { script: 'x.ts', env: consent })
+    ).not.toThrow()
+  })
+
+  it('treats any other value of the flag as no consent', () => {
+    expect(() =>
+      assertScriptDatabaseConsent('test', {
+        script: 'x.ts',
+        env: { [PROD_DB_CONSENT_FLAG]: 'true' },
+      })
+    ).toThrow(/Refusing to run/)
   })
 })

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { MongoClient, ObjectId, type Db } from 'mongodb'
 import { getEnv } from '../src/lib/env'
-import { resolveDatabase } from '../src/lib/db-name'
+import { resolveDatabase, assertScriptDatabaseConsent } from '../src/lib/db-name'
 
 /**
  * Phase 6 assignee migration (SPEC §3.1.15.3).
@@ -88,6 +88,21 @@ const run = async () => {
     const db = client.db(target.dbName)
     console.log(`Target database: "${db.databaseName}" (resolved from ${target.source})`)
     if (target.warning) console.warn(`WARNING: ${target.warning}`)
+
+    // The migration writes (and creates a default "Team Board") only in apply
+    // mode, so only the apply path needs the operator consent flag. A dry run
+    // reads and prints, so it is not gated.
+    if (!DRY_RUN) {
+      try {
+        assertScriptDatabaseConsent(db.databaseName, {
+          script: 'scripts/migrate-tasks-assignees.ts',
+        })
+      } catch (err) {
+        console.error((err as Error).message)
+        process.exit(1)
+      }
+    }
+
     const names = await collectionNames(db)
     if (!names.has('tasks')) {
       console.log('No `tasks` collection — nothing to migrate.')

@@ -15,6 +15,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { MongoClient, type Db, type Document } from 'mongodb'
+import { assertScriptDatabaseConsent } from '../src/lib/db-name'
 
 const loadEnvLocal = (): void => {
   const file = path.join(process.cwd(), '.env.local')
@@ -80,6 +81,15 @@ async function main() {
   }
   if (!haveBackup) {
     console.error('Refusing to apply without --i-have-a-backup. Create a backup first.')
+    await client.close()
+    process.exit(1)
+  }
+  // Writing to a non-test-shaped database (this deployment's real data) also needs
+  // the operator consent flag, on top of --apply --i-have-a-backup.
+  try {
+    assertScriptDatabaseConsent(db.databaseName, { script: 'scripts/index-migrate-dry-run.ts' })
+  } catch (err) {
+    console.error((err as Error).message)
     await client.close()
     process.exit(1)
   }

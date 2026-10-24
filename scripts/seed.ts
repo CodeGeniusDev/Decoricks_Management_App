@@ -2,7 +2,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { MongoClient } from 'mongodb'
 import { getEnv } from '../src/lib/env'
-import { resolveDatabase, looksLikeTestDatabase } from '../src/lib/db-name'
+import {
+  resolveDatabase,
+  looksLikeTestDatabase,
+  assertScriptDatabaseConsent,
+} from '../src/lib/db-name'
 import { SPEC_ROLES, LAHORE_STOCK_ROLES, SCOPED_LAHORE_STOCK_PERMISSION } from '../src/lib/roles'
 import { hashPassword } from '../src/lib/auth/password'
 import { karachiMidnight } from '../src/lib/finance'
@@ -286,6 +290,16 @@ const main = async () => {
           `financial defaults — point it at the application database, and use ` +
           `npm run seed:e2e for a test run.`
       )
+      process.exit(1)
+    }
+
+    // A non-test-shaped target (this deployment's real database) requires an
+    // explicit operator opt-in. Bare `test` is not test-shaped, so `npm run seed`
+    // now refuses to touch it unless DECORICKS_ALLOW_PROD_DB=1 is set.
+    try {
+      assertScriptDatabaseConsent(db.databaseName, { script: 'scripts/seed.ts' })
+    } catch (err) {
+      console.error((err as Error).message)
       process.exit(1)
     }
 

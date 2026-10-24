@@ -54,6 +54,42 @@ export const TEST_DB_PATTERNS = [/^decoricks_test$/, /^test_[a-z0-9_]+$/i]
 export const looksLikeTestDatabase = (name: string): boolean =>
   TEST_DB_PATTERNS.some((pattern) => pattern.test(name))
 
+/**
+ * The explicit operator opt-in required before any seed / migration / cleanup
+ * script may write to a database that is NOT test-shaped.
+ *
+ * A bare `test` is not test-shaped here (see `TEST_DB_PATTERNS`) — in this
+ * deployment it is the production database, reached because the Atlas URI has an
+ * empty path and the driver falls back to `test`. Historically a maintenance
+ * script inherited that fallback silently and could point a `updateOne` /
+ * `deleteMany` at real data. This guard closes that door: a script must either
+ * target a sandbox (`decoricks_test` / `test_*`) or be run with the flag set.
+ */
+export const PROD_DB_CONSENT_FLAG = 'DECORICKS_ALLOW_PROD_DB'
+
+/**
+ * Throws unless `dbName` is either a test-shaped sandbox or the operator has set
+ * `DECORICKS_ALLOW_PROD_DB=1`. Call it in every writing script immediately after
+ * the `client.db(...)` handle exists and before any operation that mutates data,
+ * passing `db.databaseName` (which resolves the driver-default `test` too).
+ *
+ * `looksLikeTestDatabase` short-circuits first, so the hermetic suites
+ * (`NODE_ENV=test`, `E2E_TEST_MODE=1`) never need the flag.
+ */
+export const assertScriptDatabaseConsent = (
+  dbName: string,
+  opts: { script: string; env?: Record<string, string | undefined> }
+): void => {
+  if (looksLikeTestDatabase(dbName)) return
+  const env = opts.env ?? process.env
+  if (env[PROD_DB_CONSENT_FLAG] === '1') return
+  throw new Error(
+    `Refusing to run ${opts.script} against "${dbName}": it is not a test-shaped database, ` +
+      `so it is treated as holding real data. Re-run with ${PROD_DB_CONSENT_FLAG}=1 only if you ` +
+      `intend to write to this database.`
+  )
+}
+
 const fail = (message: string): never => {
   throw new Error(`Database configuration error: ${message}`)
 }

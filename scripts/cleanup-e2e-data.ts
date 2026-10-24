@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { Collection, Db, MongoClient, ObjectId } from 'mongodb'
 import { getEnv } from '../src/lib/env'
-import { resolveDatabase } from '../src/lib/db-name'
+import { resolveDatabase, assertScriptDatabaseConsent } from '../src/lib/db-name'
 
 /**
  * Removes Playwright (E2E) leftover records from the application database.
@@ -141,6 +141,19 @@ const main = async () => {
       )
       process.exitCode = 1
       return
+    }
+
+    // Deleting from a non-test-shaped database (this deployment's real data) also
+    // needs the operator consent flag, on top of --confirm. Dry runs only read, so
+    // they are not gated.
+    if (APPLY) {
+      try {
+        assertScriptDatabaseConsent(dbName, { script: 'scripts/cleanup-e2e-data.ts' })
+      } catch (err) {
+        console.error((err as Error).message)
+        process.exitCode = 1
+        return
+      }
     }
 
     console.log('')
