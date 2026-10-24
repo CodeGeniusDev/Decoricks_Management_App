@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { PageTransition } from '@/components/PageTransition'
 import { PageHeader } from '@/components/layout/Page'
 import { Card } from '@/components/ui/Card'
+import { HelpPanel } from '@/components/ui/HelpPanel'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Input } from '@/components/ui/Input'
@@ -165,6 +166,38 @@ export default function DistributionsPage() {
       <PageHeader
         title="Profit Distribution"
         description="Monthly partner and charity shares, calculated from the ledger and the configured policy. Nothing here is automated — every record is a Founder decision."
+      />
+
+      {/* Phase 2 §8: a distribution is the one screen where a wrong reading has
+          real consequences, so the panel states what pressing Calculate does
+          and, more importantly, what it does not do. */}
+      <HelpPanel
+        className="mb-4"
+        title="How a distribution works"
+        persistKey="distributions"
+        defaultOpen
+        intro="A distribution is a proposal the Founder asks for. Nothing is paid out, and no ledger entry is written, until it is approved on its own page."
+        steps={[
+          'Choose a Karachi month and press Calculate. The share comes from that month’s net profit and the charity, partner and reinvestment percentages in business settings.',
+          'The record appears as “Calculated — not approved”. Open it to see every partner line and the charity amount, each one derived from the same figures the reports show.',
+          'Approving locks the numbers. Marking it Distributed is a separate step, recorded when the money actually moves.',
+          'Calculating the same month again returns the record that already exists. One month can never hold two competing distributions.',
+        ]}
+        items={[
+          {
+            title: 'Whole paisa',
+            body: 'Splits are done in paisa and distributed by largest remainder, so the parts always add back up to the whole. No share is rounded away.',
+          },
+          {
+            title: 'Reinvestment',
+            body: 'Each partner’s reinvested share rounds down; what is left of that paisa stays on the partner’s side of the split rather than vanishing.',
+          },
+          {
+            title: 'Deductions and bonuses',
+            body: 'Deducting from one partner redistributes that amount pro-rata to the others. A bonus is funded from retained earnings — it does not reduce anyone else’s share.',
+          },
+        ]}
+        footer="Approve, adjust and mark as distributed on the distribution’s own page."
       />
 
       {canApprove && (

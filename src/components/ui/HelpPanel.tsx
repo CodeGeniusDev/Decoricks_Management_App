@@ -86,7 +86,15 @@ export const HelpPanel = ({
   // Lazy initialiser: read the remembered choice once, before the first paint,
   // so a returning reader never sees the panel flash open and shut.
   const [open, setOpen] = useState(() => readPreference(persistKey, defaultOpen))
-  const panelId = useId()
+  /* `useId()` returns a value whose delimiters are not legal in a CSS selector
+     (`:r1:` on React 18, `«r1»` on React 19). The region it names has to be
+     addressable — `aria-controls` is resolved with `#<id>` by the QA suite, and
+     an unescaped colon makes that a selector parse error rather than a lookup.
+     Keeping React's counter and dropping its punctuation preserves both the
+     uniqueness across siblings and the guarantee that the string is identical
+     on the server and the client, which hydration requires. The `help-` prefix
+     also keeps the id a valid CSS identifier (it may not start with a digit). */
+  const regionId = `help-${useId().replace(/[^A-Za-z0-9_-]/g, '')}`
 
   const toggle = () => {
     setOpen((current) => {
@@ -109,7 +117,7 @@ export const HelpPanel = ({
       <button
         type="button"
         aria-expanded={open}
-        aria-controls={panelId}
+        aria-controls={regionId}
         onClick={toggle}
         className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-decoricks-dark focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-decoricks-brown"
       >
@@ -121,7 +129,7 @@ export const HelpPanel = ({
       </button>
 
       {open && (
-        <div id={panelId} className="border-t border-line-subtle px-3 py-3">
+        <div id={regionId} className="border-t border-line-subtle px-3 py-3">
           {intro && <p className="text-xs leading-relaxed text-ink-secondary">{intro}</p>}
 
           {steps.length > 0 && (

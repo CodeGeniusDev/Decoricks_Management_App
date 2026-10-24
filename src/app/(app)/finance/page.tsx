@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { PageTransition } from '@/components/PageTransition'
 import { PageHeader, Metric, MetricGrid } from '@/components/layout/Page'
 import { Card } from '@/components/ui/Card'
+import { HelpPanel } from '@/components/ui/HelpPanel'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -255,6 +256,36 @@ export default function FinanceOverviewPage() {
             )}
           </>
         }
+      />
+
+      {/* Phase 2 §8: the page mixes two different ideas of "how much money".
+          Left unexplained, that is the single easiest thing in this app to
+          misread, so the panel says which block answers which question. */}
+      <HelpPanel
+        className="mb-4"
+        title="How to read this page"
+        persistKey="finance"
+        defaultOpen
+        intro="The four figures across the top are cash. The two blocks underneath are trading results. They are separate on purpose: money moving in or out of an account is not the same thing as the business earning or spending it."
+        items={[
+          {
+            title: 'Total cash',
+            body: 'What is sitting in every account right now, including accounts you retired. It includes their opening balances.',
+          },
+          {
+            title: 'Today / This week / This month',
+            body: 'Net cash flow — money in minus money out — inside Karachi boundaries. The week runs Monday to Sunday.',
+          },
+          {
+            title: 'Trading results',
+            body: 'Revenue and expenses since the beginning, from the ledger only. A transfer between your own accounts appears nowhere here, because it earned and cost nothing.',
+          },
+          {
+            title: 'Underlined labels',
+            body: 'Any figure you can focus or hover has a plain-language definition attached, so the wording never has to be guessed.',
+          },
+        ]}
+        footer="Accounts and Categories are where the underlying lists are maintained; New transaction posts a single ledger entry."
       />
 
       {/* Cash position */}
