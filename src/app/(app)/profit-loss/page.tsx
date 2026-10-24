@@ -1,29 +1,29 @@
-'use client';
+'use client'
 
 import { useRealtimeSync } from '@/lib/sync/useRealtime'
-import React, { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { PageTransition } from '@/components/PageTransition';
-import { PageHeader, Metric, MetricGrid } from '@/components/layout/Page';
-import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { ErrorState } from '@/components/ui/ErrorState';
-import { CalcPanel } from '@/components/ui/CalcPanel';
-import { TrendBars } from '@/components/charts/TrendBars';
+import React, { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
+import { PageTransition } from '@/components/PageTransition'
+import { PageHeader, Metric, MetricGrid } from '@/components/layout/Page'
+import { Card } from '@/components/ui/Card'
+import { Badge } from '@/components/ui/Badge'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { CalcPanel } from '@/components/ui/CalcPanel'
+import { TrendBars } from '@/components/charts/TrendBars'
 import {
   PeriodFilter,
   periodFilterQuery,
   periodFilterReady,
   EMPTY_PERIOD_FILTER,
   type PeriodFilterValue,
-} from '@/components/reports/PeriodFilter';
-import { apiJson } from '@/lib/api-client';
-import { formatPaisa } from '@/lib/money';
-import { formatKarachiDate } from '@/lib/date';
-import { toKarachiInputDate, type CategoryView } from '@/modules/finance/finance-ui';
-import { categoryLabel } from '@/modules/budget/budget-ui';
+} from '@/components/reports/PeriodFilter'
+import { apiJson } from '@/lib/api-client'
+import { formatPaisa } from '@/lib/money'
+import { formatKarachiDate } from '@/lib/date'
+import { toKarachiInputDate, type CategoryView } from '@/modules/finance/finance-ui'
+import { categoryLabel } from '@/modules/budget/budget-ui'
 
 /**
  * Profit & Loss — the SPEC §5 chain, live from the ledger (Phase 4 brief
@@ -38,72 +38,72 @@ import { categoryLabel } from '@/modules/budget/budget-ui';
  */
 
 interface PlLine {
-  category: string;
-  amount: number;
-  count: number;
+  category: string
+  amount: number
+  count: number
 }
 
 interface PlProfitLoss {
-  revenue: number;
-  revenueCount: number;
-  refunds: number;
-  netSales: number;
-  cogs: number;
-  cogsProvisional: boolean;
-  cogsSource: string;
-  grossProfit: number;
-  operatingExpenses: number;
-  netProfit: number;
-  operatingLines: PlLine[];
-  revenueLines: PlLine[];
-  count: number;
+  revenue: number
+  revenueCount: number
+  refunds: number
+  netSales: number
+  cogs: number
+  cogsProvisional: boolean
+  cogsSource: string
+  grossProfit: number
+  operatingExpenses: number
+  netProfit: number
+  operatingLines: PlLine[]
+  revenueLines: PlLine[]
+  count: number
 }
 
 interface PlMonthlyPoint {
-  month: string;
-  label: string;
-  netSales: number;
-  grossProfit: number;
-  operatingExpenses: number;
-  netProfit: number;
-  count: number;
+  month: string
+  label: string
+  netSales: number
+  grossProfit: number
+  operatingExpenses: number
+  netProfit: number
+  count: number
 }
 
 interface PlView {
-  period: string;
-  range: { start: string; end: string };
-  profitLoss: PlProfitLoss;
-  monthly: PlMonthlyPoint[];
-  formulas: { netSales: string; grossProfit: string; netProfit: string; cogs: string };
+  period: string
+  range: { start: string; end: string }
+  profitLoss: PlProfitLoss
+  monthly: PlMonthlyPoint[]
+  formulas: { netSales: string; grossProfit: string; netProfit: string; cogs: string }
 }
 
 export default function ProfitLossPage() {
-  const [filter, setFilter] = useState<PeriodFilterValue>(EMPTY_PERIOD_FILTER);
-  const [data, setData] = useState<PlView | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [categories, setCategories] = useState<CategoryView[]>([]);
+  const [filter, setFilter] = useState<PeriodFilterValue>(EMPTY_PERIOD_FILTER)
+  const [data, setData] = useState<PlView | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [categories, setCategories] = useState<CategoryView[]>([])
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
+    let cancelled = false
+    ;(async () => {
       try {
-        const list = await apiJson<CategoryView[]>('/api/finance/categories');
-        if (!cancelled) setCategories(list);
+        const list = await apiJson<CategoryView[]>('/api/finance/categories')
+        if (!cancelled) setCategories(list)
       } catch {
-        if (!cancelled) setCategories([]);
+        if (!cancelled) setCategories([])
       }
-    })();
+    })()
     return () => {
-      cancelled = true;
-    };
-  }, []);
+      cancelled = true
+    }
+  }, [])
 
   const labels = React.useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const category of categories) map[category.name] = category.label;
-    return map;
-  }, [categories]);
+    const map: Record<string, string> = {}
+    for (const category of categories) map[category.name] = category.label
+    return map
+  }, [categories])
 
   useRealtimeSync('finance', () => {
     void load()
@@ -111,30 +111,30 @@ export default function ProfitLossPage() {
 
   const load = useCallback(async () => {
     if (!periodFilterReady(filter)) {
-      setLoading(false);
-      return;
+      setLoading(false)
+      return
     }
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
-      setData(await apiJson<PlView>(`/api/finance/pl?${periodFilterQuery(filter)}`));
+      setData(await apiJson<PlView>(`/api/finance/pl?${periodFilterQuery(filter)}`))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load profit and loss');
+      setError(err instanceof Error ? err.message : 'Failed to load profit and loss')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, [filter]);
+  }, [filter])
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load()
+  }, [load])
 
   const ledgerHref = (params: Record<string, string>) =>
     `/finance/transactions?${new URLSearchParams({
       startDate: toKarachiInputDate(data!.range.start),
       endDate: toKarachiInputDate(data!.range.end),
       ...params,
-    }).toString()}`;
+    }).toString()}`
 
   const body = () => {
     if (loading) {
@@ -143,7 +143,7 @@ export default function ProfitLossPage() {
           <Skeleton variant="rect" className="h-24" />
           <Skeleton variant="rect" className="mt-4 h-96" />
         </>
-      );
+      )
     }
     if (error) {
       return (
@@ -154,7 +154,7 @@ export default function ProfitLossPage() {
             action={{ label: 'Retry', onClick: () => void load() }}
           />
         </Card>
-      );
+      )
     }
     if (!data) {
       return (
@@ -164,19 +164,23 @@ export default function ProfitLossPage() {
             description="A custom period needs both a start and an end date (Karachi calendar)."
           />
         </Card>
-      );
+      )
     }
 
-    const pl = data.profitLoss;
+    const pl = data.profitLoss
     const rangeLabel = `${formatKarachiDate(new Date(data.range.start), 'date')} – ${formatKarachiDate(
       new Date(data.range.end),
       'date'
-    )} (Karachi)`;
+    )} (Karachi)`
 
     return (
       <>
         <MetricGrid>
-          <Metric label="Net sales" value={formatPaisa(pl.netSales)} hint={`Revenue ${formatPaisa(pl.revenue)}`} />
+          <Metric
+            label="Net sales"
+            value={formatPaisa(pl.netSales)}
+            hint={`Revenue ${formatPaisa(pl.revenue)}`}
+          />
           <Metric
             label="Gross profit"
             value={formatPaisa(pl.grossProfit)}
@@ -208,8 +212,13 @@ export default function ProfitLossPage() {
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-5">
           <Card className="p-4 lg:col-span-3">
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-decoricks-dark">Statement · {rangeLabel}</h2>
-              <Link href="/cash-flow" className="text-xs font-medium text-decoricks-brown hover:underline">
+              <h2 className="text-sm font-semibold text-decoricks-dark">
+                Statement · {rangeLabel}
+              </h2>
+              <Link
+                href="/cash-flow"
+                className="text-xs font-medium text-decoricks-brown hover:underline"
+              >
                 Cash flow view →
               </Link>
             </div>
@@ -220,7 +229,9 @@ export default function ProfitLossPage() {
                   Revenue
                   <span className="ml-1 text-2xs text-ink-muted">({pl.revenueCount} entries)</span>
                 </dt>
-                <dd className="font-semibold tabular-nums text-status-success">{formatPaisa(pl.revenue)}</dd>
+                <dd className="font-semibold tabular-nums text-status-success">
+                  {formatPaisa(pl.revenue)}
+                </dd>
               </div>
               {pl.revenueLines.length > 0 && (
                 <dd className="mb-2 ml-3 space-y-0.5 text-xs text-ink-muted">
@@ -235,11 +246,15 @@ export default function ProfitLossPage() {
 
               <div className="flex items-baseline justify-between gap-2 border-t border-line-subtle py-1.5">
                 <dt className="text-ink-secondary">Refunds (deduction)</dt>
-                <dd className="font-semibold tabular-nums text-status-danger">− {formatPaisa(pl.refunds)}</dd>
+                <dd className="font-semibold tabular-nums text-status-danger">
+                  − {formatPaisa(pl.refunds)}
+                </dd>
               </div>
               <div className="flex items-baseline justify-between gap-2 border-t border-line-subtle py-1.5">
                 <dt className="font-semibold text-decoricks-dark">Net sales</dt>
-                <dd className="font-semibold tabular-nums text-decoricks-dark">{formatPaisa(pl.netSales)}</dd>
+                <dd className="font-semibold tabular-nums text-decoricks-dark">
+                  {formatPaisa(pl.netSales)}
+                </dd>
               </div>
               <CalcPanel
                 className="my-2"
@@ -257,16 +272,25 @@ export default function ProfitLossPage() {
               <div className="flex items-baseline justify-between gap-2 border-t border-line-subtle py-1.5">
                 <dt className="flex items-center gap-2 text-ink-secondary">
                   COGS
-                  {pl.cogsProvisional && <Badge size="sm" variant="warning">Provisional</Badge>}
+                  {pl.cogsProvisional && (
+                    <Badge size="sm" variant="warning">
+                      Provisional
+                    </Badge>
+                  )}
                 </dt>
-                <dd className="font-semibold tabular-nums text-status-danger">− {formatPaisa(pl.cogs)}</dd>
+                <dd className="font-semibold tabular-nums text-status-danger">
+                  − {formatPaisa(pl.cogs)}
+                </dd>
               </div>
               <CalcPanel
                 className="my-2"
                 label="COGS"
                 formula={data.formulas.cogs}
                 inputs={[{ label: 'COGS (paisa)', value: formatPaisa(pl.cogs) }]}
-                link={{ href: ledgerHref({ type: 'expense', category: 'product_purchasing' }), label: 'Open purchasing records' }}
+                link={{
+                  href: ledgerHref({ type: 'expense', category: 'product_purchasing' }),
+                  label: 'Open purchasing records',
+                }}
                 note={
                   pl.cogsProvisional
                     ? 'Provisional until the Phase 5 inventory module provides weighted-average cost of goods sold (SPEC §5.3). Source: ' +
@@ -277,7 +301,9 @@ export default function ProfitLossPage() {
 
               <div className="flex items-baseline justify-between gap-2 border-t border-line-subtle py-1.5">
                 <dt className="font-semibold text-decoricks-dark">Gross profit</dt>
-                <dd className="font-semibold tabular-nums text-decoricks-dark">{formatPaisa(pl.grossProfit)}</dd>
+                <dd className="font-semibold tabular-nums text-decoricks-dark">
+                  {formatPaisa(pl.grossProfit)}
+                </dd>
               </div>
               <CalcPanel
                 className="my-2"
@@ -292,7 +318,9 @@ export default function ProfitLossPage() {
 
               <div className="flex items-baseline justify-between gap-2 border-t border-line-subtle py-1.5">
                 <dt className="text-ink-secondary">Operating expenses</dt>
-                <dd className="font-semibold tabular-nums text-status-danger">− {formatPaisa(pl.operatingExpenses)}</dd>
+                <dd className="font-semibold tabular-nums text-status-danger">
+                  − {formatPaisa(pl.operatingExpenses)}
+                </dd>
               </div>
               {pl.operatingLines.length > 0 && (
                 <dd className="mb-2 ml-3 space-y-0.5 text-xs text-ink-muted">
@@ -363,8 +391,8 @@ export default function ProfitLossPage() {
           </Card>
         </div>
       </>
-    );
-  };
+    )
+  }
 
   return (
     <PageTransition>
@@ -385,5 +413,5 @@ export default function ProfitLossPage() {
       </Card>
       {body()}
     </PageTransition>
-  );
+  )
 }

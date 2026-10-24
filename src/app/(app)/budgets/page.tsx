@@ -1,37 +1,37 @@
-'use client';
+'use client'
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { PageTransition } from '@/components/PageTransition';
-import { PageHeader } from '@/components/layout/Page';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { ErrorState } from '@/components/ui/ErrorState';
-import { Select } from '@/components/ui/Select';
-import { Table } from '@/components/ui/Table';
-import { Toast } from '@/components/ui/Toast';
-import { IconPlus } from '@/components/ui/icons';
-import { apiJson, ApiError } from '@/lib/api-client';
-import { useRealtimeSync } from '@/lib/sync/useRealtime';
-import { enqueueCreate } from '@/lib/offline/browser';
-import type { BudgetCreatePayload } from '@/lib/offline/types';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { can } from '@/lib/permissions-client';
-import { formatPaisa } from '@/lib/money';
-import { formatKarachiDate } from '@/lib/date';
-import { paisaToInputValue } from '@/lib/form-helpers';
-import { toKarachiInputDate, type CategoryView } from '@/modules/finance/finance-ui';
-import { BudgetFormModal, type BudgetFormValues } from '@/modules/budget/BudgetFormModal';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { PageTransition } from '@/components/PageTransition'
+import { PageHeader } from '@/components/layout/Page'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { Select } from '@/components/ui/Select'
+import { Table } from '@/components/ui/Table'
+import { Toast } from '@/components/ui/Toast'
+import { IconPlus } from '@/components/ui/icons'
+import { apiJson, ApiError } from '@/lib/api-client'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
+import { enqueueCreate } from '@/lib/offline/browser'
+import type { BudgetCreatePayload } from '@/lib/offline/types'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { can } from '@/lib/permissions-client'
+import { formatPaisa } from '@/lib/money'
+import { formatKarachiDate } from '@/lib/date'
+import { paisaToInputValue } from '@/lib/form-helpers'
+import { toKarachiInputDate, type CategoryView } from '@/modules/finance/finance-ui'
+import { BudgetFormModal, type BudgetFormValues } from '@/modules/budget/BudgetFormModal'
 import {
   BUDGET_STATUS_LABEL,
   PERIOD_KIND_LABEL,
   categoryLabel,
   newIdempotencyKey,
   type BudgetView,
-} from '@/modules/budget/budget-ui';
+} from '@/modules/budget/budget-ui'
 
 /**
  * Budgets — list and creation (Phase 4 brief items 1–2).
@@ -44,46 +44,44 @@ import {
  * on the detail screen.
  */
 
-type StatusFilter = 'all' | 'draft' | 'active' | 'archived';
+type StatusFilter = 'all' | 'draft' | 'active' | 'archived'
 
 const STATUS_BADGE: Record<BudgetView['status'], 'default' | 'success' | 'warning'> = {
   draft: 'default',
   active: 'success',
   archived: 'warning',
-};
+}
 
 export default function BudgetsPage() {
-  const router = useRouter();
-  const { user } = useAuth();
-  const canCreate = user ? can({ role: user.role }, 'budget', 'create') : false;
+  const router = useRouter()
+  const { user } = useAuth()
+  const canCreate = user ? can({ role: user.role }, 'budget', 'create') : false
 
-  const [budgets, setBudgets] = useState<BudgetView[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [budgets, setBudgets] = useState<BudgetView[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
-  const [categories, setCategories] = useState<CategoryView[]>([]);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [categories, setCategories] = useState<CategoryView[]>([])
+  const [modalOpen, setModalOpen] = useState(false)
   // "Edit & resubmit" handoff from the Sync screen (§7): payload staged in
   // sessionStorage by the queue, consumed exactly once on mount. The queue
   // stores allocations in paisa; the form wants them typed back in PKR.
-  const [resubmitDraft, setResubmitDraft] = useState<
-    Partial<{
-      name: string;
-      periodStart: string;
-      periodEnd: string;
-      categories: { category: string; amount: string }[];
-    }> | null
-  >(null);
+  const [resubmitDraft, setResubmitDraft] = useState<Partial<{
+    name: string
+    periodStart: string
+    periodEnd: string
+    categories: { category: string; amount: string }[]
+  }> | null>(null)
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem('decoricks:offline:resubmit');
-      if (!raw) return;
-      sessionStorage.removeItem('decoricks:offline:resubmit');
-      const staged = JSON.parse(raw) as { operation?: string; payload?: BudgetCreatePayload };
+      const raw = sessionStorage.getItem('decoricks:offline:resubmit')
+      if (!raw) return
+      sessionStorage.removeItem('decoricks:offline:resubmit')
+      const staged = JSON.parse(raw) as { operation?: string; payload?: BudgetCreatePayload }
       if (staged.operation === 'create_budget' && staged.payload) {
-        const payload = staged.payload;
+        const payload = staged.payload
         setResubmitDraft({
           name: payload.name,
           periodStart: payload.periodStart,
@@ -92,53 +90,53 @@ export default function BudgetsPage() {
             category: c.category,
             amount: paisaToInputValue(c.budgeted),
           })),
-        });
-        setModalOpen(true);
+        })
+        setModalOpen(true)
       }
     } catch {
       // A corrupt handoff is simply no handoff.
     }
-  }, []);
+  }, [])
   // One key per form session, minted when the dialog opens.
-  const idempotencyKeyRef = useRef('');
+  const idempotencyKeyRef = useRef('')
 
   const load = useCallback(async () => {
     try {
-      setLoading(true);
-      setError(null);
-      setBudgets(await apiJson<BudgetView[]>('/api/budgets'));
+      setLoading(true)
+      setError(null)
+      setBudgets(await apiJson<BudgetView[]>('/api/budgets'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load budgets');
+      setError(err instanceof Error ? err.message : 'Failed to load budgets')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, []);
+  }, [])
 
   useRealtimeSync('finance', () => {
-    void load();
-  });
+    void load()
+  })
 
   // Reference data for labels and the create form; not fatal if it fails.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
+    let cancelled = false
+    ;(async () => {
       try {
-        const list = await apiJson<CategoryView[]>('/api/finance/categories');
-        if (!cancelled) setCategories(list);
+        const list = await apiJson<CategoryView[]>('/api/finance/categories')
+        if (!cancelled) setCategories(list)
       } catch {
-        if (!cancelled) setCategories([]);
+        if (!cancelled) setCategories([])
       }
-    })();
+    })()
     return () => {
-      cancelled = true;
-    };
-  }, []);
+      cancelled = true
+    }
+  }, [])
 
   const labels = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const category of categories) map[category.name] = category.label;
-    return map;
-  }, [categories]);
+    const map: Record<string, string> = {}
+    for (const category of categories) map[category.name] = category.label
+    return map
+  }, [categories])
 
   const categoryOptions = useMemo(
     () =>
@@ -146,19 +144,19 @@ export default function BudgetsPage() {
         .filter((c) => c.type === 'expense' && c.isActive)
         .map((c) => ({ value: c.name, label: c.label })),
     [categories]
-  );
+  )
 
   const visible = useMemo(
     () => (statusFilter === 'all' ? budgets : budgets.filter((b) => b.status === statusFilter)),
     [budgets, statusFilter]
-  );
+  )
 
   const openCreate = () => {
     // A manual create must never inherit a resubmit draft.
-    setResubmitDraft(null);
-    idempotencyKeyRef.current = newIdempotencyKey();
-    setModalOpen(true);
-  };
+    setResubmitDraft(null)
+    idempotencyKeyRef.current = newIdempotencyKey()
+    setModalOpen(true)
+  }
 
   const createBudget = async (values: BudgetFormValues) => {
     const body: Record<string, unknown> = {
@@ -167,43 +165,43 @@ export default function BudgetsPage() {
       periodEnd: values.periodEnd,
       categories: values.categories,
       idempotencyKey: idempotencyKeyRef.current,
-    };
-    if (values.periodKind !== 'auto') body.periodKind = values.periodKind;
+    }
+    if (values.periodKind !== 'auto') body.periodKind = values.periodKind
 
     // Offline create (design §6.1): queued with the key this form session
     // already minted, so a blipped online attempt and the queued replay can
     // never produce two budgets. Non-ApiError failures (network) queue too —
     // a draft is never dropped on a connectivity blip.
     const queueOffline = async (): Promise<boolean> => {
-      if (!user?._id) return false;
+      if (!user?._id) return false
       await enqueueCreate({
         userId: user._id,
         operation: 'create_budget',
         payload: body as unknown as BudgetCreatePayload,
         idempotencyKey: idempotencyKeyRef.current,
-      });
-      setModalOpen(false);
+      })
+      setModalOpen(false)
       setToast({
         type: 'success',
         message: `Budget "${values.name}" saved offline — it will sync when you are back online.`,
-      });
-      return true;
-    };
+      })
+      return true
+    }
 
     try {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        if (await queueOffline()) return;
+        if (await queueOffline()) return
       }
-      await apiJson('/api/budgets', { method: 'POST', body: JSON.stringify(body) });
+      await apiJson('/api/budgets', { method: 'POST', body: JSON.stringify(body) })
     } catch (err) {
-      if (err instanceof ApiError) throw err;
-      if (await queueOffline()) return;
-      throw err;
+      if (err instanceof ApiError) throw err
+      if (await queueOffline()) return
+      throw err
     }
-    setModalOpen(false);
-    setToast({ type: 'success', message: `Budget "${values.name}" created as a draft.` });
-    await load();
-  };
+    setModalOpen(false)
+    setToast({ type: 'success', message: `Budget "${values.name}" created as a draft.` })
+    await load()
+  }
 
   if (loading) {
     return (
@@ -215,7 +213,7 @@ export default function BudgetsPage() {
           ))}
         </div>
       </PageTransition>
-    );
+    )
   }
 
   if (error) {
@@ -230,7 +228,7 @@ export default function BudgetsPage() {
           />
         </Card>
       </PageTransition>
-    );
+    )
   }
 
   const columns = [
@@ -241,7 +239,7 @@ export default function BudgetsPage() {
     { key: 'actual', label: 'Spent' },
     { key: 'used', label: 'Used' },
     { key: 'warnings', label: 'Warnings' },
-  ];
+  ]
 
   const rows = visible.map((budget) => ({
     _id: budget._id,
@@ -260,7 +258,9 @@ export default function BudgetsPage() {
         <p className="text-2xs text-ink-muted">{PERIOD_KIND_LABEL[budget.periodKind]}</p>
       </div>
     ),
-    status: <Badge variant={STATUS_BADGE[budget.status]}>{BUDGET_STATUS_LABEL[budget.status]}</Badge>,
+    status: (
+      <Badge variant={STATUS_BADGE[budget.status]}>{BUDGET_STATUS_LABEL[budget.status]}</Badge>
+    ),
     budgeted: <span className="tabular-nums">{formatPaisa(budget.totalBudgeted)}</span>,
     actual: <span className="tabular-nums">{formatPaisa(budget.totalActual)}</span>,
     used: (
@@ -282,7 +282,7 @@ export default function BudgetsPage() {
       ) : (
         <span className="text-xs text-ink-muted">—</span>
       ),
-  }));
+  }))
 
   return (
     <PageTransition>
@@ -329,7 +329,11 @@ export default function BudgetsPage() {
                 ? 'Create a budget to allocate spend per category for a week, a month or any custom period.'
                 : 'Change the status filter to see the rest.'
             }
-            action={canCreate && budgets.length === 0 ? { label: 'New budget', onClick: openCreate } : undefined}
+            action={
+              canCreate && budgets.length === 0
+                ? { label: 'New budget', onClick: openCreate }
+                : undefined
+            }
           />
         </Card>
       ) : (
@@ -360,8 +364,8 @@ export default function BudgetsPage() {
                     <div className="min-w-0">
                       <p className="truncate font-medium text-decoricks-dark">{budget.name}</p>
                       <p className="text-xs text-ink-muted">
-                        {budget.budgetNumber ?? '—'} ·{' '}
-                        {toKarachiInputDate(budget.periodStart)} → {toKarachiInputDate(budget.periodEnd)}
+                        {budget.budgetNumber ?? '—'} · {toKarachiInputDate(budget.periodStart)} →{' '}
+                        {toKarachiInputDate(budget.periodEnd)}
                       </p>
                     </div>
                     <Badge variant={STATUS_BADGE[budget.status]} size="sm">
@@ -422,11 +426,11 @@ export default function BudgetsPage() {
         categoryOptions={categoryOptions}
         initial={resubmitDraft ?? undefined}
         onClose={() => {
-          setModalOpen(false);
-          setResubmitDraft(null);
+          setModalOpen(false)
+          setResubmitDraft(null)
         }}
         onSubmit={createBudget}
       />
     </PageTransition>
-  );
+  )
 }
