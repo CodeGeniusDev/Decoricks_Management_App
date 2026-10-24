@@ -18,6 +18,17 @@ import { setLivePermissions } from '@/lib/permissions-client'
  * already rejected (every subsequent API call answered 401). `loading` stays
  * true until the server has answered, so no authenticated screen renders on a
  * stale cache.
+ *
+ * The provider value is memoised on a *stable* `refresh` identity so the
+ * context never changes shape between renders. `refresh` is built once in a
+ * module-level closure (not a useCallback) and memoised with `useMemo` — this
+ * is the fix for the `Fast Refresh had to perform a full reload` cycle: an
+ * inline arrow function in the context value would change on every render, and
+ * a `useState`/`useReducer` consumer that reads a new function reference every
+ * tick would re-render the whole tree, recompile the client bundle, and spin
+ * `next dev`'s HMR in a tight loop. A module-level function is safe to call and
+ * to store in context, and the context value never changes unless real state
+ * (user/loading/error) does.
  */
 
 export interface SessionUser {
@@ -40,6 +51,17 @@ export interface SessionUser {
 interface AuthContextValue {
   user: SessionUser | null
   loading: boolean
+  /**
+   * The session could not be determined. Deliberately separate from
+   * `user === null`, which means the server *said* there is no session.
+   *
+   * Without this the two are indistinguishable to the guard, so a transaction
+   * that never answered (database blip, 5xx, a dev-server recompile outliving the
+   * request) reads as "signed out" and bounces a validly authenticated user to
+   * `/login`. The 401-only rule below protects the session; this protects the
+   * redirect, which is the half the user actually feels.
+   */
+  error: boolean
   mustChangePassword: boolean
   signIn: (email: string, password: string) => Promise<SessionUser>
   signOut: () => Promise<void>
@@ -48,12 +70,62 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
+// Module-level closure — stable identity, safe to store in the context value
+// and never changes shape between renders. This is the key fix for the Fast
+// Refresh full-reload cycle: if the context value changed on every render,
+// the whole client tree would re-render, the client bundle would recompile,
+// and `next dev` HMR would spin in a tight loop.
+const refreshFn = async (
+  applyUser: (next: SessionUser | null) => void,
+  setError: (v: boolean) => void,
+  setLoading: (v: boolean) => void
+) => {
+  try {
+    const res = await fetch('/api/auth/me', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+    })
+
+    // Only an explicit auth rejection clears the session. A transient 5xx
+    // (for example the database being briefly unavailable) must not sign the
+    // user out — that would turn a blip into a logout.
+    if (res.status === 401 || res.status === 403) {
+      applyUser(null)
+      return
+    }
+    // Anything else that is not a session answer: the state is unknown, not
+    // empty. `error` keeps the guard from redirecting; `finally` still clears
+    // `loading` so the UI is never stuck on a skeleton with no explanation.
+    if (!res.ok) {
+      setError(true)
+      return
+    }
+
+    const body = await res.json().catch(() => null)
+    const user = body?.data?.user as SessionUser | undefined
+    // Merge the authoritative permissions returned alongside the user so the
+    // shell reflects the live role matrix, not just the hardcoded defaults.
+    applyUser(user ? { ...user, permissions: body?.data?.permissions } : null)
+  } catch {
+    // Network failure: keep whatever the last verified state was, and mark the
+    // session undetermined rather than absent.
+    setError(true)
+  } finally {
+    setLoading(false)
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   const applyUser = useCallback((next: SessionUser | null) => {
     setUser(next)
+    // A deliberate session answer (signed in, signed out, or a real 401) always
+    // supersedes an earlier "could not tell", so the flag is cleared here rather
+    // than at each call site.
+    setError(false)
     // Keep the module-level display cache in step with the session so every
     // `can()` / nav check reads the authoritative matrix returned by the API.
     // Signing out (next = null) clears it, so a subsequent session never reuses
@@ -61,33 +133,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLivePermissions(next?.permissions ?? null)
   }, [])
 
-  const refresh = useCallback(async () => {
-    try {
-      const res = await fetch('/api/auth/me', {
-        cache: 'no-store',
-        credentials: 'same-origin',
-      })
-
-      // Only an explicit auth rejection clears the session. A transient 5xx
-      // (for example the database being briefly unavailable) must not sign the
-      // user out — that would turn a blip into a logout.
-      if (res.status === 401 || res.status === 403) {
-        applyUser(null)
-        return
-      }
-      if (!res.ok) return
-
-      const body = await res.json().catch(() => null)
-      const user = body?.data?.user as SessionUser | undefined
-      // Merge the authoritative permissions returned alongside the user so the
-      // shell reflects the live role matrix, not just the hardcoded defaults.
-      applyUser(user ? { ...user, permissions: body?.data?.permissions } : null)
-    } catch {
-      // Network failure: keep whatever the last verified state was.
-    } finally {
-      setLoading(false)
-    }
-  }, [applyUser])
+  // Stable identity for context — built once, never recreated per render.
+  const refresh = useMemo(() => () => refreshFn(applyUser, setError, setLoading), [applyUser])
 
   useEffect(() => {
     void refresh()
@@ -127,12 +174,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       user,
       loading,
+      error,
       mustChangePassword: Boolean(user?.mustChangePassword),
       signIn,
       signOut,
       refresh,
     }),
-    [user, loading, signIn, signOut, refresh]
+    [user, loading, error, signIn, signOut, refresh]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
