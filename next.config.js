@@ -47,6 +47,27 @@ if (!isDev) {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  /*
+   * Build output directory, overridable so a production build can never be
+   * written on top of the `.next` folder a running dev server is reading from.
+   *
+   * Reproduced failure this prevents: with `next dev` on :3000 and a
+   * `next build` + `next start` sharing the project, the build overwrites
+   * `.next/server` while the dev server is mid-request. The dev server then
+   * throws `ENOENT ... pages-manifest.json`, webpack `Caching failed for pack:
+   * ENOENT ... rename 0.pack.gz_ -> 0.pack.gz`, and `Cannot find module
+   * './5611.js'` — and the browser's half of the same event is
+   * `Runtime ChunkLoadError: Loading chunk app/layout failed (timeout:
+   * /_next/static/chunks/app/layout.js)`, because the chunk it was pointed at
+   * has been deleted underneath it. That single collision explains the reported
+   * chunk error, the repeated `Fast Refresh had to perform a full reload`
+   * warnings, and navigations that only work after a manual reload.
+   *
+   * Default stays `.next`, so nothing about the normal dev flow or the Netlify
+   * build changes. Only the isolated e2e/preview server opts into another
+   * directory (see `scripts/start-prod-test.sh` and the Playwright `webServer`).
+   */
+  distDir: process.env.NEXT_DIST_DIR ?? '.next',
   // Allow cross-origin requests from localhost for development
   allowedDevOrigins: ['localhost:127.0.0.1', 'localhost::1'],
   poweredByHeader: false,
@@ -56,5 +77,3 @@ const nextConfig = {
 }
 
 module.exports = nextConfig
-module.exports.contentSecurityPolicy = contentSecurityPolicy
-module.exports.securityHeaders = securityHeaders

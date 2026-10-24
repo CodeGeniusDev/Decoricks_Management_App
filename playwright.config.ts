@@ -82,6 +82,11 @@ export default defineConfig({
           NODE_ENV: 'production',
           E2E_TEST_MODE: '1',
           MONGODB_TEST_DB: process.env.MONGODB_TEST_DB ?? 'decoricks_test',
+          // Build and serve out of .next-e2e. Without this the suite's `next
+          // build` rewrites `.next` under any `next dev` the developer has open,
+          // which is how the reported `ChunkLoadError: Loading chunk app/layout
+          // failed` and the full-reload warnings were produced. See next.config.js.
+          NEXT_DIST_DIR: process.env.NEXT_DIST_DIR ?? '.next-e2e',
         },
         url: baseURL,
         reuseExistingServer: !process.env.CI,
