@@ -83,26 +83,33 @@ export default function CashFlowPage() {
   const [error, setError] = useState<string | null>(null)
 
   useRealtimeSync('finance', () => {
-    void load()
+    // Background refresh: the chart on screen covers the same period, so the
+    // incoming figures replace it in place rather than blanking it with skeletons
+    // every time another partner posts a transaction. See `profit-loss/page.tsx`.
+    void load({ background: true })
   })
 
-  const load = useCallback(async () => {
-    if (!periodFilterReady(filter)) {
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      setData(
-        await apiJson<CashFlowResponse>(`/api/finance/cash-flow?${periodFilterQuery(filter)}`)
-      )
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load cash flow')
-    } finally {
-      setLoading(false)
-    }
-  }, [filter])
+  const load = useCallback(
+    async (options?: { background?: boolean }) => {
+      const background = options?.background === true
+      if (!periodFilterReady(filter)) {
+        setLoading(false)
+        return
+      }
+      if (!background) setLoading(true)
+      setError(null)
+      try {
+        setData(
+          await apiJson<CashFlowResponse>(`/api/finance/cash-flow?${periodFilterQuery(filter)}`)
+        )
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load cash flow')
+      } finally {
+        if (!background) setLoading(false)
+      }
+    },
+    [filter]
+  )
 
   useEffect(() => {
     void load()

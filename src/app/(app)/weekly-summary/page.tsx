@@ -10,8 +10,10 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Toast } from '@/components/ui/Toast'
 import { formatPaisa } from '@/lib/money'
+import { apiJsonMeta } from '@/lib/api-client'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { can } from '@/lib/permissions-client'
+import { useRealtimeSync } from '@/lib/sync/useRealtime'
 
 /**
  * Anchor styled to match the outline Button. A file endpoint returns a body
@@ -109,27 +111,82 @@ export default function WeeklySummaryPage() {
     message: string
   } | null>(null)
 
-  const fetchSummary = useCallback(async () => {
-    try {
-      setLoading(true)
-      setLoadError(null)
-
-      const res = await fetch(`/api/reports/period?period=${period}`)
-      const body = await res.json()
-      if (!res.ok || !body.success) {
-        throw new Error(body?.error?.message || 'Failed to load summary')
-      }
-      setData(body.data)
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'Failed to load summary')
-    } finally {
-      setLoading(false)
-    }
-  }, [period])
-
-  useRealtimeSync('finance', () => {
-    // best effort refresh
+  /*
+   * Live: the summary is a read model over four modules — expenses and profit
+   * from finance, orders from sales, `stockSummary` from inventory,
+   * `tasksCompleted` and `overdueByMember` from tasks — so all four are
+   * subscribed, explicitly, in a fixed order. One call per module mirrors
+   * `reconciliation/page.tsx`, and each registers against the shared
+   * `syncCoordinator`: four module listeners on the one existing polling loop,
+   * not four loops.
+   *
+   * Each subscription hands back a read tracker, and `fetchSummary` announces
+   * its one read to all four. That announcement is not decoration: freshness
+   * proof is held per registration, so a signal arriving while a read of the
+   * same URL is already on the wire is *held* and then dropped only if that read
+   * provably postdates the write being reported (see `sync/coordinator.ts`).
+   * Without it every module's first snapshot fires its own re-read.
+   *
+   * Measured on the production build: a hard load of `/weekly-summary` put
+   * `/api/reports/period?period=week` on the wire five times — once from the
+   * mount effect and four identical copies from the SSE connect baseline one
+   * tick later, ~1s apart on the M0 cluster — while an in-app navigation to the
+   * same screen issued just one, because the stream had already been baselined
+   * by the page before it. Same duplication, already removed on
+   * `/reconciliation`, which is why that route reads as ×1.
+   */
+  const financeSync = useRealtimeSync('finance', () => {
+    // `useRealtimeSync` keeps the callback in a ref and refreshes it every
+    // render, so naming `fetchSummary` before its declaration is safe: it is
+    // only ever invoked after the render body has run.
+    void fetchSummary({ background: true })
   })
+  const salesSync = useRealtimeSync('sales', () => void fetchSummary({ background: true }))
+  const inventorySync = useRealtimeSync('inventory', () => void fetchSummary({ background: true }))
+  const tasksSync = useRealtimeSync('tasks', () => void fetchSummary({ background: true }))
+
+  const fetchSummary = useCallback(
+    async (options?: { background?: boolean }) => {
+      // A background refresh (realtime sync) must not blank the numbers it is
+      // replacing: `loading` swaps the entire page for skeletons, so it is raised
+      // only for the load the user actually asked for. The fresh payload simply
+      // replaces the old one when it lands.
+      const background = options?.background === true
+      financeSync.begin()
+      salesSync.begin()
+      inventorySync.begin()
+      tasksSync.begin()
+      try {
+        if (!background) {
+          setLoading(true)
+          setLoadError(null)
+        }
+
+        const {
+          data: summary,
+          serverTime,
+          durationMs,
+        } = await apiJsonMeta<WeeklySummaryData>(`/api/reports/period?period=${period}`)
+        // One payload, four proofs: every subscription is waiting on this exact
+        // read, so all four are settled with the same server instant.
+        financeSync.settle(serverTime, durationMs)
+        salesSync.settle(serverTime, durationMs)
+        inventorySync.settle(serverTime, durationMs)
+        tasksSync.settle(serverTime, durationMs)
+        setData(summary)
+      } catch (err) {
+        // A read that failed proves nothing; release whatever it was holding back.
+        financeSync.abandon()
+        salesSync.abandon()
+        inventorySync.abandon()
+        tasksSync.abandon()
+        setLoadError(err instanceof Error ? err.message : 'Failed to load summary')
+      } finally {
+        if (!background) setLoading(false)
+      }
+    },
+    [period, financeSync, salesSync, inventorySync, tasksSync]
+  )
 
   useEffect(() => {
     fetchSummary()
@@ -408,7 +465,7 @@ export default function WeeklySummaryPage() {
               <h2 className="font-semibold text-decoricks-dark">Could not load the summary</h2>
               <p className="text-sm text-decoricks-dark/60">{loadError}</p>
             </div>
-            <Button variant="outline" onClick={fetchSummary} type="button">
+            <Button variant="outline" onClick={() => void fetchSummary()} type="button">
               Try again
             </Button>
           </div>

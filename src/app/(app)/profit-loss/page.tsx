@@ -106,24 +106,31 @@ export default function ProfitLossPage() {
   }, [categories])
 
   useRealtimeSync('finance', () => {
-    void load()
+    // Background refresh: the report on screen is for the same period, so it is
+    // replaced in place instead of being swapped for skeletons while the new
+    // figures are fetched. Same `background` option `distributions/page.tsx` uses.
+    void load({ background: true })
   })
 
-  const load = useCallback(async () => {
-    if (!periodFilterReady(filter)) {
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      setData(await apiJson<PlView>(`/api/finance/pl?${periodFilterQuery(filter)}`))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load profit and loss')
-    } finally {
-      setLoading(false)
-    }
-  }, [filter])
+  const load = useCallback(
+    async (options?: { background?: boolean }) => {
+      const background = options?.background === true
+      if (!periodFilterReady(filter)) {
+        setLoading(false)
+        return
+      }
+      if (!background) setLoading(true)
+      setError(null)
+      try {
+        setData(await apiJson<PlView>(`/api/finance/pl?${periodFilterQuery(filter)}`))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load profit and loss')
+      } finally {
+        if (!background) setLoading(false)
+      }
+    },
+    [filter]
+  )
 
   useEffect(() => {
     void load()

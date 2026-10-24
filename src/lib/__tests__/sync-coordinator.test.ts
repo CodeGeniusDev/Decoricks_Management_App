@@ -77,7 +77,7 @@ describe('SyncCoordinator', () => {
     expect(chat).not.toHaveBeenCalled()
   })
 
-  it('fires only when a module timestamp actually advances', () => {
+  it('revalidates when a module timestamp changes in either direction', () => {
     const { coordinator, fake } = makeCoordinator()
     const listener = vi.fn()
     coordinator.subscribe('tasks', listener)
@@ -85,12 +85,18 @@ describe('SyncCoordinator', () => {
     fake.emit({ tasks: 1000 }) // first snapshot → the one revalidation
     expect(listener).toHaveBeenCalledTimes(1)
 
-    fake.emit({ tasks: 900 }) // stale/older — ignored
     fake.emit({ tasks: 1000 }) // equal — ignored
     expect(listener).toHaveBeenCalledTimes(1)
 
-    fake.emit({ tasks: 1500 }) // genuine advance
+    // A decrease is a change, not a stale read. When the newest record in a
+    // module is deleted or archived away, the maximum `updatedAt` the poll sees
+    // moves backwards; under the earlier `ts > prev` rule that went unnoticed and
+    // the deleted row stayed on the other session's screen.
+    fake.emit({ tasks: 900 }) // decrease → revalidate
     expect(listener).toHaveBeenCalledTimes(2)
+
+    fake.emit({ tasks: 1500 }) // genuine advance
+    expect(listener).toHaveBeenCalledTimes(3)
   })
 
   it('fans out only to the module that changed', () => {

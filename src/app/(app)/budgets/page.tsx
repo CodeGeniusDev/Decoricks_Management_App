@@ -10,11 +10,12 @@ import { Badge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
+import { HelpPanel } from '@/components/ui/HelpPanel'
 import { Select } from '@/components/ui/Select'
 import { Table } from '@/components/ui/Table'
 import { Toast } from '@/components/ui/Toast'
 import { IconPlus } from '@/components/ui/icons'
-import { apiJson, ApiError } from '@/lib/api-client'
+import { apiJson, apiJsonMeta, ApiError } from '@/lib/api-client'
 import { useRealtimeSync } from '@/lib/sync/useRealtime'
 import { enqueueCreate } from '@/lib/offline/browser'
 import type { BudgetCreatePayload } from '@/lib/offline/types'
@@ -100,21 +101,58 @@ export default function BudgetsPage() {
   // One key per form session, minted when the dialog opens.
   const idempotencyKeyRef = useRef('')
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
-      setBudgets(await apiJson<BudgetView[]>('/api/budgets'))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load budgets')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useRealtimeSync('finance', () => {
-    void load()
+  /*
+   * Subscribed before `load` because `load` announces its own read to the
+   * tracker: a read that goes out unannounced cannot be recognised afterwards as
+   * the answer to a signal that arrived mid-flight, which is the duplicate
+   * re-fetch it removes (`distributions/page.tsx` wires the same tracker).
+   * The callback only ever runs after the render body has executed, so naming
+   * `load` before its declaration is safe.
+   */
+  const financeSync = useRealtimeSync('finance', () => {
+    void load({ background: true })
   })
+
+  const load = useCallback(
+    async (options?: { background?: boolean }) => {
+      // A background refresh keeps the rows already on screen painted and replaces
+      // them in place; raising `loading` instead swaps the whole list for skeletons
+      // every time another partner posts a transaction. Same `background` option the
+      // other finance screens use (`distributions/page.tsx`, `profit-loss/page.tsx`).
+      const background = options?.background === true
+      if (!background) setLoading(true)
+      setError(null)
+      financeSync.begin()
+      try {
+        const { data, serverTime, durationMs } = await apiJsonMeta<BudgetView[]>('/api/budgets')
+        financeSync.settle(serverTime, durationMs)
+        setBudgets(data)
+      } catch (err) {
+        financeSync.abandon()
+        setError(err instanceof Error ? err.message : 'Failed to load budgets')
+      } finally {
+        if (!background) setLoading(false)
+      }
+    },
+    [financeSync]
+  )
+
+  /*
+   * The first read must be driven by the mount, not by the realtime layer.
+   * `syncCoordinator` retains each module's cursor for the life of the tab, so a
+   * subscription to a module the session has already seen gets no initial
+   * callback — revalidation on the first snapshot is deliberately reserved for a
+   * module's very first snapshot. `finance` is baselined by the dashboard before
+   * this page is ever reached, so without this effect the list kept its
+   * `loading === true` starting state and the screen sat on skeletons
+   * indefinitely: reaching Budgets by in-app navigation showed a pulsing empty
+   * page until a hard reload started a fresh coordinator. Every other module
+   * screen mounts its own first read; this one relied on a signal that only
+   * arrives when somebody else writes to finance.
+   */
+  useEffect(() => {
+    void load()
+  }, [load])
 
   // Reference data for labels and the create form; not fatal if it fails.
   useEffect(() => {
@@ -318,6 +356,36 @@ export default function BudgetsPage() {
             )}
           </>
         }
+      />
+
+      {/* Phase 2 §8: every term on this table is a figure the server computed, so
+          the page explains how each one is derived rather than leaving the reader
+          to guess whether "Spent" was typed in by someone. */}
+      <HelpPanel
+        className="mb-4"
+        title="How budgeting works here"
+        persistKey="budgets"
+        defaultOpen
+        intro="A budget is a plan for one period, split per category. Nothing in the Spent and Used columns is typed in by anyone — it is re-added from the ledger on every load of this page."
+        items={[
+          {
+            title: 'Allocated',
+            body: 'What the Founder planned to spend on a category between the period start and end dates.',
+          },
+          {
+            title: 'Spent',
+            body: 'Expense entries in that category dated inside the period, summed from the ledger. Categories with no allocation are not counted here — that is unplanned spend, visible on the P&L.',
+          },
+          {
+            title: 'Used',
+            body: 'Spent as a share of the allocation. A category is flagged at 80% and again at 100%; both thresholds are set by the Founder in business settings.',
+          },
+          {
+            title: 'Draft, Active, Archived',
+            body: 'A new budget starts as a Draft. Approving it on the budget’s own page makes it the plan of record; archiving keeps every figure for history instead of deleting the row.',
+          },
+        ]}
+        footer="Editing, approving and archiving live on the budget’s own page — open any row."
       />
 
       {visible.length === 0 ? (
