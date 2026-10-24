@@ -191,6 +191,17 @@ export default function TasksBoardPage() {
   const [columnModalOpen, setColumnModalOpen] = useState(false)
   const [newColumnName, setNewColumnName] = useState('')
 
+  // "Create board" — the only way out of the zero-boards empty state. A new
+  // board seeds the four default columns server-side (createBoardWithDefaults)
+  // and carries an idempotency key, so a double-click cannot make two boards:
+  // the partial unique index on `idempotencyKey` folds the replay (see
+  // `src/lib/models/Tasks.ts` and the POST /api/boards handler).
+  const [boardModalOpen, setBoardModalOpen] = useState(false)
+  const [newBoardName, setNewBoardName] = useState('')
+  const [newBoardDescription, setNewBoardDescription] = useState('')
+  const [creatingBoard, setCreatingBoard] = useState(false)
+  const creatingBoardRef = useRef(false)
+
   // Phase 6f: views + filters. `board` is the dnd-kit pipeline; `mine` and
   // `overdue` are flat filtered sets fetched from /api/tasks. The filter bar
   // only applies to the flat views — the board shows everything in its columns.
@@ -229,7 +240,7 @@ export default function TasksBoardPage() {
    * never re-sort cards mid-gesture or steal the cursor from a form) and applied
    * the moment it is safe again, so a remote change is never silently dropped.
    */
-  const realtimePaused = modalOpen || columnModalOpen || activeTaskId !== null
+  const realtimePaused = modalOpen || columnModalOpen || boardModalOpen || activeTaskId !== null
   const remoteDirtyRef = useRef(false)
   const tasksSync = useRealtimeSync(
     'tasks',
@@ -450,7 +461,7 @@ export default function TasksBoardPage() {
   // progress. That's what preserves "open drawer + in-flight drag" state.
   usePolling(
     () => (view === 'board' ? (boardId ? loadBoard(boardId) : Promise.resolve()) : loadList()),
-    { paused: modalOpen || columnModalOpen || activeTaskId !== null }
+    { paused: modalOpen || columnModalOpen || boardModalOpen || activeTaskId !== null }
   )
 
   /**
@@ -703,6 +714,49 @@ export default function TasksBoardPage() {
     }
   }
 
+  const submitCreateBoard = async () => {
+    if (creatingBoardRef.current) return
+    const name = newBoardName.trim()
+    if (!name) {
+      showToast('error', 'Board name is required')
+      return
+    }
+    creatingBoardRef.current = true
+    setCreatingBoard(true)
+    try {
+      const res = await apiFetch('/api/boards', {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          description: newBoardDescription.trim() || undefined,
+          idempotencyKey: `b-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        }),
+      })
+      const json = await res.json()
+      // 409 = a concurrent replay of the same idempotency key already built the
+      // board. Reload the list so the single real board appears; never treat it
+      // as an error the user has to act on.
+      if (res.status === 409) {
+        setBoardModalOpen(false)
+        await loadBoards()
+        return
+      }
+      if (!res.ok || !json.success) throw new Error(json?.error?.message ?? 'Create board failed')
+      setBoardModalOpen(false)
+      setNewBoardName('')
+      setNewBoardDescription('')
+      showToast('success', 'Board created')
+      await loadBoards()
+      const createdId = (json.data?._id ?? json.data?.board?._id) as string | undefined
+      if (createdId) setBoardId(createdId)
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Create board failed')
+    } finally {
+      creatingBoardRef.current = false
+      setCreatingBoard(false)
+    }
+  }
+
   const boardOptions = useMemo(
     () => boards.map((b) => ({ value: b._id, label: `${b.name} (${b.taskCount})` })),
     [boards]
@@ -781,7 +835,11 @@ export default function TasksBoardPage() {
         title="Task board"
         description="Team board — drag cards between columns, or use the Move-to dropdown. Keyboard: Tab to a card handle, press Space to lift, arrows to move, Space to drop."
         actions={
-          founder && boardId ? (
+          founder && !loadingBoards && boards.length === 0 ? (
+            <Button size="sm" onClick={() => setBoardModalOpen(true)}>
+              <IconPlus size={16} className="mr-1" /> Create board
+            </Button>
+          ) : founder && boardId ? (
             <Button variant="secondary" size="sm" onClick={() => setColumnModalOpen(true)}>
               <IconPlus size={16} className="mr-1" /> Add column
             </Button>
@@ -890,6 +948,11 @@ export default function TasksBoardPage() {
           <EmptyState
             title="No boards yet"
             description="The Founder can create the first board to start tracking tasks here."
+            action={
+              founder
+                ? { label: 'Create board', onClick: () => setBoardModalOpen(true) }
+                : undefined
+            }
           />
         ) : loadingBoard || !detail ? (
           <div className="grid gap-3 md:grid-cols-4">
@@ -1079,6 +1142,38 @@ export default function TasksBoardPage() {
           onChange={(e) => setNewColumnName(e.target.value)}
           placeholder="e.g. Waiting on supplier"
         />
+      </Modal>
+
+      <Modal
+        isOpen={boardModalOpen}
+        onClose={() => setBoardModalOpen(false)}
+        title="Create board"
+        description="Only the Founder can create boards. A new board starts with the four default columns (To Do, In Progress, Review, Done)."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setBoardModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitCreateBoard} disabled={creatingBoard}>
+              {creatingBoard ? 'Creating…' : 'Create board'}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <Input
+            label="Board name"
+            value={newBoardName}
+            onChange={(e) => setNewBoardName(e.target.value)}
+            placeholder="e.g. Living Room Renovation"
+          />
+          <Textarea
+            label="Description"
+            value={newBoardDescription}
+            onChange={(e) => setNewBoardDescription(e.target.value)}
+            rows={3}
+          />
+        </div>
       </Modal>
 
       {toast && (
