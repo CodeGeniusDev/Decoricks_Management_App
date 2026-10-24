@@ -6,9 +6,11 @@
  * Mounted once inside the authenticated shell. Responsibilities:
  *  - start the sync-engine triggers for the signed-in user (reconnect, focus,
  *    visibility, app-open, Background Sync relay) — idempotent across tabs;
- *  - register the service worker eagerly (the PWA shell needs it even when
- *    push was never enabled — Step 2's lazy registration stays intact for
- *    the push flow, `ensureServiceWorker` is idempotent);
+ *  - register the service worker eagerly *in production* (the PWA shell needs
+ *    it even when push was never enabled — Step 2's lazy registration stays
+ *    intact for the push flow, `ensureServiceWorker` is idempotent). In
+ *    development the worker is unregistered instead, because its cache-first
+ *    `/_next/static` handling breaks Fast Refresh (see the effect below);
  *  - surface UPDATE_READY from a waiting new SW version as a Refresh prompt
  *    (controlled update, never a mid-session asset swap);
  *  - own the connection/session state the banner renders: offline, or the
@@ -23,7 +25,11 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { drainQueueNow, startSyncTriggers, subscribeQueueEvents } from '@/lib/offline/browser'
-import { ensureServiceWorker, getServiceWorker } from '@/lib/push/register-service-worker'
+import {
+  ensureServiceWorker,
+  getServiceWorker,
+  unregisterServiceWorker,
+} from '@/lib/push/register-service-worker'
 import { useOfflineQueueStats } from '@/hooks/useOfflineQueue'
 import { IconOffline, IconRefresh } from '@/components/ui/icons'
 
@@ -79,18 +85,29 @@ export const OfflineProvider = ({ children }: { children: React.ReactNode }) => 
   useEffect(() => {
     if (!userId) return
     const teardown = startSyncTriggers(userId)
-    void ensureServiceWorker()
-    // A sleeping host never fires the SW's own lifecycle; ask for updates on
-    // a client timer instead (design §5).
-    const timer = setInterval(() => {
-      void getServiceWorker()
-        .then((reg) => reg?.update())
-        .catch(() => undefined)
-    }, UPDATE_CHECK_INTERVAL_MS)
-    return () => {
-      teardown()
-      clearInterval(timer)
+    // The worker serves `/_next/static` cache-first and document navigations
+    // stale-while-revalidate (public/sw.js). That is correct for a deployed
+    // shell but fatal under `next dev`: dev chunk paths are reused across
+    // rebuilds, so a cache-first hit hands the browser the *previous* build's
+    // module and Fast Refresh "had to perform a full reload". Register only in
+    // production; in development, take down any worker left over from a
+    // `next start`/preview on the same origin so it stops controlling the tab.
+    if (process.env.NODE_ENV === 'production') {
+      void ensureServiceWorker()
+      // A sleeping host never fires the SW's own lifecycle; ask for updates on
+      // a client timer instead (design §5).
+      const timer = setInterval(() => {
+        void getServiceWorker()
+          .then((reg) => reg?.update())
+          .catch(() => undefined)
+      }, UPDATE_CHECK_INTERVAL_MS)
+      return () => {
+        teardown()
+        clearInterval(timer)
+      }
     }
+    void unregisterServiceWorker()
+    return teardown
   }, [userId])
 
   // Controlled update: the waiting worker told us a new shell version is
