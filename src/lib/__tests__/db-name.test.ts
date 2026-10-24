@@ -5,6 +5,8 @@ import {
   uriDefaultDatabase,
   validateDatabaseName,
   assertScriptDatabaseConsent,
+  bareProdTestWarning,
+  isInTestRunner,
   PROD_DB_CONSENT_FLAG,
   type DatabaseNameSource,
 } from '@/lib/db-name'
@@ -255,5 +257,39 @@ describe('assertScriptDatabaseConsent', () => {
         env: { [PROD_DB_CONSENT_FLAG]: 'true' },
       })
     ).toThrow(/Refusing to run/)
+  })
+})
+
+describe('bareProdTestWarning — warn (never crash) on the live "test" DB', () => {
+  it('warns when the resolved name is the bare "test" outside a test runner', () => {
+    const warning = bareProdTestWarning('test', false)
+    expect(warning).toMatch(/OUTSIDE a test runner/)
+    expect(warning).toMatch(/LIVE PRODUCTION/)
+    // The warning is advisory: it must not tell the operator to abort.
+    expect(warning).toMatch(/Set MONGODB_DB explicitly/)
+  })
+
+  it('stays silent inside a test runner (E2E/Vitest may legally use "test")', () => {
+    expect(bareProdTestWarning('test', true)).toBeNull()
+  })
+
+  it('stays silent for any other database name, in or out of a runner', () => {
+    for (const name of ['decoricks_prod', 'decoricks_dev', 'decoricks_test', 'test_extra']) {
+      expect(bareProdTestWarning(name, false)).toBeNull()
+      expect(bareProdTestWarning(name, true)).toBeNull()
+    }
+  })
+
+  it('defaults the runner check to isInTestRunner rather than assuming one', () => {
+    // NODE_ENV=test (Vitest' own process) is a runner, so the ambient default
+    // must not warn — this is exactly why the parameter is injectable above.
+    expect(isInTestRunner({ MONGODB_URI: 'mongodb://h', NODE_ENV: 'test' })).toBe(true)
+    expect(isInTestRunner({ MONGODB_URI: 'mongodb://h', NODE_ENV: 'production' })).toBe(false)
+    expect(
+      bareProdTestWarning(
+        'test',
+        isInTestRunner({ MONGODB_URI: 'mongodb://h', NODE_ENV: 'production' })
+      )
+    ).not.toBeNull()
   })
 })

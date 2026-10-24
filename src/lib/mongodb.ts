@@ -1,6 +1,6 @@
 import { MongoClient, type Db } from 'mongodb'
 import { getEnv } from './env'
-import { resolveDatabase, type DatabaseNameSource } from './db-name'
+import { resolveDatabase, bareProdTestWarning, type DatabaseNameSource } from './db-name'
 import { isTransientMongoError } from './mongo-errors'
 import { timeStage } from './timing'
 
@@ -171,8 +171,13 @@ export async function getDatabase(): Promise<Db> {
       const connected = await connectWithRetry()
       const db = connected.db(dbName)
       // `db.databaseName` is the name that will actually be used, which is the
-      // only way to report the driver-default case honestly.
-      announceDatabase(db.databaseName, source, warning)
+      // only way to report the driver-default case honestly. It is also the only
+      // reliable place to catch the bare-`test`-in-production hazard: whether the
+      // name came from MONGODB_DB=test or the driver's own fallback, the process
+      // is talking to the live production database, so warn loudly (never crash).
+      const bareTest = bareProdTestWarning(db.databaseName)
+      const combinedWarning = [warning, bareTest].filter(Boolean).join(' ')
+      announceDatabase(db.databaseName, source, combinedWarning || undefined)
       return db
     } catch {
       // Never surface the connection string, host names, or driver internals.

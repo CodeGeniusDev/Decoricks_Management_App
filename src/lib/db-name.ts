@@ -116,13 +116,18 @@ export const uriDefaultDatabase = (uri: string): string | undefined => {
   const pathStart = hostsAndPath.indexOf('/')
   if (pathStart === -1) return undefined
 
-  const name = hostsAndPath.slice(pathStart + 1).split('?')[0].trim()
+  const name = hostsAndPath
+    .slice(pathStart + 1)
+    .split('?')[0]
+    .trim()
   if (!name) return undefined
 
   try {
     return decodeURIComponent(name)
   } catch {
-    return fail(`MONGODB_URI default database ${JSON.stringify(name)} is not valid percent-encoding`)
+    return fail(
+      `MONGODB_URI default database ${JSON.stringify(name)} is not valid percent-encoding`
+    )
   }
 }
 
@@ -131,14 +136,19 @@ export const uriDefaultDatabase = (uri: string): string | undefined => {
  * so a typo in `MONGODB_DB` fails loudly at boot instead of quietly opening an
  * empty database and writing new records there.
  */
-export const validateDatabaseName = (name: string, source: 'MONGODB_DB' | 'MONGODB_URI' | 'MONGODB_TEST_DB'): string => {
+export const validateDatabaseName = (
+  name: string,
+  source: 'MONGODB_DB' | 'MONGODB_URI' | 'MONGODB_TEST_DB'
+): string => {
   const value = name.trim()
   if (!value) fail(`${source} is set but empty`)
   if (value.length > MAX_DB_NAME_BYTES) {
     fail(`${source} must be at most ${MAX_DB_NAME_BYTES} characters (got ${value.length})`)
   }
   if (INVALID_DB_CHARS.test(value)) {
-    fail(`${source} may not contain a period, dollar sign, slash, backslash or space (got ${JSON.stringify(value)})`)
+    fail(
+      `${source} may not contain a period, dollar sign, slash, backslash or space (got ${JSON.stringify(value)})`
+    )
   }
   if (RESERVED_DATABASES.has(value.toLowerCase())) {
     fail(`${source} may not point at the reserved database ${JSON.stringify(value)}`)
@@ -153,6 +163,36 @@ interface DbEnv {
   NODE_ENV: 'development' | 'production' | 'test'
 }
 
+/** True when this process is an automated test runner (Vitest or the E2E server). */
+export const isInTestRunner = (env: DbEnv = getEnv()): boolean =>
+  env.NODE_ENV === 'test' || process.env.E2E_TEST_MODE === '1'
+
+/**
+ * A LOUD but NON-FATAL warning for the case that used to be silent: an app or a
+ * maintenance script resolving to the bare database name `test` while NOT in a
+ * test runner. In this deployment `test` holds the real business data — the Atlas
+ * URI has an empty path, so the driver falls back to `test`, and `MONGODB_DB=test`
+ * points the app straight at it. Running against `test` in dev/prod therefore
+ * means running against production.
+ *
+ * It WARNS rather than crashes on purpose: refusing to boot would deny the
+ * operator access to their own data, which is worse than a console warning. The
+ * test-runner check is injectable so the wording can be unit-tested regardless of
+ * the ambient NODE_ENV (the Vitest process itself runs under NODE_ENV=test).
+ */
+export const bareProdTestWarning = (
+  databaseName: string,
+  inTestRunner: boolean = isInTestRunner()
+): string | null => {
+  if (databaseName !== 'test') return null
+  if (inTestRunner) return null
+  return (
+    'resolved to the database named "test" OUTSIDE a test runner — in this ' +
+    'deployment that is the LIVE PRODUCTION database. Set MONGODB_DB explicitly ' +
+    '(decoricks_prod / decoricks_dev) unless you genuinely intend to run against it.'
+  )
+}
+
 /**
  * Resolves the database for the current process. Throws on any configuration
  * that could put traffic or a maintenance script in the wrong database.
@@ -164,7 +204,7 @@ interface DbEnv {
 export const resolveDatabase = (env: DbEnv = getEnv()): ResolvedDatabase => {
   if (env.MONGODB_TEST_DB) {
     const name = validateDatabaseName(env.MONGODB_TEST_DB, 'MONGODB_TEST_DB')
-    const inTestRunner = env.NODE_ENV === 'test' || process.env.E2E_TEST_MODE === '1'
+    const inTestRunner = isInTestRunner(env)
     if (!inTestRunner) {
       fail(
         'MONGODB_TEST_DB is set but the process is not a test runner (NODE_ENV is not "test" and E2E_TEST_MODE is not "1"). Refusing to use a test database outside the test runner.'
@@ -186,6 +226,6 @@ export const resolveDatabase = (env: DbEnv = getEnv()): ResolvedDatabase => {
     dbName: undefined,
     source: 'driver default',
     warning:
-      'no database name is configured: MONGODB_DB is unset and MONGODB_URI has an empty path, so the driver falls back to its implicit default. Set MONGODB_DB to the database that actually holds this application\'s data.',
+      "no database name is configured: MONGODB_DB is unset and MONGODB_URI has an empty path, so the driver falls back to its implicit default. Set MONGODB_DB to the database that actually holds this application's data.",
   }
 }
