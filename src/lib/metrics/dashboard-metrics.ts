@@ -198,16 +198,36 @@ export async function buildDashboardMetrics(input: DashboardInput): Promise<Dash
   const { db, range, period, now } = input
   const viewable = new Set(input.viewable)
 
-  // The ledger is read ONCE, date-bounded, and sliced in memory for every engine.
-  // This replaces the old per-widget multiple reads and is the whole money source.
+  /*
+   * The ledger is read ONCE, date-bounded, and sliced in memory for every engine
+   * that consumes it. This replaces the old per-widget multiple reads and is the
+   * whole money source.
+   *
+   * It is issued *left in flight* rather than awaited here. Measured on the
+   * production build (`API_TIMING=1`, `scripts/api-timing-summary.cjs`):
+   *   total=660ms  q:ledger:history=263ms  q:block:inventory=280ms
+   *   q:block:tasks=239ms  q:block:orders=156ms  q:block:finance=167ms
+   *   q:block:budget=166ms
+   * Awaiting it first put 263ms of a single round trip in front of five reads
+   * that did not need it: inventory, orders and tasks never touch a ledger row,
+   * so they were queueing behind a fetch they would throw away. Only finance and
+   * budget await `ledgerPromise`, and they await it *outside* their own
+   * `timeStage`, so `q:block:*` keeps reporting each block's own work rather than
+   * the shared wait — otherwise every dependent block would look slow and the
+   * actual cause (one 263ms read) would be invisible in the breakdown.
+   *
+   * The ledger read is also the first element of the `Promise.all` below, so its
+   * rejection is always observed even when the caller may view neither finance
+   * nor budget.
+   */
   const historyEnd = new Date(Math.max(now.getTime(), range.end.getTime()))
-  const ledgerUpToNow = await timeStage('q:ledger:history', () =>
+  const ledgerPromise = timeStage('q:ledger:history', () =>
     fetchLedgerRange(db, { start: new Date(0), end: historyEnd })
   )
-  const entriesInRange = ledgerUpToNow.filter((e) => isWithin(new Date(e.date), range))
-  const entriesBefore = ledgerUpToNow.filter(
-    (e) => new Date(e.date).getTime() < range.start.getTime()
-  )
+  const sliceInRange = (entries: Awaited<typeof ledgerPromise>) =>
+    entries.filter((e) => isWithin(new Date(e.date), range))
+  const sliceBefore = (entries: Awaited<typeof ledgerPromise>) =>
+    entries.filter((e) => new Date(e.date).getTime() < range.start.getTime())
 
   /*
    * Phase 4 §2 — the five block groups are gated by *different* module
@@ -234,25 +254,42 @@ export async function buildDashboardMetrics(input: DashboardInput): Promise<Dash
    * five groups sharing a name would report a summed wall time larger than the
    * request itself and hide which block actually dominates the response.
    */
-  const [financeBlocks, inventoryBlock, ordersBlock, budgetBlocks, tasksBlock] = await Promise.all([
-    canView(viewable, 'finance')
-      ? timeStage('q:block:finance', () =>
-          buildFinanceBlocks({ db, range, viewable, ledgerUpToNow, entriesInRange, entriesBefore })
-        )
-      : Promise.resolve({} as FinanceBlocks),
-    canView(viewable, 'inventory')
-      ? timeStage('q:block:inventory', () => buildInventoryBlock(db))
-      : Promise.resolve(undefined),
-    canView(viewable, 'sales')
-      ? timeStage('q:block:orders', () => buildOrdersBlock(db, range))
-      : Promise.resolve(undefined),
-    canView(viewable, 'budget')
-      ? timeStage('q:block:budget', () => buildBudgetBlocks(db, range, ledgerUpToNow))
-      : Promise.resolve(undefined),
-    canView(viewable, 'tasks')
-      ? timeStage('q:block:tasks', () => buildTasksBlock(db, range, now))
-      : Promise.resolve(undefined),
-  ])
+  // The elided first slot is `ledgerPromise`: kept in the set so a rejection is
+  // always observed, even for a caller who may view neither finance nor budget.
+  const [, financeBlocks, inventoryBlock, ordersBlock, budgetBlocks, tasksBlock] =
+    await Promise.all([
+      ledgerPromise,
+      canView(viewable, 'finance')
+        ? (async () => {
+            const ledger = await ledgerPromise
+            return timeStage('q:block:finance', () =>
+              buildFinanceBlocks({
+                db,
+                range,
+                viewable,
+                ledgerUpToNow: ledger,
+                entriesInRange: sliceInRange(ledger),
+                entriesBefore: sliceBefore(ledger),
+              })
+            )
+          })()
+        : Promise.resolve({} as FinanceBlocks),
+      canView(viewable, 'inventory')
+        ? timeStage('q:block:inventory', () => buildInventoryBlock(db))
+        : Promise.resolve(undefined),
+      canView(viewable, 'sales')
+        ? timeStage('q:block:orders', () => buildOrdersBlock(db, range))
+        : Promise.resolve(undefined),
+      canView(viewable, 'budget')
+        ? (async () => {
+            const ledger = await ledgerPromise
+            return timeStage('q:block:budget', () => buildBudgetBlocks(db, range, ledger))
+          })()
+        : Promise.resolve(undefined),
+      canView(viewable, 'tasks')
+        ? timeStage('q:block:tasks', () => buildTasksBlock(db, range, now))
+        : Promise.resolve(undefined),
+    ])
 
   const blocks: DashboardMetrics['blocks'] = {
     ...financeBlocks,

@@ -71,11 +71,17 @@ async function __POST(request: NextRequest) {
     }
 
     const type = (body as { type?: unknown }).type
-    if (type === 'partner_withdrawal') {
-      await authorize('finance', 'approve')
-    } else {
-      await authorize('finance', 'create')
-    }
+    /*
+     * One authorization per request, and its result is reused for the actor
+     * identity below. This route used to call `authorize()` again after parsing,
+     * which measured as the only doubled session lookup in the whole suite
+     * (`auth:session=133ms x2` across 36 posts on a production build against the
+     * M0 cluster) for a second answer that cannot differ from the first:
+     * `ledgerEntrySchema` is a `z.discriminatedUnion('type', …)`, so a payload
+     * that parses carries exactly the `type` string this gate was chosen on — no
+     * transform, default or coercion is involved on the discriminator.
+     */
+    const auth = await authorize('finance', type === 'partner_withdrawal' ? 'approve' : 'create')
 
     const parsed = ledgerEntrySchema.safeParse(body)
     if (!parsed.success) {
@@ -91,10 +97,6 @@ async function __POST(request: NextRequest) {
     const db = await getDatabase()
     await ensureFinanceDefaults(db)
     const meta = await getRequestMeta()
-    const auth = await authorize(
-      'finance',
-      parsed.data.type === 'partner_withdrawal' ? 'approve' : 'create'
-    )
 
     const actor: ActorContext = {
       id: auth.user._id as ObjectId,

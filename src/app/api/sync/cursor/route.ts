@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { handleRouteError, withAuth, logRouteFailure } from '@/lib/http'
-import { authorize, requireAuth } from '@/lib/authorization'
+import { discoverViewScopes } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
 import { successResponse } from '@/lib/api-response'
 import { computeCursor, ensureSyncIndexes, SYNC_MODULES } from '@/lib/sync/cursor'
@@ -22,11 +22,18 @@ import type { PermissionModule } from '@/lib/models/User'
  * whole poll. Sessions are handled by `withAuth`; a missing/expired session is
  * a 401 exactly like every other route.
  *
+ * This is the fallback half of `/api/events`: the same question, the same module
+ * set, the same per-module scope. It therefore resolves that scope the same way
+ * — see the `discoverViewScopes` note below.
+ *
  * The client sends `x-session-background: 1` on polls so an idle tab's chatter
  * with this endpoint does not extend the rolling inactivity timeout.
  */
 
-const PERMISSION: Record<Exclude<SyncModule, 'notifications'>, [module: PermissionModule, action: string]> = {
+const PERMISSION: Record<
+  Exclude<SyncModule, 'notifications'>,
+  [module: PermissionModule, action: string]
+> = {
   tasks: ['tasks', 'view'],
   chat: ['chat', 'view'],
   sales: ['sales', 'view'],
@@ -36,8 +43,35 @@ const PERMISSION: Record<Exclude<SyncModule, 'notifications'>, [module: Permissi
 
 async function __GET(request: NextRequest) {
   try {
-    const caller = await requireAuth()
-    const callerId = caller.user._id?.toString()
+    /*
+     * ONE session aggregate for the whole module set.
+     *
+     * This used to be `requireAuth()` plus a serial `authorize()` per module —
+     * six identical session lookups per poll, measured in production as
+     * `auth:session=462ms x6` inside a 833–933 ms request for an endpoint that
+     * returns six numbers and no row data (`scripts/api-timing-summary.cjs`,
+     * median 1427 ms / p95 3073 ms over 195 calls in the final suite window).
+     * It is the *polling* path, so the cost was paid every 6 s per open tab,
+     * for every tab, exactly when the SSE stream has just failed and the client
+     * is most behind. `GET /api/events` had the identical bug and was fixed;
+     * leaving this one misaligned meant the fallback was slower than the
+     * primary, which is backwards.
+     *
+     * The net effect is unchanged: the 401 for no session is kept, a module the
+     * caller cannot view is still silently omitted, and an account still on a
+     * temporary password is still denied every gated module — because the role
+     * grants are withheld, not because six calls each threw.
+     *
+     * What is deliberately not kept: the `permission_denied` audit row per
+     * module the caller merely has no widget for. That is a non-event, it was
+     * written on every 6-second poll by every such caller, and SPEC §3.1.19
+     * wants the log to carry *real* denied attempts. Genuine attempts on actual
+     * data endpoints still audit through `authorize()`.
+     */
+    const { userId: callerId, viewable } = await discoverViewScopes(
+      Object.values(PERMISSION).map(([module]) => module)
+    )
+    const granted = new Set(viewable)
 
     const raw = new URL(request.url).searchParams
       .get('modules')
@@ -63,13 +97,8 @@ async function __GET(request: NextRequest) {
         permitted.push(mod)
         continue
       }
-      const [permModule, action] = PERMISSION[mod]
-      try {
-        await authorize(permModule, action)
-        permitted.push(mod)
-      } catch {
-        // No permission for this module — omit it instead of failing the poll.
-      }
+      if (granted.has(PERMISSION[mod][0])) permitted.push(mod)
+      // Otherwise omit it: a missing grant must not fail the whole poll.
     }
 
     const cursor = await computeCursor(db, permitted, callerId)

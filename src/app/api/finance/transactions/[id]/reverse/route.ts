@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ClientSession, ObjectId } from 'mongodb'
 import { authorize } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
+import { ensureFinanceDefaults } from '@/lib/finance-defaults'
 import { getRequestMeta, handleRouteError, withAuth } from '@/lib/http'
 import { validationError } from '@/lib/api-response'
 import { reverseTransactionSchema } from '@/lib/schemas/finance'
@@ -45,6 +46,7 @@ async function __POST(request: NextRequest, context: RouteContext) {
     }
 
     const db = await getDatabase()
+    await ensureFinanceDefaults(db)
     const meta = await getRequestMeta()
     const actor: ActorContext & { ipAddress?: string | null; userAgent?: string | null } = {
       id: auth.user._id as ObjectId,

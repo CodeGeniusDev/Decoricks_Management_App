@@ -26,6 +26,8 @@ curl -s -c "$JAR" -o /dev/null -X POST "$BASE/api/auth/login" \
 
 for path in \
   /api/auth/me \
+  /api/dashboard \
+  "/api/sync/cursor?modules=tasks,chat,sales,inventory,finance,notifications" \
   /api/finance/settings \
   /api/finance/accounts \
   /api/finance/categories \

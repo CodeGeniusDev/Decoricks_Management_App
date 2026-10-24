@@ -438,10 +438,17 @@ export interface ScopeDiscovery {
  */
 export const discoverViewScopes = async (modules: PermissionModule[]): Promise<ScopeDiscovery> => {
   const db = await getDatabase()
-  const auth = await getAuthenticatedUser(db)
+  /*
+   * Named exactly like the stages in `authorize()`, so a route that switched from
+   * per-module `authorize()` calls to this one still shows its session cost in
+   * `[api-timing]`. Without them the endpoint that used to report
+   * `auth:session=462ms x6` reports nothing at all, and "no number" reads like
+   * "no cost" instead of "one 60-80ms round trip we stopped multiplying".
+   */
+  const auth = await timeStage('auth:session', () => getAuthenticatedUser(db))
   if (!auth) throw new AuthenticationError()
 
-  const role = await getRole(auth.user.role, db)
+  const role = await timeStage('auth:role', () => getRole(auth.user.role, db))
   const mustChangePassword = requiresPasswordChange(auth.user)
   const viewable = mustChangePassword
     ? []
