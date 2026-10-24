@@ -7,6 +7,7 @@ import {
   E2E_PASSWORD,
   FOUNDER_EMAIL,
   FOUNDER_STATE,
+  clientIpHeaders,
 } from './helpers'
 
 /**
@@ -17,11 +18,10 @@ import {
 
 fs.mkdirSync(AUTH_DIR, { recursive: true })
 
-const signIn = async (
-  page: import('@playwright/test').Page,
-  email: string,
-  password: string
-) => {
+const signIn = async (page: import('@playwright/test').Page, email: string, password: string) => {
+  // A source address of its own, so these two logins cannot consume the
+  // per-IP login budget that the parallel browser projects are also spending.
+  await page.setExtraHTTPHeaders(clientIpHeaders())
   await page.goto('/login')
   await page.getByLabel('Email', { exact: true }).fill(email)
   await page.getByLabel('Password', { exact: true }).fill(password)

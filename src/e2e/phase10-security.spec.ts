@@ -8,6 +8,7 @@ import {
   E2E_PASSWORD,
   FOUNDER_EMAIL,
   FOUNDER_STATE,
+  clientIpHeaders,
   csrfFromState,
 } from './helpers'
 
@@ -59,8 +60,20 @@ test.describe('Phase 5 — security and API verification', () => {
    */
   type Playwright = typeof import('playwright-core')
   const ANON_STATE = { cookies: [], origins: [] }
+  /*
+   * `clientIpHeaders()` gives each context its own source address. Without it
+   * every login in this file — and every login in every other file running in
+   * parallel — arrives as 127.0.0.1 and spends the same 10-per-minute budget,
+   * so the lockout test below was refused with 429 `RATE_LIMITED` before the
+   * server ever reached the email-keyed check it is written to prove.
+   * See the note on `nextClientIp` in helpers.ts.
+   */
   const open = (playwright: Playwright): Promise<APIRequestContext> =>
-    playwright.request.newContext({ baseURL: BASE_URL, storageState: ANON_STATE })
+    playwright.request.newContext({
+      baseURL: BASE_URL,
+      storageState: ANON_STATE,
+      extraHTTPHeaders: clientIpHeaders(),
+    })
 
   /**
    * Signs in and returns the context plus the two cookies it was issued.

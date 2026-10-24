@@ -6,6 +6,7 @@ import {
   E2E_PASSWORD,
   FOUNDER_EMAIL,
   FOUNDER_STATE,
+  clientIpHeaders,
   csrfFromState,
 } from './helpers'
 
@@ -22,12 +23,30 @@ test.describe('authentication flow', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
   test('rejects a wrong password, signs in, and signs out', async ({ page }) => {
+    /*
+     * Own source address for this page's logins. The login endpoint allows 10
+     * attempts a minute per IP; every browser in the suite otherwise arrives as
+     * 127.0.0.1 and spends the same budget as the other worker's tests and as
+     * `phase10-security.spec.ts`, which is how this test started receiving
+     * "Too many login attempts" in place of the credential error it asserts.
+     */
+    await page.setExtraHTTPHeaders(clientIpHeaders())
     await page.goto('/login')
 
     await page.getByLabel('Email', { exact: true }).fill('nobody@decoricks.com')
     await page.getByLabel('Password', { exact: true }).fill('WrongPassword123')
     await page.getByRole('button', { name: 'Sign in' }).click()
-    await expect(page.getByRole('alert')).toBeVisible()
+    /*
+     * Scoped to the message, not `getByRole('alert')`. Next mounts its own
+     * `<p id="__next-route-announcer__" role="alert" aria-live="assertive">`
+     * outside `<main>` on every page (`next/dist/client/route-announcer.js:70-76`),
+     * so an unscoped locator is a strict-mode violation on any form that has just
+     * failed — and naming the text also proves the refusal was about the
+     * credential rather than about how many logins this run has already made.
+     */
+    await expect(
+      page.locator('[role="alert"]').filter({ hasText: 'Invalid email or password' })
+    ).toBeVisible()
     await expect(page).toHaveURL(/\/login/)
 
     // Reload for a clean form: the failed attempt clears the password field

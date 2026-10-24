@@ -2,7 +2,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { MongoClient, ObjectId, type Db } from 'mongodb'
 import { getEnv } from '../src/lib/env'
-import { looksLikeTestDatabase, resolveDatabase } from '../src/lib/db-name'
+import {
+  looksLikeTestDatabase,
+  resolveDatabase,
+  assertScriptDatabaseConsent,
+} from '../src/lib/db-name'
 import { SPEC_ROLES, LAHORE_STOCK_ROLES, SCOPED_LAHORE_STOCK_PERMISSION } from '../src/lib/roles'
 import { hashPassword } from '../src/lib/auth/password'
 import { karachiMidnight } from '../src/lib/finance'
@@ -292,14 +296,47 @@ const assertTestTarget = (client: MongoClient, env: ReturnType<typeof getEnv>): 
   }
 }
 
+/**
+ * Refuses to provision accounts from an empty environment.
+ *
+ * Both variables used to default to `''` and the script happily wrote the hash
+ * of that empty string. The result is an account that cannot sign in anywhere:
+ * `/api/auth/login` validates `password` with `.min(1)`, so the form rejects the
+ * empty credential before it is ever hashed, while the database now holds a
+ * bcrypt hash of it. Observed consequence: `auth.setup` later fails with
+ * "Invalid email or password" for whichever account this touched, and because
+ * the Founder and the Partner were seeded on different runs, the two accounts
+ * ended up disagreeing about what the shared `E2E_PASSWORD` is — which reads like
+ * a flaky suite and is really a destroyed credential. An unconfigured run must
+ * stop here instead.
+ */
+const assertProvisioningCredentials = (): void => {
+  const missing = [
+    ...(FOUNDER_EMAIL ? [] : ['E2E_FOUNDER_EMAIL']),
+    ...(E2E_PASSWORD ? [] : ['E2E_PASSWORD']),
+  ]
+  if (missing.length === 0) return
+  throw new Error(
+    `Refusing to seed: ${missing.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} not set. ` +
+      'This script overwrites the password hashes of the accounts it provisions, so an empty value ' +
+      'would lock them out of the login form. See docs/E2E_RUNBOOK.md for the export lines.'
+  )
+}
+
 const main = async () => {
   const env = getEnv()
   const client = new MongoClient(env.MONGODB_URI)
   try {
     await client.connect()
     assertTestTarget(client, env)
+    assertProvisioningCredentials()
     // Explicit database name — never the URI default, never the app database.
     const db = client.db(E2E_DB)
+
+    // Defense-in-depth: this script only targets a test-shaped database, so the
+    // consent guard passes by construction; if E2E_DB were ever pointed at a real
+    // database it would refuse here without DECORICKS_ALLOW_PROD_DB=1.
+    assertScriptDatabaseConsent(db.databaseName, { script: 'scripts/seed-e2e.ts' })
 
     await ensureAuthIndexes(db)
     const roleCount = await upsertRoles(db)
