@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd job template for the nightly Decoricks encrypted backup.
+
+  INSTALL (macOS):
+    1. Copy this file to  ~/Library/LaunchAgents/com.decoricks.backup.plist
+    2. Edit the two paths below:
+         - ProgramArguments: absolute path to your checkout's scripts/backup.sh
+         - EnvironmentVariables -> DECORICKS_BACKUP_KEY_FILE: a file OUTSIDE the repo
+         - EnvironmentVariables -> BACKUP_DIR: where archives should land
+    3. Load it:            launchctl load ~/Library/LaunchAgents/com.decoricks.backup.plist
+    4. Run it once manually:  launchctl start com.decoricks.backup
+    5. Unload:             launchctl unload ~/Library/LaunchAgents/com.decoricks.backup.plist
+
+  This template schedules a run every day at 03:15 local time. launchd runs missed
+  jobs when the Mac wakes, so a laptop that was asleep at 03:15 still backs up.
+-->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.decoricks.backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/bash</string>
+      <string>/REPLACE/ME/scripts/backup.sh</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>DECORICKS_BACKUP_KEY_FILE</key>
+      <string>/Users/REPLACE/.decoricks/backup.key</string>
+      <key>BACKUP_DIR</key>
+      <string>/Users/REPLACE/Decoricks Backups</string>
+      <key>PATH</key>
+      <string>/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Hour</key>
+      <integer>3</integer>
+      <key>Minute</key>
+      <integer>15</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/decoricks-backup.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/decoricks-backup.err.log</string>
+  </dict>
+</plist>

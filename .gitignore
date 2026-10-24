@@ -12,6 +12,12 @@
 # Phase 4 performance probe output (scripts/perf-probe.ts)
 /perf-*.json
 
+# Phase 10 Step 4 backups: encrypted archives and the out-of-repo key must never
+# be committed. (The key lives at DECORICKS_BACKUP_KEY_FILE, outside this repo.)
+/backups/
+*.enc
+*.backup.key
+
 # Next.js
 /.next/
 # Isolated production build for the e2e / preview server (NEXT_DIST_DIR). It
