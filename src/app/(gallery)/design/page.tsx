@@ -15,9 +15,22 @@ import DesignGallery from './DesignGallery'
  * in its own header: a client check decides what to *show*, never what to
  * *allow*, and hiding a link is not a security control. A `'use client'` guard
  * here would still send the gallery to the browser. So the decision is made
- * before a single byte of `DesignGallery` renders, and a caller who is not the
- * Founder gets 404 — the same response as a route that does not exist, so the
- * page does not disclose that anything is hidden behind it.
+ * before a single byte of `DesignGallery` renders: a caller who is not the
+ * Founder reaches `notFound()`, and what that caller gets back contains no
+ * gallery heading, no sample rows and no reference to the `/design` route's own
+ * JS chunk — measured against the production build, the Founder's document names
+ * `static/chunks/app/(gallery)/design/page-<hash>.js` and a Partner's does not.
+ *
+ * A non-Founder gets a genuine **404 status**, not a 200 that merely shows the
+ * not-found UI. That is exactly why this page lives in the `(gallery)` route
+ * group instead of `(app)`: `notFound()` throws a `NEXT_HTTP_ERROR_FALLBACK;404`
+ * digest, and `(app)`'s layout wraps its children in the client `RequireAuth`
+ * component, which flushes the shell before the digest can bubble to the
+ * top-level render catch in `next/dist/server/app-render/app-render.js` — the
+ * caller then received a 200. `(gallery)/layout.tsx` supplies the same chrome
+ * without that client wrapper, so the digest reaches the catch and the status is
+ * 404. `layout.spec.ts` asserts the status, the absence of the gallery's markup
+ * and code, and the anonymous redirect.
  *
  * `force-dynamic` because the answer depends on the session cookie; it must
  * never be cached or prerendered.

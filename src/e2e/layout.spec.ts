@@ -501,6 +501,8 @@ test.describe('the component gallery is not a product screen', () => {
    * still sending the gallery to the browser.
    */
   const GALLERY_HEADING = 'Design System'
+  /** Next emits the gallery page's own route chunk only for a caller it let through. */
+  const GALLERY_CHUNK = /static\/chunks\/app\/\(gallery\)\/design\//
 
   test('the Founder gets the gallery', async ({ browser }) => {
     const context = await browser.newContext({ storageState: FOUNDER_STATE })
@@ -508,30 +510,72 @@ test.describe('the component gallery is not a product screen', () => {
     const response = await page.goto('/design')
     expect(response?.status()).toBe(200)
     await expect(page.getByRole('heading', { name: GALLERY_HEADING })).toBeVisible()
+    // The counter-assertion that gives the Partner test below its meaning: if
+    // this reference were absent here too, "no chunk" would prove nothing.
+    expect((await response?.body())?.toString()).toMatch(GALLERY_CHUNK)
     await context.close()
   })
 
-  test('a Partner is answered with 404, and no gallery markup is sent at all', async ({
+  /*
+   * A non-Founder gets a real HTTP 404, not a 200 that merely paints the
+   * not-found UI. This only became true once `/design` moved out of the `(app)`
+   * route group into `(gallery)`. `(app)`'s layout wraps its children in the
+   * client `RequireAuth` component; that wrapper flushes the shell before the
+   * page's `notFound()` digest (`NEXT_HTTP_ERROR_FALLBACK;404`) can bubble to
+   * the top-level render catch, so the response was a successful 200 whose body
+   * happened to be the not-found screen. `(gallery)/layout.tsx` supplies the same
+   * chrome without the client wrapper, so the digest reaches the catch and the
+   * status is 404.
+   *
+   * Measured on the production build, this server:
+   *   GET /design  as Founder  -> 200, `…/chunks/app/(gallery)/design/page-<hash>.js`
+   *   GET /design  as Partner  -> 404, no gallery markup, no gallery chunk
+   *   GET /design  anonymous   -> 307 to /login (edge gate in middleware)
+   *
+   * The status is asserted *and* the content: a 404 alone would pass even if the
+   * gallery were leaked in the body, so the leak assertions below stay, and the
+   * Founder test's chunk reference is what gives "no chunk here" its meaning.
+   */
+  test('a Partner gets a 404 and is never sent the gallery — not its markup, not its code', async ({
     browser,
   }) => {
     const context = await browser.newContext({ storageState: AFNAN_STATE })
     const page = await context.newPage()
     const response = await page.goto('/design')
+    const body = (await response?.body())?.toString() ?? ''
+
+    // The status the page is supposed to return for a non-Founder.
     expect(response?.status()).toBe(404)
-    await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible()
-    // The heading is gone *and* the sample rows are gone: the render never ran.
-    await expect(page.getByText('Button Variants')).toHaveCount(0)
+
+    // Raw HTML *and* the RSC flight payload inlined in the same document.
+    expect(body, 'gallery heading leaked').not.toContain(GALLERY_HEADING)
+    expect(body, 'gallery sample rows leaked').not.toContain('Button Variants')
+    expect(body, 'gallery route chunk was still handed to the browser').not.toMatch(GALLERY_CHUNK)
+
     await context.close()
   })
 
   test('an anonymous caller never sees the gallery either', async ({ browser }) => {
-    const context = await browser.newContext() // no storage state
+    /*
+     * `storageState` must be passed explicitly. `browser.newContext()` with no
+     * argument inherits the project's `use` options, and every device project
+     * sets `storageState: founderState` — so the "anonymous" caller was really
+     * the Founder. It only looked correct while some parallel test had already
+     * rotated that session out of the database; with a live session the gallery
+     * rendered and `Button Variants` was found. The same trap is documented in
+     * `phase10-security.spec.ts:46-58`.
+     */
+    const context = await browser.newContext({ storageState: { cookies: [], origins: [] } })
     const page = await context.newPage()
     const response = await page.goto('/design')
-    // Either refused outright or bounced to the login screen — both acceptable,
-    // because the property under test is that the content did not arrive.
-    expect([404, 200].includes(response?.status() ?? 0)).toBe(true)
+    // Measured: the edge gate 307s an anonymous page request to the login
+    // screen, so `goto` resolves on /login with a 200. A 404 or a 200 on the
+    // gallery would both be acceptable too — the property under test is that
+    // the content did not arrive, which is asserted below.
+    expect([200, 307, 404]).toContain(response?.status() ?? 0)
     await expect(page.getByText('Button Variants')).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: GALLERY_HEADING })).toHaveCount(0)
+    expect(page.url()).toContain('/login')
     await context.close()
   })
 })
