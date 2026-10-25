@@ -19,6 +19,9 @@ describe('api route authorization coverage', () => {
       'src/app/api/auth/login/route.ts',
       'src/app/api/auth/logout/route.ts',
       'src/app/api/health/route.ts',
+      // Health-readiness lives under the same public /api/health* prefix the
+      // middleware already exempts (see PUBLIC_PATHS in src/middleware.ts).
+      'src/app/api/health/database/route.ts',
     ])
     const missing: string[] = []
     for (const r of routes) {
