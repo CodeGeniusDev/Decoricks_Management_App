@@ -4,14 +4,16 @@ Status: **preparation only.** Nothing in this document has been deployed, pushed
 or run against a live host. It records the exact configuration a deploy needs
 for BOTH Koyeb and Render.
 
-Host stance (recorded 2026-10-25, pending the operator's final decision):
+Host stance (updated 2026-10-25 — operator's decision recorded):
 
 - **Koyeb — NOT recommended.** Koyeb was acquired by Mistral; the availability of
   new free-tier signups under the new ownership is unclear. Do not build on the
   Koyeb free tier until the operator re-checks its current signup/policy.
-- **Render Free — staging candidate,** pending the operator's decision. The
-  always-on / cold-start tradeoff (§8) and the free-plan region question (§6a)
-  are the operator's call; no production host is chosen here.
+- **Render Free + a keep-awake monitor — CHOSEN as the first host.** See §6b for
+  the monitor and the free-instance-hours math, and §10 for the deploy checklist.
+  Netlify stays a documented fallback (`docs/SERVERLESS_OPTION.md` §Decision).
+  This is preparation only: nothing here has been deployed, and the free-plan
+  region question (§6a) is still confirmed live in the picker at creation time.
 
 Related docs: `docs/DB_MIGRATION.md` (test → `decoricks_prod` cutover),
 `docs/BACKUP_RECOVERY.md`, `docs/KNOWN_LIMITATIONS.md`.
@@ -104,16 +106,21 @@ marked unhealthy behind a slow first Mongo handshake:
 - **Operator/deep check: `GET /api/health/database`**
   (`src/app/api/health/database/route.ts`). This DOES call `healthCheck()` (a DB
   `ping`): `200 { database: "healthy" }` when storage is reachable, `503` when
-  not. Use it by hand or from an uptime monitor; do **not** point the platform
-  health probe here (a cold first call can take ~1–2s and would flake the probe).
-  Both are under the public `/api/health*` prefix (`src/middleware.ts`), so
-  neither needs a session.
+  not. **It is Founder-only now** — the route calls `requireFounder` before doing
+  anything, so an anonymous or non-Founder caller gets `401`/`403`, not a status.
+  It also leaks nothing: the body carries only a coarse `healthy`/`unreachable`
+  verdict plus a timestamp — no cluster name, database name, server version or
+  error detail. Use it by hand from a signed-in Founder session; do **not** point
+  the platform probe or the keep-awake monitor here (a cold first call can take
+  ~1–2s, and it now requires a session). Only `/api/health` stays public.
 
-Set the host health check to `http://<host>/api/health`. Do not mark a deploy
-"live" until `/api/health` is green AND the startup log line from
-`src/lib/mongodb.ts` announces the resolved database as `decoricks_prod` — never
-`test`. If the process was misconfigured it will have **exited non-zero at boot**
-(see §0), so a green `/api/health` already implies a valid `MONGODB_DB`.
+Set the host health check to `http://<host>/api/health`. Point any uptime /
+keep-awake monitor (see §6b) at `/api/health` too — it is the public, DB-free,
+instant probe. Do not mark a deploy "live" until `/api/health` is green AND the
+startup log line from `src/lib/mongodb.ts` announces the resolved database as
+`decoricks_prod` — never `test`. If the process was misconfigured it will have
+**exited non-zero at boot** (see §0), so a green `/api/health` already implies a
+valid `MONGODB_DB`.
 
 ---
 
@@ -317,6 +324,192 @@ deploys; no scaling, persistent disks, SSH, or one-off jobs.
 
 ---
 
+## 6b. Keep-awake on Render Free (external uptime monitor)
+
+**Decision (recorded 2026-10-25):** Render Free + an external keep-awake monitor
+is the chosen first host. Netlify stays a documented fallback
+(`docs/SERVERLESS_OPTION.md` §Decision). Nothing here is deployed; this is the
+plan of record for when the operator gives the go-ahead.
+
+**Why a monitor is needed.** Quoted from Render's own docs, `render.com/docs/free`
+(VERIFIED this turn):
+
+> "Render *spins down* a Free web service that goes 15 minutes without receiving
+> any inbound traffic. This includes both HTTP requests and WebSocket messages
+> from existing connections."
+>
+> "A Free web service spins back _up_ whenever it next receives an HTTP request or
+> new WebSocket connection. This process takes about one minute."
+
+**How.** A free uptime monitor — **UptimeRobot** (free tier polls as often as every
+5 minutes) or **cron-job.org** — sends `GET https://<host>/api/health` on a fixed
+schedule shorter than 15 minutes. Use **every 10 minutes** (10 < 15, so the idle
+timer never expires and the service never spins down). Point it at **`/api/health`
+only** — it is public, makes no DB call, and answers instantly. Do **not** point it
+at `/api/health/database` (now Founder-only and heavier, §2) and not at
+`/robots.txt` (a spun-down free service gets a canned "disallow all" that does _not_
+wake it — VERIFIED, `/docs/free`). The single ping keeps the whole Node process —
+and therefore its Mongo pool and change-stream watcher — warm.
+
+**Is this allowed?** Separate what Render actually says from what is inferred:
+
+- **VERIFIED (docs):** spin-down is defined purely by _inbound_ HTTP/WS traffic,
+  and inbound requests are normal and expected; **nothing in `/docs/free` or the
+  FAQ forbids an external pinger.** A 10-minute `GET /api/health` is just inbound
+  traffic.
+- **VERIFIED (docs) cautions:** free instances are explicitly "**Do not use … for
+  production applications**" (staging posture, not an SLA), and "Render may suspend
+  a Free web service that initiates an **uncommonly high volume of traffic over the
+  public internet**" — the example given is "Accessing an external database". That
+  clause is about **outbound** volume and is qualitative; a 4-user internal tool's
+  Atlas traffic is ordinary, but it is the honest reason Free is staging-only.
+- **COULD NOT VERIFY:** an explicit Render sentence granting that third-party
+  keep-alive pinging is *permitted*, and any numeric egress threshold. The
+  terms-of-service page surfaced no keep-alive/abuse clause in this pass. So the
+  correct statement is **allowed-by-omission + community-standard practice**, not
+  "allowed" as a quoted permission.
+
+**What 750 free instance hours mean for one always-on service.** VERIFIED
+(`render.com/docs/free`):
+
+> "Render grants *750 Free instance hours* to each workspace per calendar month …
+> A Free web service consumes these hours **as long as it's running** (spun-down
+> services don't consume Free instance hours) … [consuming them all] **suspends**
+> all of your Free web services until the start of the next month … reset to 750
+> [monthly, no rollover]."
+
+- Keeping the service awake means it is *always running*, so it burns hours
+  continuously. For **one** service, 24/7: a 30-day month = **720 h**, a 31-day
+  month = **744 h**, February = **672 h** — **all ≤ 750.** So a **single**
+  always-on free web service **fits inside the monthly 750 and is not suspended on
+  instance-hours grounds** — but it sits near the ceiling (only ~6–30 h of slack in
+  a long month).
+- The 750 is **per workspace and shared**. A **second** always-on free web service
+  roughly doubles the draw to ~1,440–1,488 h, so the workspace would hit 750 around
+  the 16th and Render would suspend **all** free web services for the rest of the
+  month. **Keep Decoricks the only always-on free web service in the workspace.**
+- **Without** a monitor, an idle app spends most of the month spun down and uses
+  far fewer hours (partners just pay a ~1-minute cold first hit after quiet). The
+  monitor trades those hours away for instant response. Build pipeline minutes and
+  outbound bandwidth are separate allowances the pings barely touch (inbound
+  bandwidth is free — VERIFIED, `/docs/faq`).
+
+**The Mongo pool stays warm while the process is awake.** The driver's connection
+pool (`src/lib/mongodb.ts` — `minPoolSize:2`, `heartbeatFrequencyMS:10000`) lives
+in the process. Because the monitor never lets the process idle-spin-down, those
+connections are never torn down: a real request reuses an established TLS connection
+instead of paying the ~300–400 ms handshake + first-query latency the cold path
+measures (`docs/SERVERLESS_OPTION.md` §4). Note the ping hits `/api/health`, which
+deliberately makes **no** DB call — it keeps the _process_ alive, and the pooled
+connections persist simply because the process stays alive. The pool is in-memory,
+not a filesystem artifact, so it dies only with the process (spin-down / redeploy /
+restart), not from Render's "local files are lost" behavior.
+
+**What partners still see after a deploy or restart.** The monitor prevents **idle**
+spin-downs only. It does **not** prevent a **redeploy** (new code/config) or Render's
+documented "might restart a Free web service at any time" (VERIFIED, `/docs/free`).
+Each tears the process down, so the **first DB-touching request after a
+deploy/restart is cold again**: boot `ensureAuthIndexes` + a fresh handshake
+(~1–2 s in the local production-build measurement, §10 preamble), the change-stream
+watcher reconnects, the in-memory rate-limit buckets and 2 s role cache refill, and
+every tab's `EventSource` reconnects. So: expect **one** brief slow first load per
+deploy/restart regardless of the monitor, and a momentary gap in instant realtime
+that closes on reconnect — while the monitor removes the *idle*-overnight cold
+starts entirely.
+
+---
+
+## 6c. First-deploy troubleshooting (Render Free)
+
+Ordered by what actually bites on a first Render Free deploy of this app.
+"**VERIFIED**" = quoted from Render's own docs this turn; "**NOT VERIFIED**" =
+general Node/Next/Mongo behaviour given as guidance but not found on a Render page
+in this pass.
+
+**1. Next.js build runs out of memory on a small instance.**
+
+- Symptom: the build fails with Render's `Out of memory` reason, or the log shows
+  `JavaScript heap out of memory`. The Free runtime is **0.1 CPU / 512 MB**
+  (VERIFIED, `/docs/free` glossary "`free`: 0.1 CPU / 512 MB RAM").
+- **VERIFIED to help** (Render `troubleshooting-deploys`): "If your instance logs
+  `JavaScript heap out of memory` errors, Node's heap limit might be lower than
+  your instance's available memory. Set `--max-old-space-size=<megabytes>` lower
+  than your instance's available memory." On Render set `NODE_OPTIONS=--max-old-space-size=<MB>`
+  in the **build** environment. The build runs on Render's **build pipeline**, whose
+  memory is separate from the 512 MB runtime — so the heap cap should track the
+  _build_ machine, not 512.
+- **VERIFIED** (Render `troubleshooting-deploys` / `faq`): an `Out of memory` **build**
+  points to "memory limits while building … Pipeline tiers", and "Render also offers
+  a **performance pipeline tier** for teams with builds that require additional memory
+  and/or CPU" — which "carr[ies] an additional charge and do[es] not provide a monthly
+  included amount". So the performance tier is a **paid** escape hatch, not a Free one.
+- Cheapest-first, behaviour-preserving levers (**NOT VERIFIED** on a Render page —
+  standard Next.js practice): (a) the `NODE_OPTIONS` heap cap above; (b) reduce what
+  the build needs (skip source maps / heavy type generation in CI); (c) temporarily
+  promote the runtime plan just to prove the build, then drop back to Free. If it
+  still OOMs on the standard pipeline, the honest answer is the paid performance
+  pipeline tier, or building the artifact elsewhere and shipping a Docker image.
+- **COULD NOT VERIFY:** Render's exact free/standard build-pipeline memory number —
+  the docs reference `build-pipeline#pipeline-tiers`, which I did not open this pass,
+  so pick the heap value by measuring, not from a published figure.
+
+**2. Atlas network-access failures.**
+
+- Symptom at boot: server selection fails — `MongooseServerSelectionError` /
+  `Server selection timed out` / DNS errors — and because `getDatabase()` runs at
+  startup the process dies.
+- Cause is almost always the Atlas **IP allowlist**: Render Free has **no fixed
+  static egress IP** (static outbound IPs are a Render paid feature), so the app
+  reaches Atlas from addresses Atlas doesn't recognise. Fix per Step 5: add Render's
+  published egress range _if_ one exists, otherwise allow `0.0.0.0/0` gated by the
+  least-privilege `decoricks_app` user. **NOT VERIFIED** that Render publishes a
+  stable per-service egress list on Free — assume it does not.
+- Secondary: `mongodb+srv://` needs the driver to resolve `_mongodb._tcp…` SRV/TXT
+  records; if SRV lookups are blocked in the environment, use the **standard** Atlas
+  connection string (explicit hosts + `replicaSet`). (General MongoDB guidance —
+  NOT VERIFIED as a Render page.)
+- Also confirm the URI uses the **`decoricks_app`** user (not the console owner
+  account) and that its password's special characters are percent-encoded — a raw
+  `@`/`:` in the userinfo is a classic silent auth failure. **Never print the URI.**
+
+**3. Boot refusal when `MONGODB_DB` resolves to a test-shaped name.**
+
+- This is **our** guard firing correctly (VERIFIED in this repo): in a real
+  production process `src/instrumentation.node.ts` → `assertProductionRunnable()`
+  makes the process **exit non-zero** rather than serve the wrong DB, so Render
+  marks the deploy **failed** (see §0).
+- Symptom: `[startup] refusing to run production against database "test"` (or "no
+  explicit database is configured").
+- Fix: set `MONGODB_DB=decoricks_prod` explicitly; ensure the `MONGODB_URI` has an
+  empty path after the host (so it cannot fall back to `test`); confirm
+  `MONGODB_TEST_DB` and `E2E_TEST_MODE` are **absent** on the host (their presence
+  marks the process a test runner and would disarm the gate — §0). This failed boot
+  is the safety net working, not a bug to route around.
+
+**4. Timezone (TZ).**
+
+- Symptom: dates render ~5 hours off, or the boot log prints the
+  `warnIfClockIsNotKarachi()` warning. Render containers default to UTC (VERIFIED,
+  `/docs/free`), and `src/instrumentation.node.ts` pins Karachi only when `TZ` is
+  _unset_ — it never overrides an explicit value.
+- Fix: set `TZ=Asia/Karachi` in Render's environment (§4). A warning still present
+  after deploy means the platform handed the process a different zone than the env
+  claims.
+
+**5. Cold start after 15 minutes idle (no monitor).**
+
+- Symptom: the first click after a quiet period hangs ~1 minute and may show
+  Render's loading page. VERIFIED (`/docs/free` + `faq`): free services "spin down
+  … 15 consecutive minutes" and "take about a minute to spin back up"; "Paid compute
+  plans do _not_ spin down."
+- Fix: run the §6b keep-awake monitor (`GET /api/health` every 10 min). Without it,
+  expect the cold first hit; the client already softens it — polling and the offline
+  queue replay writes on wake (§8). If a ~1-minute spin-up is still unacceptable to
+  the partners, that is the signal to move to a paid always-on plan, not to ping
+  harder.
+
+---
+
 ## 7. Rolling back a bad deploy
 
 Both hosts keep the previous successful build/artifact. Preferred order:
@@ -506,21 +699,25 @@ environments).
 1. **Atlas Database Access:** create a dedicated user `decoricks_app`
    (password authentication) scoped to **least privilege** — e.g. a custom role
    with `readWrite` **only** on `decoricks_prod` (no cluster-level admin, no
-   `atlasAdmin`). Use this user's credentials in `MONGODB_URI`. Do not reuse the
-   owner/admin account the console "Connect" button hands out.
-2. **Atlas Network Access (IP allowlist):**
+   `atlasAdmin`). Give it a **long random password** (e.g. `openssl rand -base64 32`,
+   URL-encode before putting it in the URI) — this credential is what bounds the
+   open-network fallback in point 2, so it must be strong and never the owner
+   account's password. Use this user's credentials in `MONGODB_URI`. Do not reuse
+   the owner/admin account the console "Connect" button hands out.
+2. **Atlas Network Access (IP allowlist)** — prefer the narrowest option that
+   actually exists:
    - **Preferred:** add **Render's published outbound IP ranges** if Render
      exposes a static/published set for the service. On the **Free** plan Render
      does **not** provide a fixed static egress IP (static outbound IPs are a
      paid feature), so this is usually **not available on Free** — check the
      Render service's egress info at deploy time; if a published range exists,
-     add each CIDR to the Atlas allowlist.
-   - **Otherwise (typical on Free):** allow `0.0.0.0/0` **but only because** the
-     connection is gated by the strong-credential, least-privilege `decoricks_app`
-     user — i.e. the network is open, the *account* is not. This is the
-     documented fallback. Rotate the `decoricks_app` password periodically and
-     keep its role minimal so an open allowlist is bounded by credentials, not
-     by network position.
+     add each CIDR to the Atlas allowlist and stop there.
+   - **Otherwise (typical on Free):** allow `0.0.0.0/0` — the whole network —
+     **but only because** the connection is gated by the strong-credential,
+     least-privilege `decoricks_app` user with its **long random password** — i.e.
+     the network is open, the *account* is not. This is the documented fallback.
+     Rotate the `decoricks_app` password periodically and keep its role minimal so
+     an open allowlist stays bounded by credentials, not by network position.
 
 ### Step 6 — Deploy, then verify the resolved database
 
@@ -530,8 +727,11 @@ environments).
    instead **exits non-zero** with `[startup] refusing to run production against
    database "test"…` (or "no explicit database is configured"), the deploy is
    **correctly failing** — fix `MONGODB_DB` / the URI path, redeploy.
-3. `GET https://<host>/api/health` → expect `200 {"status":"ok"}`.
-   `GET https://<host>/api/health/database` → expect `200 {"database":"healthy"}`.
+3. `GET https://<host>/api/health` → expect `200 {"status":"ok"}` (public, no DB).
+   `GET https://<host>/api/health/database` is **Founder-only** now: open it in the
+   signed-in Founder browser (Step 7) → expect `200 {"database":"healthy"}`; a bare
+   `curl` with no session correctly returns `401`, and the body never carries a
+   cluster/database name, version or error detail.
 
 ### Step 7 — First login (no password reset)
 
@@ -553,7 +753,8 @@ was verified this turn that its `mustChangePassword` is **`false`**. So:
 ### Step 8 — Post-deploy sanity (read-only)
 
 - One login, load the dashboard, confirm live `decoricks_prod` records render
-  (not an empty database). Open `/api/health/database` once. Do not run write
+  (not an empty database). Open `/api/health/database` once **as the signed-in
+  Founder** (it 401s anonymously now). Do not run write
   smokes against production — the ledger is append-only and real.
 
 ### Rollback (Render side)
