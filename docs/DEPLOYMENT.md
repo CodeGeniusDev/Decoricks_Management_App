@@ -241,14 +241,25 @@ Render auto-detects a Node/Next app or uses `render.yaml` / a Dockerfile.
 
 - Build command:
   ```
-  npm ci && npm run build
+  npm ci --include=dev && npm run build
   ```
+  **Why `--include=dev` is mandatory here:** the Render service sets
+  `NODE_ENV=production`, and npm honours that at install time — a plain `npm ci`
+  then **omits every `devDependency`** (Render's log read `added 108 packages`
+  where a clean local clone installs 509). `next build` needs `typescript` to
+  resolve the `@/*` path alias in `tsconfig.json`, plus the `@types/*` and the
+  test-tooling types that its full-project type-check pulls in (see §6d). Without
+  them the build fails in ~30s with `Module not found: Can't resolve '@/...'`.
+  `--include=dev` forces the dev toolchain to install even under
+  `NODE_ENV=production`. This is the smallest safe fix — no dependency is moved
+  and no version is changed.
 - Start command:
   ```
   npm run start
   ```
   Render injects `PORT` (default 10000); `next start` honours `PORT`. Set the
-  health-check path to `/api/health` in the dashboard.
+  health-check path to `/api/health` in the dashboard. Only the runtime
+  `dependencies` are needed at start (dev tooling is a build-time concern only).
 - Node version: set via the dashboard runtime or `.nvmrc`/`engines`. Same
   guidance as Koyeb — pin an LTS the build passes on (local dev is Node 26).
 - Env: fill §1 into Render's Environment; add secrets as "Secret Values".
@@ -510,6 +521,73 @@ in this pass.
 
 ---
 
+## 6d. Build fails in ~30s with `Can't resolve '@/...'` (devDependencies skipped)
+
+**This is the failure that actually happened** on the first Render Free deploy of
+commit `ef10a07`: the build died after ~31 seconds with
+`Module not found: Can't resolve '@/lib/sync/useRealtime'`,
+`'@/components/PageTransition'`, `'@/components/ui/Card'`, and every other
+`@/...` import, and the Render `npm ci` log read `added 108 packages` where a
+clean clone of the same tip installs **509** on a dev machine.
+
+- **Root cause (VERIFIED by local reproduction).** The Render service sets
+  `NODE_ENV=production`. npm honours `NODE_ENV` at install time, so a bare
+  `npm ci` **omits all `devDependencies`** and installs only the 108 runtime
+  packages. `next build` then has no `typescript`, so Next.js 15.5.27 never
+  applies the `"paths": { "@/*": ["./src/*"] }` alias from `tsconfig.json`, and
+  webpack cannot resolve any `@/...` import → hard `Module not found` failure.
+  The dev machine never sees this because its `npm ci` runs with `NODE_ENV`
+  unset (or `development`), so devDependencies — including `typescript` — are
+  installed.
+- **Reproduction (exact).** Clone the branch tip into a directory **outside** any
+  Node project (a nested clone is invalid — Next walks up to the parent
+  `node_modules` and masks the missing packages), then:
+  ```
+  NODE_ENV=production npm ci                 # added 108 packages; no node_modules/typescript
+  NODE_ENV=production npm run build          # exit 1: Can't resolve '@/...'
+  NODE_ENV=production npm ci --include=dev   # installs the ~509 incl. typescript
+  NODE_ENV=production npm run build          # ✓ Compiled successfully, exit 0
+  ```
+- **Fix — the build command.** Use `npm ci --include=dev && npm run build` (the
+  command in §6 / Step 3). This is the **smallest safe change**: no dependency is
+  relocated from `devDependencies` to `dependencies`, and **no version is
+  touched**.
+- **Why NOT "move the build packages into `dependencies`".** `next build` runs a
+  full-project type-check, and `tsconfig.json` includes `**/*.ts(x)` — which
+  pulls `playwright.config.ts`, `src/e2e/*.spec.ts` and `src/**/__tests__/*.test.ts`
+  into the check. Removing `@playwright/test` (a devDependency) from an
+  otherwise-complete install reproduced a fatal
+  `Type error: Cannot find module '@playwright/test'`. So the build-critical set
+  is not just `typescript` — it also drags in the test tooling's types
+  (`vitest`, `@playwright/test`, `mongodb-memory-server`). Promoting all of those
+  into production `dependencies` would pollute the runtime install with test
+  frameworks and every future `@types` bump. `--include=dev` keeps them where
+  they belong.
+- **Build-critical `devDependencies` (evidence-backed).** `typescript` (alias +
+  type-check), `@types/node`, `@types/react`, `@types/react-dom`,
+  `@types/bcryptjs`, `@types/web-push`, and the type packages the project-wide
+  type-check reaches through test files (`vitest`, `@playwright/test`,
+  `mongodb-memory-server`). `eslint` is **not** build-fatal — when it is absent
+  Next.js prints `ESLint must be installed in order to run during builds` and
+  continues (lint is a separate `npm run lint` gate). `prettier` and `tsx` are
+  script-only. `tailwindcss`/`postcss`/`autoprefixer` were not fatal to `next
+  build` on 15.5.27 in isolation, but they compile `globals.css` and must be
+  present for correct styling.
+- **Pre-push guard.** Before pushing a deploy-bound commit, build the **exact tip
+  in a clean out-of-tree clone** under production conditions and confirm it
+  compiles:
+  ```
+  git clone <repo> /tmp/deploycheck && cd /tmp/deploycheck
+  git checkout <tip-sha>
+  NODE_ENV=production npm ci --include=dev && NODE_ENV=production npm run build
+  ```
+  If that build fails, the Render build will fail the same way. The repo's
+  `npm run verify` runs typecheck+lint+test+build but on a fully-populated dev
+  `node_modules`, so it does **not** catch a missing-devDependency regression;
+  the clean-clone `NODE_ENV=production npm ci --include=dev` build does.
+
+---
+
 ## 7. Rolling back a bad deploy
 
 Both hosts keep the previous successful build/artifact. Preferred order:
@@ -660,7 +738,11 @@ records, and that `test` is being kept read-only as the 30-day rollback.
 - **Runtime:** Node — pin an LTS the build passes on (local dev is Node 26;
   prefer **Node 20 or 22 LTS** on Render). Set via the dashboard or an
   `.nvmrc`/`engines` entry; the build must be re-run to change it.
-- **Build command:** `npm ci && npm run build`
+- **Build command:** `npm ci --include=dev && npm run build`
+  **Do not use a bare `npm ci`.** The service runs with `NODE_ENV=production`, so
+  npm omits every `devDependency`, and `next build` then fails in ~30s with
+  `Module not found: Can't resolve '@/...'` (it needs `typescript` for the `@/*`
+  alias plus the type-check toolchain). `--include=dev` is required. See §6d.
 - **Start command:** `npm run start`  (which runs `next start`; it reads `PORT`
   and binds all interfaces — verified locally above).
 - **Health check path:** `/api/health`  (liveness, no DB — see §2). Do **not**
@@ -779,5 +861,5 @@ only `next build` and `start` is only `next start`. `seed`, the migrations, the
 `cleanup:e2e` script and `playwright` are separate `npm run` scripts that must be
 invoked explicitly (and the writing ones additionally require
 `DECORICKS_ALLOW_PROD_DB=1` + a `--confirm`/`--apply` flag). Therefore a Render
-`npm ci && npm run build && npm run start` can never seed, migrate, backfill, or
-run e2e against `decoricks_prod` on its own.
+`npm ci --include=dev && npm run build && npm run start` can never seed, migrate,
+backfill, or run e2e against `decoricks_prod` on its own.
