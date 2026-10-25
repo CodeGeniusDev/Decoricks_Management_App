@@ -15,9 +15,18 @@ set -euo pipefail
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 DECORICKS_BACKUP_KEY_FILE="${DECORICKS_BACKUP_KEY_FILE:-$HOME/.decoricks/backup.key}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/Dropbox/Decoricks Backups}"
+# Which database the nightly backup reads. After the copy-and-switch this is the
+# live production database (decoricks_prod), decoupled from whatever a developer's
+# .env.local happens to point at — a scheduled job must never silently follow a
+# laptop's local database. Override here or in the launchd plist to retarget.
+BACKUP_DB="${BACKUP_DB:-decoricks_prod}"
 # ---------------------------------------------------------------------------
 
 export DECORICKS_BACKUP_KEY_FILE BACKUP_DIR
+# Pin the backup target explicitly. scripts/backup.ts fills MONGODB_DB from
+# .env.local ONLY when it is still unset, so this export always wins: the archive
+# is taken from $BACKUP_DB regardless of the developer's local .env.local.
+export MONGODB_DB="$BACKUP_DB"
 cd "$PROJECT_DIR"
 
 mkdir -p "$BACKUP_DIR"
@@ -26,7 +35,7 @@ if [ ! -f "$DECORICKS_BACKUP_KEY_FILE" ]; then
   exit 1
 fi
 
-echo "$(date -u +%FT%TZ) backup starting (project: $PROJECT_DIR -> $BACKUP_DIR)"
+echo "$(date -u +%FT%TZ) backup starting (db: $BACKUP_DB, project: $PROJECT_DIR -> $BACKUP_DIR)"
 npx tsx scripts/backup.ts
 echo "$(date -u +%FT%TZ) backup finished"
 

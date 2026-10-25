@@ -108,6 +108,12 @@ and switch over only after the checks pass.
 
 `scripts/backup.sh` wraps step 2 and keeps only the newest 30 archives.
 
+By default it archives the **production database** (`BACKUP_DB=decoricks_prod`).
+The wrapper pins `MONGODB_DB` to that value before running `scripts/backup.ts`, so
+the nightly job never silently follows whatever a developer's local `.env.local`
+points at (currently `test`, which is the frozen 30‑day rollback copy). Set
+`BACKUP_DB` in the script or the plist/cron entry to retarget.
+
 ### Option A — launchd (recommended on macOS)
 
 ```bash
@@ -123,7 +129,7 @@ The template runs every night at 03:15 and catches up when the Mac wakes.
 
 ```cron
 # 03:15 every day
-15 3 * * *  cd "/path/to/Decoricks_Managment_App" && DECORICKS_BACKUP_KEY_FILE="$HOME/.decoricks/backup.key" BACKUP_DIR="$HOME/Decoricks Backups" /bin/bash scripts/backup.sh >> /tmp/decoricks-backup.log 2>&1
+15 3 * * *  cd "/path/to/Decoricks_Managment_App" && DECORICKS_BACKUP_KEY_FILE="$HOME/.decoricks/backup.key" BACKUP_DIR="$HOME/Decoricks Backups" BACKUP_DB=decoricks_prod /bin/bash scripts/backup.sh >> /tmp/decoricks-backup.log 2>&1
 ```
 
 cron on a laptop only fires when the machine is awake at that minute; launchd is

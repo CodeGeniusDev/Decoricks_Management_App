@@ -5,10 +5,13 @@
 
   INSTALL (macOS):
     1. Copy this file to  ~/Library/LaunchAgents/com.decoricks.backup.plist
-    2. Edit the two paths below:
+    2. Edit the values below:
          - ProgramArguments: absolute path to your checkout's scripts/backup.sh
          - EnvironmentVariables -> DECORICKS_BACKUP_KEY_FILE: a file OUTSIDE the repo
          - EnvironmentVariables -> BACKUP_DIR: where archives should land
+         - EnvironmentVariables -> BACKUP_DB: the database to archive (production:
+           decoricks_prod). backup.sh pins MONGODB_DB to this so the nightly job
+           never follows a developer's local .env.local.
     3. Load it:            launchctl load ~/Library/LaunchAgents/com.decoricks.backup.plist
     4. Run it once manually:  launchctl start com.decoricks.backup
     5. Unload:             launchctl unload ~/Library/LaunchAgents/com.decoricks.backup.plist
@@ -33,6 +36,8 @@
       <string>/Users/REPLACE/.decoricks/backup.key</string>
       <key>BACKUP_DIR</key>
       <string>/Users/REPLACE/Decoricks Backups</string>
+      <key>BACKUP_DB</key>
+      <string>decoricks_prod</string>
       <key>PATH</key>
       <string>/usr/local/bin:/usr/bin:/bin</string>
     </dict>
