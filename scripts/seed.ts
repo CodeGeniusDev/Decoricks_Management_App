@@ -6,6 +6,7 @@ import {
   resolveDatabase,
   looksLikeTestDatabase,
   assertScriptDatabaseConsent,
+  isProductionDatabaseName,
 } from '../src/lib/db-name'
 import { SPEC_ROLES, LAHORE_STOCK_ROLES, SCOPED_LAHORE_STOCK_PERMISSION } from '../src/lib/roles'
 import { hashPassword } from '../src/lib/auth/password'
@@ -289,6 +290,21 @@ const main = async () => {
           `(source: ${target.source}). This seed writes roles, a Founder and the SPEC ` +
           `financial defaults — point it at the application database, and use ` +
           `npm run seed:e2e for a test run.`
+      )
+      process.exit(1)
+    }
+
+    // Absolute refusal to seed the live production database. Unlike the
+    // consent flag below, there is NO override here: a seed writes demo roles,
+    // a Founder and SPEC financial defaults, and must never inject fixture data
+    // into the database that holds real business records (`decoricks_prod`).
+    // Dev/test seeding uses `decoricks_dev` / `decoricks_test` / `seed:e2e`.
+    if (isProductionDatabaseName(db.databaseName)) {
+      console.error(
+        `Refusing to seed "${db.databaseName}": this is the live production database. ` +
+          `Seed/fixture scripts must never write demo records here and there is no override ` +
+          `flag. Point the seed at "decoricks_dev", or use "npm run seed:e2e" (decoricks_test) ` +
+          `for a test run.`
       )
       process.exit(1)
     }
