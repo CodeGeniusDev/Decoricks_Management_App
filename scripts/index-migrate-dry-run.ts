@@ -58,7 +58,9 @@ async function report(db: Db) {
     }
     const indexes = await c.indexes()
     const idempIdx = indexes.filter((i: any) => i.key && 'idempotencyKey' in i.key)
-    console.log(`${coll}: indexes with idempotencyKey -> ${idempIdx.map((i:any)=>`${i.name}(unique=${i.unique},sparse=${i.sparse},partial=${!!i.partialFilterExpression})`).join(' | ') || 'NONE'}`)
+    console.log(
+      `${coll}: indexes with idempotencyKey -> ${idempIdx.map((i: any) => `${i.name}(unique=${i.unique},sparse=${i.sparse},partial=${!!i.partialFilterExpression})`).join(' | ') || 'NONE'}`
+    )
     const nullCount = await c.countDocuments({ idempotencyKey: null })
     const undefCount = await c.countDocuments({ idempotencyKey: { $exists: false } })
     const stringCount = await c.countDocuments({ idempotencyKey: { $type: 'string' } })
@@ -75,7 +77,9 @@ async function main() {
   console.log(`Connected to ${db.databaseName}`)
   await report(db)
   if (!apply) {
-    console.log('\nDRY-RUN ONLY. To apply: --apply --i-have-a-backup (and ensure you have a backup first).')
+    console.log(
+      '\nDRY-RUN ONLY. To apply: --apply --i-have-a-backup (and ensure you have a backup first).'
+    )
     await client.close()
     process.exit(0)
   }
@@ -105,4 +109,7 @@ async function main() {
   await client.close()
 }
 
-void main().catch((e) => { console.error(e); process.exit(1) })
+void main().catch((e) => {
+  console.error(e)
+  process.exit(1)
+})
