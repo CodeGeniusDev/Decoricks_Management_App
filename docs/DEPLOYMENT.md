@@ -61,21 +61,22 @@ go into the host's encrypted secret store, not the repository.
 
 Runtime (server-side, all `process.env`):
 
-| Name                             | Required  | Notes                                                                  |
-| -------------------------------- | --------- | ---------------------------------------------------------------------- |
-| `MONGODB_URI`                    | yes       | Atlas SRV URI. **SECRET.**                                             |
-| `MONGODB_DB`                     | yes       | Set explicitly to `decoricks_prod`.                                    |
-| `SESSION_SECRET`                 | yes       | ≥16 chars; signs CSRF tokens. **SECRET.**                              |
-| `SESSION_TTL_MINUTES`            | optional  | Default 720 (12h sliding window).                                      |
-| `SESSION_MAX_LIFETIME_MINUTES`   | optional  | Default 10080 (7d absolute). Must be ≥ TTL or the app refuses to boot. |
-| `SESSION_SLIDE_INTERVAL_SECONDS` | optional  | Default 60.                                                            |
-| `PASSWORD_MIN_LENGTH`            | optional  | Default 12.                                                            |
-| `BCRYPT_COST`                    | optional  | Default 12.                                                            |
-| `LOGIN_MAX_ATTEMPTS`             | optional  | Default 5.                                                             |
-| `LOGIN_WINDOW_MINUTES`           | optional  | Default 15.                                                            |
-| `LOCKOUT_MINUTES`                | optional  | Default 15.                                                            |
-| `TZ`                             | yes       | Exactly `Asia/Karachi`.                                                |
-| `MONGODB_TEST_DB`                | **never** | Test-runner only. Must be absent on the host.                          |
+| Name                             | Required  | Notes                                                                                                                                   |
+| -------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `MONGODB_URI`                    | yes       | Atlas SRV URI. **SECRET.**                                                                                                              |
+| `MONGODB_DB`                     | yes       | Set explicitly to `decoricks_prod`.                                                                                                     |
+| `SESSION_SECRET`                 | yes       | ≥16 chars; signs CSRF tokens. **SECRET.**                                                                                               |
+| `SESSION_TTL_MINUTES`            | optional  | Default 720 (12h sliding window).                                                                                                       |
+| `SESSION_MAX_LIFETIME_MINUTES`   | optional  | Default 10080 (7d absolute). Must be ≥ TTL or the app refuses to boot.                                                                  |
+| `SESSION_SLIDE_INTERVAL_SECONDS` | optional  | Default 60.                                                                                                                             |
+| `PASSWORD_MIN_LENGTH`            | optional  | Default 12.                                                                                                                             |
+| `BCRYPT_COST`                    | optional  | Default 12.                                                                                                                             |
+| `LOGIN_MAX_ATTEMPTS`             | optional  | Default 5.                                                                                                                              |
+| `LOGIN_WINDOW_MINUTES`           | optional  | Default 15.                                                                                                                             |
+| `LOCKOUT_MINUTES`                | optional  | Default 15.                                                                                                                             |
+| `TZ`                             | yes       | Exactly `Asia/Karachi`.                                                                                                                 |
+| `CRON_SECRET`                    | optional  | **SECRET.** Enables `GET /api/cron/notifications` (see §6b). Unset, or shorter than 32 chars, and the route answers 404 and never runs. |
+| `MONGODB_TEST_DB`                | **never** | Test-runner only. Must be absent on the host.                                                                                           |
 
 Optional Web Push (Phase 9). If unset, push is disabled and the app falls back
 to in-app + browser notifications while open:
@@ -429,6 +430,59 @@ every tab's `EventSource` reconnects. So: expect **one** brief slow first load p
 deploy/restart regardless of the monitor, and a momentary gap in instant realtime
 that closes on reconnect — while the monitor removes the _idle_-overnight cold
 starts entirely.
+
+**The notification timer can be the keep-alive instead (added 2026-10-26).**
+`GET /api/cron/notifications` (`docs/PUSH_SETUP.md` §9, `docs/RENDER_OPERATIONS.md`
+§6a) runs the time-based notification sweep that otherwise only happens when a
+partner opens the app. Every call is an inbound request, so a 15-minute timer
+delivers the same wake-up this section buys from `/api/health` — with the
+difference that it does real work (it touches MongoDB) and requires a shared
+secret.
+
+- Generate the secret locally, never in a chat or a doc:
+  `openssl rand -base64 32` → store as `CRON_SECRET` in Render's encrypted
+  environment (§1). Minimum 32 characters; below that the route treats it as
+  unset.
+- **With `CRON_SECRET` unset the route does not exist**: 404, no database
+  connection, no sweep. Nothing to audit, nothing to guess.
+- cron-job.org (free) sends custom headers, so the job is: GET the URL every 15
+  minutes with header `x-cron-secret: <value>`.
+- **UptimeRobot free cannot send a custom header** — their FAQ lists Custom
+  Headers under "If you are on a Pro Plan", and the pricing FAQ puts the API /
+  broader monitoring options on the paid Solo tier. So a free UptimeRobot monitor
+  cannot authenticate to this route.
+
+**If you only want to use a free monitor that cannot send headers**, the options
+in order of safety — none implemented, the owner decides:
+
+1. **Keep UptimeRobot free on `/api/health` for uptime alerting, and let the
+   sweep stay lazy** (no change, no new secret, alerts arrive on the next visit).
+   Strictly the safest: adds no attack surface at all.
+2. **Upgrade the monitor** (UptimeRobot Solo/Pro, or BetterStack) purely for the
+   header. No code change; the secret stays a header, which is what the route
+   expects.
+3. **IP-allowlist instead of a secret.** cron-job.org publishes its executor IPs
+   (`api.cron-job.org/executor-nodes.json`), but those nodes rotate and the list
+   changes, so this trades a secret for a maintenance chore and a fail-open risk
+   when the list goes stale. Not implemented.
+4. **A secret in the query string** (`?secret=…`) — **not recommended, and not
+   supported by the route.** The concrete risk is that URLs are logged in far more
+   places than header values are: Render's request logs, every proxy/CDN and load
+   balancer in between, the monitor's own history and its failure e-mails, browser
+   and referrer data, and any error-reporting payload that captures the full URL.
+   One leaked log line then hands over a timer that writes to the database. If the
+   owner ever accepts that trade-off, the mitigation has to be real, not
+   decorative: make the value a single-use-ish short-lived token rather than a
+   long-lived secret (e.g. rotate daily, which needs a scheduled job to rotate it),
+   cap the route's authority to exactly this throttled sweep (already true), keep
+   the response counts-only (already true), and add log scrubbing for the query
+   string at every hop that can see it — which is the part this app cannot control
+   on somebody else's monitor. That asymmetry is why the header stays.
+
+Either way, **do not count the timer as a replacement for the `/api/health`
+monitor**: health is DB-free and answers even when the database is the thing that
+is broken, which is exactly the failure you want paged about. The cron route
+returns 503 in that case — useful as a second signal, wrong as the primary one.
 
 ---
 

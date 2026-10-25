@@ -128,6 +128,66 @@ Render's built-in uptime monitoring is paid, so use a free external monitor:
 A monitor at exactly 10-minute intervals also keeps the instance semi-warm,
 which reduces (does not remove) partner-visible cold starts.
 
+## 6a. The notification timer on `/api/cron/notifications` (optional)
+
+Overdue tasks, due-soon tasks and low stock are detected by a sweep that the app
+only runs when somebody opens the bell or the dashboard. This route lets a free
+external cron service be the clock instead. It is **off by default**: with no
+`CRON_SECRET` environment variable it answers `404` and runs nothing, so a
+deployment that never wires a monitor exposes no surface.
+
+**New environment variable: `CRON_SECRET`** (name only — never paste the value
+into a doc, ticket or commit).
+
+1. Generate it on your own machine:
+
+   ```sh
+   openssl rand -base64 32
+   ```
+
+2. Render → service → **Environment** → add `CRON_SECRET` → deploy. Minimum 32
+   characters; anything shorter is treated as unset (the route stays disabled and
+   the log says so, without echoing the value). Rotating it means editing the
+   variable, redeploying, and updating the monitor's header in the same window —
+   between those two steps the timer gets `401`, which is harmless because the
+   sweep is throttled and the next good call simply runs.
+
+3. Create the job (cron-job.org, free):
+
+   - URL `https://decoricks-management-app.onrender.com/api/cron/notifications`
+   - Method **GET**, schedule **every 15 minutes**, timezone **Asia/Karachi**
+   - Request header `x-cron-secret: <the value>` — their docs state custom
+     headers are supported on the free plan (except `User-Agent` / `Connection`).
+   - Failure email **on**, and remember their auto-disable after 25 consecutive
+     failures: if alerts silently stop, check the job is still enabled.
+
+   **UptimeRobot's free plan cannot send that header** (custom headers are paid),
+   so it cannot drive this route as configured. See `docs/PUSH_SETUP.md` §9.6
+   before improvising an alternative — the secret must not go in a query string.
+
+What the answers mean, so the alert is actionable without opening the code:
+
+| Status | Reading                                                                        | Action                                                   |
+| ------ | ------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| 200    | Accepted. `executed: true` = a sweep ran; `false` = already ran within 15 min. | None.                                                    |
+| 404    | `CRON_SECRET` missing or too short on the server.                              | Check the environment variable, then the monitor's copy. |
+| 401    | Wrong or absent `x-cron-secret` header.                                        | Fix the monitor's header name/value.                     |
+| 429    | Too many _failed_ attempts from that IP (10/min) or process-wide (30/min).     | Someone is guessing; or the monitor's secret is stale.   |
+| 503    | The sweep or the database failed.                                              | Read the log for `[sweep] notification sweep failed`.    |
+
+The response body is counts only — no task titles, no product names, no user
+data — so it is safe for the monitor to store or email it.
+
+**Cost and warmth.** This request does real work (a database scan), unlike
+`/api/health`, and every hit wakes the instance — so with the timer in place the
+app is rarely cold during working hours. That is a benefit partners will notice,
+but hours come out of the same 750 free monthly budget (§7). The two monitors
+overlap: a 15-minute notification timer wakes the instance four times an hour,
+and the 10-minute health probe six. If the usage bar starts running short before
+month-end, lengthen the health monitor's interval (its job is uptime alerting, not
+warmth) and keep the notification timer, or move both to 30 minutes — the sweep is
+throttled at 15 anyway, so polling faster than that buys nothing.
+
 ## 7. Watching the 750 free instance hours
 
 The free tier gives **750 instance hours per calendar month per organization**
@@ -147,7 +207,8 @@ Where to see it in the dashboard:
    hours fast — check deploy logs if usage spikes.
 
 Stretch the budget: the service sleeps after ~15 min idle (free tier), so
-genuine idle time costs nothing; the uptime monitor (§6) is the main consumer.
+genuine idle time costs nothing; the uptime monitor (§6) — and the notification
+timer if you enable it (§6a) — are the main consumers.
 If the bar still runs low before month-end, either temporarily disable the
 monitor or upgrade just this service.
 

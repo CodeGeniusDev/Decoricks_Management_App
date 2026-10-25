@@ -127,13 +127,17 @@ Task alerts are time-based, so they only arrive when the server happens to look
 
 ## 7. Time-based alerts on a free plan (read this)
 
-Overdue tasks, due-soon tasks and low stock are **not** on a timer. There is no
-cron on Render Free, and the instance sleeps when nobody uses it. The app checks
-for them "lazily": when someone opens the **notification bell** or the
+Overdue tasks, due-soon tasks and low stock are **not** on a timer inside the app.
+There is no cron on Render Free, and the instance sleeps when nobody uses it. The
+app checks for them "lazily": when someone opens the **notification bell** or the
 **dashboard**, the server runs a sweep (at most once every 15 minutes) and fires
 everything that has crossed its line.
 
-Consequences, stated honestly:
+**You can fix this — §9.** `GET /api/cron/notifications` is the same sweep with an
+external clock attached to it. Wire one free monitor at it and the alerts become
+time-based; leave it unconfigured and everything below stays true.
+
+Consequences without that timer, stated honestly:
 
 - An overdue task at 03:00 produces its alert at the **next** visit, not at
   03:00.
@@ -159,19 +163,104 @@ Consequences, stated honestly:
 | Time-based alerts arrive late                                 | Expected (§7). Someone must open the app, or add the trigger in §9.                                                                                              |
 | Nothing at all, no log lines either                           | Check the app is awake (`/api/health`) and that the subscription row exists in `pushSubscriptions`.                                                              |
 
-## 9. Proposed, NOT implemented: a real timer
+## 9. The real timer: `GET /api/cron/notifications`
 
-To make time-based alerts fire on time on a free plan, the smallest safe change
-is one new route, `GET /api/cron/notifications`, that:
+This route exists so a free external cron service can be the clock the app does
+not have. It contains **no rules of its own**: the only thing it does is call the
+same throttled, deduped sweep the bell already triggers. Anything it detects, it
+detects exactly the way opening the app would have — and a monitor polling faster
+than every 15 minutes simply gets `executed: false` instead of a second sweep.
 
-- requires a shared secret header (`CRON_SECRET`, new env var),
-- calls the existing `runNotificationSweep()` (no new business logic),
-- and is pointed at by any free external cron (cron-job.org, UptimeRobot) every
-  15 minutes.
+### 9.1 Generate the secret (once, on your own laptop)
 
-It also keeps the instance warm. It is not built yet because it adds an
-unauthenticated-by-session attack surface and a new secret, and the owner should
-approve that trade-off first.
+```sh
+openssl rand -base64 32
+```
+
+That prints roughly 44 characters. Copy it **once**, straight from the terminal
+into Render — never into a chat message, an issue, a commit or a document. The
+route requires at least 32 characters: a shorter value is treated as "not
+configured", so the route answers 404 and never runs (and Render logs one
+`[cron] CRON_SECRET is set but is shorter than the required 32 characters` line
+that names neither the value nor its length).
+
+### 9.2 Set it on Render
+
+Dashboard → your service → **Environment** → add key `CRON_SECRET` → paste the
+value → **Deploy**. It is read at request time, so no rebuild is needed to change
+it, but a restart is: rotate it by editing the variable and redeploying.
+
+**If you never add `CRON_SECRET`, nothing is exposed.** The route answers 404 like
+a route that was never built, opens no database connection and runs no sweep. This
+is why the variable is optional.
+
+### 9.3 Point a monitor at it (cron-job.org — the free option that works)
+
+| Setting          | Value                                                     |
+| ---------------- | --------------------------------------------------------- |
+| URL              | `https://<your-app.onrender.com>/api/cron/notifications`  |
+| HTTP method      | `GET`                                                     |
+| Request header   | Name `x-cron-secret`, Value = your `CRON_SECRET`          |
+| Schedule         | Every 15 minutes (hourly is fine; the sweep is throttled) |
+| Timezone         | Asia/Karachi — so the business-day boundary is local      |
+| Email on failure | On                                                        |
+
+Two facts about cron-job.org that matter, both from their own docs: a job is
+**disabled automatically after 25 consecutive failures**, and the request timeout
+is **30 seconds**. So a typo in the header value stops the timer quietly after a
+few hours — check the job's status if alerts stop arriving. The sweep normally
+finishes in well under a second for four partners.
+
+### 9.4 Reading the response
+
+| Answer                       | Meaning                                                                                                                                                      |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `200` with `executed: true`  | A sweep ran. The three numbers are **how many alerts were created**, per type.                                                                               |
+| `200` with `executed: false` | Nothing to do: a sweep already ran within the last 15 minutes. Normal.                                                                                       |
+| `404`                        | `CRON_SECRET` is unset or too short. The route is disabled, deliberately invisible, and gives no hint why.                                                   |
+| `401`                        | Wrong or missing `x-cron-secret` header. Fix the monitor's header name/value.                                                                                |
+| `429`                        | Too many **failed** attempts from that IP in the last minute (10), or process-wide (30). A correct monitor can never reach this — successes are not counted. |
+| `503`                        | The sweep or the database failed. **This is the one worth reading the logs for** (`[sweep] notification sweep failed`).                                      |
+
+The body never contains a task title, a product name, a message, a user id or a
+link — counts only — so it is safe if the monitor stores response bodies or emails
+them to you. The secret you submitted is never written to the app log either.
+
+### 9.5 It also keeps the instance awake
+
+Every hit wakes the Free instance before a partner does, so this route doubles as
+the keep-alive in `docs/DEPLOYMENT.md` §6b: with a 15-minute timer in place the
+app rarely serves a cold start, and the separate `/api/health` monitor becomes
+optional rather than load-bearing. That is a side effect, not the purpose — the
+health probe stays the right monitor for "is the app up at all", because it makes
+no database call and therefore cannot fail for a data reason.
+
+### 9.6 If you would rather use UptimeRobot
+
+**UptimeRobot's free plan cannot send a custom header** — custom headers are a
+paid (Pro / Solo) feature per their own FAQ, and a free HTTP monitor is limited to
+GET/HEAD/POST with no header fields. So the header secret above does not work
+there. The alternatives, in order of how safe they are, have been written up but
+**not implemented**, and one of them needs the owner's decision; see
+`docs/DEPLOYMENT.md` §6b. Do not put the secret in a query string without reading
+the risk note there: URLs are logged by every proxy and service between the
+monitor and the app, response caches and error reports included.
+
+### 9.7 What is verified, and what is not
+
+Verified by tests, offline: the 404-when-unset and 404-when-too-short paths, the
+constant-time comparison (inspected at the `timingSafeEqual` call, on fixed-length
+digests, even for a guess of a different length), 401/429 behaviour and per-IP
+isolation, the counts-only body against an exact key allowlist, that middleware
+admits exactly this one path and still refuses every sibling, that 120 one-minute
+polls cost 8 sweeps, and that a re-run creates zero duplicate alerts against a
+real unique index.
+
+**NOT verified:** anything that needs a real external service. No request from
+cron-job.org has actually reached this route, so their header UI, their retry and
+timeout behaviour under a real 401, and the Render-side wake-up are all still
+unproven — the first time you wire it, watch the Render log for
+`[cron] notification trigger accepted` and confirm the monitor shows HTTP 200.
 
 ## 10. What has been verified, and what has not
 
@@ -211,3 +300,13 @@ device, following §4 and §5.
 - **Der se aane wale alerts:** Overdue task aur low stock ke alerts tab hi bante
   hain jab koi app kholta hai (server par timer nahi hai). Chat ka message foran
   aata hai.
+- **Timer lagana chahte ho to (§9):** Laptop par `openssl rand -base64 32`
+  chalayein, output ko Render ke Environment mein `CRON_SECRET` ke naam se
+  daalein, phir cron-job.org par ek free job banayein jo har 15 minute
+  `https://<app-ka-URL>/api/cron/notifications` ko GET kare aur uske sath header
+  bheje `x-cron-secret: <wahi value>`. Is se alerts waqt par aayenge aur app
+  soti bhi nahi. **Yeh secret kabhi kisi ko na bhejein** — yeh login password
+  jaisa hai.
+- **UptimeRobot free is kaam ke liye nahi:** Free plan mein custom header nahi
+  bheja ja sakta, sirf paid plan mein. Secret URL mein `?secret=...` likh kar
+  kabhi na daalein — URL har jagah record hota hai.
