@@ -1,6 +1,12 @@
 # Database Migration: `test` → `decoricks_prod` (Phase 10 · Step 4)
 
-**Status: PLAN ONLY — NOT EXECUTED. Awaiting the operator's explicit go-ahead.**
+**Status: PREP + MIGRATIONS EXECUTED on `decoricks_prod` (2026-10-25). NOT DEPLOYED —
+the running app and `.env.local` still point at `test`.** The copy-and-verify of
+Stage 1 and the index / session / chat / permission work of Stage 2 (see
+**Execution log** at the bottom) were run against the new `decoricks_prod` database
+only. The final cutover — pointing the host environment at `decoricks_prod` — has
+**not** happened; it is still a single `MONGODB_DB` edit away, and `test` remains
+the served, untouched rollback.
 
 Today the application's live data lives in an Atlas database literally named
 `test`, only because the Atlas connection string has an empty path and the driver
@@ -9,9 +15,9 @@ that data into a properly named database — `decoricks_prod` — **by copy-and-
 never in place.** The old `test` database is left completely untouched and is the
 rollback.
 
-Nothing here has been run. Do not run any `--apply` / write step without the
-go-ahead. Every step below is read-only or writes only a brand-new empty database
-until the cutover, and the cutover is a single environment variable.
+Do not run any further `--apply` / write step, and do not flip the host
+`MONGODB_DB`, without the operator's explicit go-ahead. Everything below was read
+against `test` (never written) or written only to `decoricks_prod`.
 
 ---
 
@@ -320,3 +326,142 @@ must never be duplicated into a developer's machine.
 - [ ] Active sessions ended at step 7; partners told to expect a login prompt.
 - [ ] Step 8 smoke test passed before step 9 ran any index/permission write.
 - [ ] `test` left untouched; 30-day rollback window started.
+
+---
+
+## Operator environment switch-over (exact steps — NOT yet performed)
+
+Two separate, deliberately different targets. Read carefully: the local machine
+and the production host must never point at the same database.
+
+### A. Point a local `.env.local` at `decoricks_dev` (day-to-day development)
+
+`decoricks_dev` is a **fresh seed, never a copy of production.** Do not restore
+`test` / `decoricks_prod` into it. Seed it, then edit only `.env.local`:
+
+```bash
+cd "/Users/<you>/Online Work/Decoricks/Decoricks_Managment_App"
+
+# 1. Seed decoricks_dev with the Founder from env (consent needed: it is non-test-shaped).
+FOUNDER_EMAIL=... FOUNDER_NAME=... FOUNDER_PASSWORD=... \
+  MONGODB_DB=decoricks_dev DECORICKS_ALLOW_PROD_DB=1 npm run seed
+
+# 2. In .env.local set exactly this one line (leave MONGODB_URI untouched):
+#        MONGODB_DB=decoricks_dev
+#    Do NOT add MONGODB_TEST_DB to a dev/prod .env.local — it is for the test runner only.
+
+# 3. npm run dev → the boot log must read: [mongodb] using database "decoricks_dev" (MONGODB_DB)
+```
+
+The Founder created by `seed.ts` has `mustChangePassword: true`; the first login
+lands on the change-password screen. That is expected.
+
+> **`decoricks_dev` right now is disposable scratch:** it currently holds the
+> Stage-2 write-path smoke artifacts (a board/column/task, a chat message, a
+> throwaway income entry, products/stock/orders). To hand it to yourself clean,
+> drop and re-seed it (there is nothing in it worth keeping):
+> ```bash
+> # mongosh against the same MONGODB_URI, then:
+> use decoricks_dev
+> db.dropDatabase()
+> # then re-run step 1 above.
+> ```
+
+### B. Point the PRODUCTION HOST at `decoricks_prod` (the actual cutover — later)
+
+This is the last, deliberate step, done ONLY on the host environment (never a
+blind local edit), and only after the go-ahead. `decoricks_prod` already carries
+all its indexes, has had its sessions ended, chat index migrated and role
+permissions backfilled, so no migration needs to run at cutover time.
+
+```bash
+# In the host's environment manager (Render/Koyeb/systemd/launchd env, NOT .env.local):
+MONGODB_DB=decoricks_prod        # leave MONGODB_URI / SESSION_SECRET unchanged
+# Do NOT set DECORICKS_ALLOW_PROD_DB in the host runtime — it is a script-only gate.
+
+# Relaunch, then confirm the boot log line: [mongodb] using database "decoricks_prod"
+```
+
+Rollback at any time inside the 30-day window is the inverse: set the host
+`MONGODB_DB=test`, relaunch, and everyone signs in again against the untouched
+original.
+
+---
+
+## Execution log — what actually happened
+
+All actions below read `test` (never wrote it) or wrote `decoricks_prod` /
+`decoricks_dev` only. The key at `~/.decoricks/backup.key` was used exclusively
+through `DECORICKS_BACKUP_KEY_FILE` and was never printed. `DECORICKS_ALLOW_PROD_DB=1`
+was set inline on each write command only. Timestamps are UTC from the tooling.
+
+### Stage 1 (accepted earlier, 2026-10-25) — copy `test` → `decoricks_prod`
+
+- Encrypted backup of `test`: `decoricks-backup-2026-10-25T10-09-00-108Z.enc`
+  (sha256 `eeafe10a…ceff692b`, 384,236 bytes; 31 collections / 650 docs; `auditLog`
+  557; Atlas storage ~10.27 MB / 512 MB). sha256 verified against its manifest.
+- `restore.ts --into decoricks_prod --apply` (empty-target + consent gates passed);
+  DOC-COUNT and RECONCILIATION checks reported ok on both sides.
+- Note the stale figures in the plan above (`auditLogs` 537, messages 21): the live
+  numbers at copy time were **auditLog 557** and **messages 22**.
+
+### Stage 2 (this run, 2026-10-25) — index / sessions / chat / permissions on prod
+
+1. **Drift check** (`test` vs `decoricks_prod` vs the 10:09 manifest): 0 count
+   diffs, 0 date diffs, 0 manifest diffs, `auditLog` 557/557 → **NO DRIFT**.
+2. **Index check**: confirmed `restore.ts` recreates **no** indexes (it only
+   `insertMany`s and skips 0-doc collections), and only `ensureAuthIndexes` runs at
+   boot — the rest fire lazily. Built all 13 `ensure*Indexes` on `decoricks_prod`
+   via the app's own code (13 ok / 0 failed). Before: only `_id_` present. After:
+   every modern index present; the only `test`-vs-`prod` differences are the
+   intended modern-vs-legacy ones (chat partial index, task idempotency names,
+   push subscriptions) — legacy shapes exist only in `test`.
+3. **Switch (verified, not committed to `.env.local`)**: ran the app with inline
+   `MONGODB_DB=decoricks_prod`; boot log showed `[mongodb] using database
+   "decoricks_prod" (MONGODB_DB)`; `/api/health` 200. Repointed the scheduled
+   backup config (`scripts/backup.sh`, the launchd sample, `docs/BACKUP_RECOVERY.md`)
+   to `decoricks_prod`; **no launchd job was installed or loaded.**
+4. **Read-only smoke on `decoricks_prod`**: Founder login, dashboard, finance list,
+   reconciliation panel (10 checks / 0 failing), inventory, chat channels,
+   notifications — all 200. No business record was written to `test`; the single
+   Founder login added one `sessions` row and one `login_success` audit row.
+   **Write-path smoke ran against `decoricks_dev` only** (fresh seed): product 201,
+   stock 200, order 201 (`SO-202610-0001`) with an idempotent replay returning
+   200 `replay=true`, board/column/task 201 with idempotent replay, chat 201, and a
+   throwaway income entry 201 + idempotent replay 200 — **all pass**, proving the
+   `*_idempotency_unique` indexes enforce.
+5. **End active sessions (`decoricks_prod`)**: dry-run counted **10 active, all the
+   Founder's** (9 restored from `test` + 1 from the smoke login); no partner had an
+   active session. Applied with `--confirm=decoricks_prod` + consent, refusing a
+   mismatched name first. `deletedCount=10`; `sessions` now 0; one append-only audit
+   row (`sessions_ended`) recorded.
+6. **Pre-migration backup of `decoricks_prod`**:
+   `decoricks-backup-2026-10-25T10-47-30-670Z.enc` — sha256 `28079af7…4c77de1e`,
+   380,922 bytes, 32 collections / 643 docs; **verified MATCH against manifest**
+   (`sessions` 0, `auditLog` 559).
+7. **Chat index migration (`decoricks_prod`)**: dry-run showed the desired end state
+   already present (partial `messages_channel_client_partial_unique` exists, legacy
+   sparse index absent, 0 un-migrated `channelId`); `--apply --confirm-backup` ran as
+   a clean idempotent **no-op** (0 channelId backfilled, 0 isDeleted defaulted,
+   indexes unchanged, messages still 22).
+8. **Backup, then permission backfill (`decoricks_prod`)**: second backup
+   `decoricks-backup-2026-10-25T10-49-01-015Z.enc` — sha256 `9c1d86ad…1a46a7f6`,
+   **MATCH**. Dry-run printed the exact `permissions.<module>.<action> = <value>`
+   adds; `--apply --confirm-backup` added **19 absent keys** (founder 4,
+   partner_hasnat 4, partner_ali 4, partner_afnan 7). Diff of full permission maps
+   before/after: **0 values changed, 19 added** (pure additions). **Afnan's custom
+   `finance`/`budget` grants are byte-identical before and after**, and **no partner
+   gained any `users.*` or `finance.*` set to `true`** — the only partner `true` added
+   is `tasks.comment`; Afnan's three added `users.*` keys are all `false`.
+9. **Final reconciliation + counts (`decoricks_prod`)**: reconciliation **10 checks,
+   0 failing**. Per-collection `test` vs `decoricks_prod`: 32 namespaces, exactly **2
+   differences**, both expected — `sessions` (test 9 → prod 0, ended in step 5) and
+   `auditLog` (test 557 → prod 559, = the step-4 Founder `login_success` + the
+   step-5 `sessions_ended` rows). Every business collection matches (messages 22,
+   tasks 2, transactions 2, roles 4, users 4…). **Atlas storage** after all writes:
+   `decoricks_prod` 2.92 MB; cluster total **16.31 MB / 512 MB (3.2%)** — ample
+   headroom for the 30-day dual-`test` rollback window.
+
+**Remaining, gated on the operator:** the host `MONGODB_DB=decoricks_prod` cutover
+(section B) and the local `.env.local` → `decoricks_dev` switch (section A). Neither
+has been done. `test` is untouched and stays the rollback for 30 days.
