@@ -154,14 +154,14 @@ live number before trusting it:
 # collections: users, roles, sessions, messages, transactions, auditLogs
 ```
 
-| Collection   | Expected on both sides                       |
-| ------------ | -------------------------------------------- |
-| `users`      | equal counts                                 |
-| `roles`      | equal counts (founder + partner roles)       |
-| `sessions`   | equal counts                                 |
-| `messages`   | equal counts (21 chat messages at last audit) |
-| `transactions` | equal counts                               |
-| `auditLogs`  | equal counts (**537 at last check**)         |
+| Collection     | Expected on both sides                        |
+| -------------- | --------------------------------------------- |
+| `users`        | equal counts                                  |
+| `roles`        | equal counts (founder + partner roles)        |
+| `sessions`     | equal counts                                  |
+| `messages`     | equal counts (21 chat messages at last audit) |
+| `transactions` | equal counts                                  |
+| `auditLogs`    | equal counts (**537 at last check**)          |
 
 Any mismatch stops the cutover.
 
