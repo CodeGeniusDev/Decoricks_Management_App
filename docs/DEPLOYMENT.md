@@ -2,8 +2,16 @@
 
 Status: **preparation only.** Nothing in this document has been deployed, pushed,
 or run against a live host. It records the exact configuration a deploy needs
-for BOTH Koyeb and Render, so the operator can choose a host later without
-re-deriving it. No host is recommended here.
+for BOTH Koyeb and Render.
+
+Host stance (recorded 2026-10-25, pending the operator's final decision):
+
+- **Koyeb — NOT recommended.** Koyeb was acquired by Mistral; the availability of
+  new free-tier signups under the new ownership is unclear. Do not build on the
+  Koyeb free tier until the operator re-checks its current signup/policy.
+- **Render Free — staging candidate,** pending the operator's decision. The
+  always-on / cold-start tradeoff (§8) and the free-plan region question (§6a)
+  are the operator's call; no production host is chosen here.
 
 Related docs: `docs/DB_MIGRATION.md` (test → `decoricks_prod` cutover),
 `docs/BACKUP_RECOVERY.md`, `docs/KNOWN_LIMITATIONS.md`.
@@ -90,14 +98,12 @@ the resolved database name (printed on startup by `src/lib/mongodb.ts`) is
 MongoDB Atlas and the app host should share (or nearly share) a cloud region so
 every request is a short hop, not a trans-oceanic one.
 
-**Your Atlas cluster's region could NOT be verified from the connection string
-or the driver.** A read-only probe this turn connected with the real URI and
-ran only read-only admin commands: the SRV host is opaque (it does not encode a
-cloud provider/region), and `serverStatus` returned no region token. The region
-must be read from the Atlas console (Cluster → Configuration) or the Atlas Admin
-API — neither of which was run here. **Treat the actual region as NOT VERIFIED.**
+**Atlas region (operator-provided):** **AWS Mumbai `ap-south-1`**, 3-node replica
+set — recorded in §3a. It still **cannot be derived from the connection string /
+driver** (a read-only probe found the SRV host opaque and `serverStatus` carried
+no region token), so its source is the operator's Atlas console, not a probe.
 
-Once you know the Atlas region, pick the closest host region:
+Given `ap-south-1`, pick the closest host region:
 
 - **Koyeb** free instance is offered in **Frankfurt (eu-central)** or
   **Washington, D.C. (us-east)**. Paid/Eco instances add more.
@@ -116,6 +122,33 @@ Example mapping (verify your Atlas region first):
 
 ---
 
+## 3a. Atlas cluster facts (operator-provided, 2026-10-25)
+
+The operator supplied these directly (they are still not recoverable from the
+connection string / driver — see §3):
+
+- Cluster: **Decoricks-Cluster0**, **AWS Mumbai (`ap-south-1`)**, a **3-node
+  replica set**.
+- Storage: **~9.56 MB of 512 MB** used (M0). A read-only `listDatabases` this
+  turn measured **test 3.28 MB + decoricks_test 5.98 MB = 9.26 MB total**, so a
+  `decoricks_prod` copy (~3.3 MB) fits with very large headroom. The 512 MB is
+  **shared across every database on the cluster**.
+- **Atlas cloud backups are INACTIVE on this free cluster.** Therefore the
+  encrypted `npm run backup` archives + their `.meta.json` SHA-256 (see
+  `docs/BACKUP_RECOVERY.md`) are the **only recovery path**. There is no
+  Atlas-managed snapshot to fall back on; a lost backup with a lost passphrase is
+  unrecoverable. Keep both the `.enc` file and the passphrase off-machine.
+- **Nearest Render region to `ap-south-1` (Mumbai) is Singapore** — the only
+  Render region in/near the Indian subcontinent (Oregon/Ohio/Virginia/Frankfurt
+  are all far). **To be confirmed in the Render region picker at service-creation
+  time** (and see §6a: free-plan availability per region is NOT VERIFIED).
+- The **dedicated Atlas database user for the deployed app is NOT created yet.**
+  It is only needed at deploy time, not for the Stage-1 copy-and-switch.
+  Stage 1 uses the operator's existing connection only; no Atlas user is
+  created, changed, or deleted.
+
+---
+
 ## 4. Timezone (TZ=Asia/Karachi)
 
 Set `TZ=Asia/Karachi` as an environment variable on BOTH hosts.
@@ -131,6 +164,11 @@ value — so set it explicitly rather than relying on the pin.
 ---
 
 ## 5. Build and start — Koyeb
+
+> **Koyeb is NOT recommended** (see the status block at the top): acquired by
+> Mistral, and new free-tier signup availability under the new ownership is
+> unclear. Kept here only so the config is on record if the operator re-checks
+> and still chooses it.
 
 Koyeb can build from a Git repo (Docker/Buildpack) or deploy a prebuilt image.
 For a Next.js Node app, use the Node buildpack (or a Dockerfile).
@@ -164,6 +202,9 @@ measured here.
 ---
 
 ## 6. Build and start — Render
+
+> **Render Free is the staging candidate** (see the status block at the top),
+> pending the operator's decision — not a recommendation to deploy.
 
 Render auto-detects a Node/Next app or uses `render.yaml` / a Dockerfile.
 
@@ -311,8 +352,10 @@ live Koyeb or Render instance.
 
 ## 9. What could NOT be verified (say so plainly)
 
-- **Your Atlas cluster's region** — not recoverable from the connection string
-  or the driver; must be read in the Atlas console / Admin API. NOT VERIFIED.
+- **Your Atlas cluster's region** — now **operator-provided** (`ap-south-1`
+  Mumbai, §3a), but still **not recoverable from the connection string or the
+  driver**; a probe cannot confirm it independently. Storage measured read-only
+  via `listDatabases` (9.26 MB of 512 MB) agrees with the operator's ~9.56 MB.
 - **No live deploy** — nothing here was built or run on Koyeb or Render. Cold
   start timings, health-check behavior, and sleep/queue interactions on the
   actual hosts are NOT VERIFIED (described from official docs + client code).
@@ -337,10 +380,12 @@ live Koyeb or Render instance.
   Free web services need no card to start, but exceed the free allotment / 15-min
   spin-down without a payment method and the free services are suspended for the
   month. Regions: Oregon, Ohio, Virginia, Frankfurt, Singapore.
-- **Koyeb** — **requires a credit card** ("Why does Koyeb require a credit card?
-  We require a credit card to prevent fraud and abuse."), processed by Stripe.
-  Free Web Service is offered in Frankfurt or Washington, D.C. (512 MB / 0.1
-  vCPU / 2 GB SSD) and does not auto-scale to zero.
+- **Koyeb** — **NOT recommended** (acquired by Mistral; new free-tier signup
+  availability unclear — see the top status block). Historically it **required a
+  credit card** ("Why does Koyeb require a credit card? We require a credit card
+  to prevent fraud and abuse."), processed by Stripe. Free Web Service was offered
+  in Frankfurt or Washington, D.C. (512 MB / 0.1 vCPU / 2 GB SSD) and did not
+  auto-scale to zero. Re-check all of this before considering Koyeb.
 - **Railway** — Free Trial grants a one-time $5 and can be started without a
   card ("try a free VM without an account"). Paid subscriptions accept **credit
   cards only** ("Railway only accepts credit cards for plan subscriptions").
@@ -348,7 +393,9 @@ live Koyeb or Render instance.
   (multi-app / public-image deploys); monthly charges are **credit-card only**.
   No general free tier for new users; pay-as-you-go with egress/VM pricing.
 
-No host is recommended. Whether each is reachable "without an international
-credit card" for YOUR situation depends on the card, and the always-on vs
-sleeping choice depends on what the partners will tolerate — both are the
-operator's call.
+No production host is chosen here. **Koyeb is NOT recommended** (Mistral
+acquisition, unclear free signups); **Render Free is the staging candidate**,
+pending the operator's decision. Whether Render is reachable "without an
+international credit card" for YOUR situation depends on the card, and the
+always-on vs sleeping choice depends on what the partners will tolerate — both
+are the operator's call.

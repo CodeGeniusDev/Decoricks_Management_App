@@ -23,7 +23,7 @@ the permission backfill until this page is fully green and signed below.
       was recorded at creation and re-checked after; the dump's per-collection
       row counts and fingerprint match what the script printed. A restore has
       actually been rehearsed into a throwaway sandbox (`--into test_restore_check
-    --apply`) and reconciled — "a backup you have never restored is just a
+--apply`) and reconciled — "a backup you have never restored is just a
       hope." (`BACKUP_RECOVERY.md` §3.) **No production data was touched by the
       rehearsal.**
 
@@ -39,11 +39,17 @@ the permission backfill until this page is fully green and signed below.
       the hosted app taken offline if deployed. Confirm with a final read that
       `test` write activity has stopped. (`DB_MIGRATION.md` step 2.)
 
-- [ ] **5. Atlas user for `decoricks_prod` created.** The Atlas database user /
-      role that the production connection string will use has been created and
-      can read+write a database named exactly `decoricks_prod` (not `test`), and
-      the target `MONGODB_DB=decoricks_prod` + `TZ=Asia/Karachi` are staged in the
-      host env. **`MONGODB_TEST_DB` is absent** on any host. (`DEPLOYMENT.md` §0, §1.)
+- [ ] **5. Atlas user for `decoricks_prod` created.** — **PENDING, NOT NEEDED FOR
+      STAGE 1.** Stage 1 (copy + reconcile) uses the operator's existing
+      connection only; it creates a new `decoricks_prod` database via `restore`,
+      not a new Atlas user. No Atlas user is created, changed, or deleted in
+      Stage 1. This box is required only at **deploy time**, when the hosted app
+      needs a dedicated least-privilege Atlas user for `decoricks_prod`. The
+      target `MONGODB_DB=decoricks_prod` + `TZ=Asia/Karachi` and absent
+      `MONGODB_TEST_DB` (§0/§1) remain deploy-time requirements.
+      The Atlas user / role that the production connection string will use has been created and
+      can read+write a database named exactly `decoricks_prod` (not `test`).
+      (`DEPLOYMENT.md` §0, §1, §3a.)
 
 - [ ] **6. Rollback plan read and ready.** The Founder has re-read the rollback
       path and can execute it without improvising: - Code rollback = re-promote the previous deploy (host); does not touch data. - Data rollback = restore the fresh backup from box 1–2 into a clean target
