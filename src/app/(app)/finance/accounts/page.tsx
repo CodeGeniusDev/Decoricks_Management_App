@@ -1,43 +1,43 @@
-'use client';
+'use client'
 
 import { useRealtimeSync } from '@/lib/sync/useRealtime'
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
-import { PageTransition } from '@/components/PageTransition';
-import { PageHeader } from '@/components/layout/Page';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Select } from '@/components/ui/Select';
-import { Table } from '@/components/ui/Table';
-import { Badge } from '@/components/ui/Badge';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { ErrorState } from '@/components/ui/ErrorState';
-import { Toast } from '@/components/ui/Toast';
-import { Modal } from '@/components/ui/Modal';
-import { Textarea } from '@/components/ui/Textarea';
-import { Checkbox } from '@/components/ui/Checkbox';
-import { apiJson, ApiError } from '@/lib/api-client';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { can } from '@/lib/permissions-client';
-import { ACCOUNT_KIND_LABELS, ACCOUNT_KINDS } from '@/lib/finance';
-import type { AccountKind } from '@/lib/finance';
-import { formatPaisa } from '@/lib/money';
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { PageTransition } from '@/components/PageTransition'
+import { PageHeader } from '@/components/layout/Page'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
+import { Table } from '@/components/ui/Table'
+import { Badge } from '@/components/ui/Badge'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { Toast } from '@/components/ui/Toast'
+import { Modal } from '@/components/ui/Modal'
+import { Textarea } from '@/components/ui/Textarea'
+import { Checkbox } from '@/components/ui/Checkbox'
+import { apiJson, ApiError } from '@/lib/api-client'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { can } from '@/lib/permissions-client'
+import { ACCOUNT_KIND_LABELS, ACCOUNT_KINDS } from '@/lib/finance'
+import type { AccountKind } from '@/lib/finance'
+import { formatPaisa } from '@/lib/money'
 import {
   fieldIssues,
   paisaToInputValue,
   parsePkrAmount,
   type AccountView,
-} from '@/modules/finance/finance-ui';
+} from '@/modules/finance/finance-ui'
 
 interface AccountFormState {
-  _id?: string;
-  name: string;
-  kind: AccountKind;
-  openingBalance: string;
-  isActive: boolean;
-  note: string;
+  _id?: string
+  name: string
+  kind: AccountKind
+  openingBalance: string
+  isActive: boolean
+  note: string
 }
 
 const EMPTY_FORM: AccountFormState = {
@@ -46,51 +46,51 @@ const EMPTY_FORM: AccountFormState = {
   openingBalance: '0.00',
   isActive: true,
   note: '',
-};
+}
 
 export default function FinanceAccountsPage() {
-  const { user } = useAuth();
-  const canManage = user ? can({ role: user.role }, 'finance', 'approve') : false;
+  const { user } = useAuth()
+  const canManage = user ? can({ role: user.role }, 'finance', 'approve') : false
 
-  const [accounts, setAccounts] = useState<AccountView[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [accounts, setAccounts] = useState<AccountView[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
-  const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState<AccountFormState>(EMPTY_FORM);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [formError, setFormError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const savingRef = useRef(false);
+  const [formOpen, setFormOpen] = useState(false)
+  const [form, setForm] = useState<AccountFormState>(EMPTY_FORM)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [formError, setFormError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
 
   useRealtimeSync('finance', () => {
     void load()
   })
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
-      const data = await apiJson<{ accounts: AccountView[] }>('/api/finance/accounts');
-      setAccounts(data.accounts);
+      const data = await apiJson<{ accounts: AccountView[] }>('/api/finance/accounts')
+      setAccounts(data.accounts)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load accounts');
+      setError(err instanceof Error ? err.message : 'Failed to load accounts')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, []);
+  }, [])
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load()
+  }, [load])
 
   const openCreate = () => {
-    setForm(EMPTY_FORM);
-    setErrors({});
-    setFormError(null);
-    setFormOpen(true);
-  };
+    setForm(EMPTY_FORM)
+    setErrors({})
+    setFormError(null)
+    setFormOpen(true)
+  }
 
   const openEdit = (account: AccountView) => {
     setForm({
@@ -100,25 +100,25 @@ export default function FinanceAccountsPage() {
       openingBalance: paisaToInputValue(account.openingBalance),
       isActive: account.isActive,
       note: account.note ?? '',
-    });
-    setErrors({});
-    setFormError(null);
-    setFormOpen(true);
-  };
+    })
+    setErrors({})
+    setFormError(null)
+    setFormOpen(true)
+  }
 
   const handleSubmit = async () => {
-    if (savingRef.current) return;
+    if (savingRef.current) return
 
-    const local: Record<string, string> = {};
-    if (!form.name.trim()) local.name = 'Name is required';
-    const parsedAmount = parsePkrAmount(form.openingBalance || '0');
-    if (!parsedAmount.ok) local.openingBalance = parsedAmount.error;
-    setErrors(local);
-    if (Object.keys(local).length > 0 || !parsedAmount.ok) return;
+    const local: Record<string, string> = {}
+    if (!form.name.trim()) local.name = 'Name is required'
+    const parsedAmount = parsePkrAmount(form.openingBalance || '0')
+    if (!parsedAmount.ok) local.openingBalance = parsedAmount.error
+    setErrors(local)
+    if (Object.keys(local).length > 0 || !parsedAmount.ok) return
 
-    savingRef.current = true;
-    setSaving(true);
-    setFormError(null);
+    savingRef.current = true
+    setSaving(true)
+    setFormError(null)
 
     const body = {
       name: form.name.trim(),
@@ -126,43 +126,43 @@ export default function FinanceAccountsPage() {
       openingBalance: parsedAmount.paisa,
       ...(form._id ? { isActive: form.isActive } : {}),
       note: form.note.trim() || undefined,
-    };
+    }
 
     try {
       if (form._id) {
         await apiJson(`/api/finance/accounts/${form._id}`, {
           method: 'PATCH',
           body: JSON.stringify(body),
-        });
-        setToast({ type: 'success', message: `Account "${form.name.trim()}" updated` });
+        })
+        setToast({ type: 'success', message: `Account "${form.name.trim()}" updated` })
       } else {
         await apiJson('/api/finance/accounts', {
           method: 'POST',
           body: JSON.stringify(body),
-        });
-        setToast({ type: 'success', message: `Account "${form.name.trim()}" created` });
+        })
+        setToast({ type: 'success', message: `Account "${form.name.trim()}" created` })
       }
-      setFormOpen(false);
-      await load();
+      setFormOpen(false)
+      await load()
     } catch (err) {
       if (err instanceof ApiError) {
-        const issues = fieldIssues(err.details);
-        if (Object.keys(issues).length > 0) setErrors(issues);
+        const issues = fieldIssues(err.details)
+        if (Object.keys(issues).length > 0) setErrors(issues)
         setFormError(
           err.code === 'DUPLICATE'
             ? 'An account with that name already exists.'
             : err.isForbidden
               ? 'Only the Founder can create or edit accounts.'
               : err.message || 'Could not save the account.'
-        );
+        )
       } else {
-        setFormError('Could not reach the server. Press Save again to retry.');
+        setFormError('Could not reach the server. Press Save again to retry.')
       }
     } finally {
-      savingRef.current = false;
-      setSaving(false);
+      savingRef.current = false
+      setSaving(false)
     }
-  };
+  }
 
   const columns = [
     { key: 'name', label: 'Account' },
@@ -171,7 +171,7 @@ export default function FinanceAccountsPage() {
     { key: 'balance', label: 'Current balance' },
     { key: 'status', label: 'Status' },
     ...(canManage ? [{ key: 'actions', label: 'Actions' }] : []),
-  ];
+  ]
 
   return (
     <PageTransition>
@@ -362,5 +362,5 @@ export default function FinanceAccountsPage() {
         </div>
       </Modal>
     </PageTransition>
-  );
+  )
 }

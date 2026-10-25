@@ -38,16 +38,14 @@ vi.mock('@/lib/mongodb', () => ({
 }))
 
 vi.mock('@/lib/models/Product', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/models/Product')>(
-    '@/lib/models/Product'
-  )
+  const actual =
+    await vi.importActual<typeof import('@/lib/models/Product')>('@/lib/models/Product')
   return { ...actual, getStockCollection: vi.fn(() => stockCollection) }
 })
 
 vi.mock('@/lib/models/Inventory', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/models/Inventory')>(
-    '@/lib/models/Inventory'
-  )
+  const actual =
+    await vi.importActual<typeof import('@/lib/models/Inventory')>('@/lib/models/Inventory')
   return { ...actual, ensureInventoryIndexes: vi.fn(async () => undefined) }
 })
 
@@ -68,9 +66,7 @@ const postMovement = vi.fn(
 const getAllowNegativeStock = vi.fn(async () => false)
 
 vi.mock('@/lib/stock-service', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/stock-service')>(
-    '@/lib/stock-service'
-  )
+  const actual = await vi.importActual<typeof import('@/lib/stock-service')>('@/lib/stock-service')
   return { ...actual, runInTransaction, postMovement, getAllowNegativeStock }
 })
 
@@ -94,7 +90,12 @@ beforeEach(() => {
 
   stockCollection.find.mockReturnValue({
     toArray: async () => [
-      { _id: new ObjectId(), productId: new ObjectId(PRODUCT_ID), location: 'sheikhupura', quantity: 7 },
+      {
+        _id: new ObjectId(),
+        productId: new ObjectId(PRODUCT_ID),
+        location: 'sheikhupura',
+        quantity: 7,
+      },
       { _id: new ObjectId(), productId: new ObjectId(PRODUCT_ID), location: 'lahore', quantity: 3 },
     ],
   })

@@ -12,7 +12,15 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, y: 20 },
-      { opacity: 1, y: 0, duration, delay, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
+      {
+        opacity: 1,
+        y: 0,
+        duration,
+        delay,
+        ease: 'power2.out',
+        clearProps: 'transform',
+        overwrite: 'auto',
+      }
     )
   },
 
@@ -21,7 +29,15 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, y: -20 },
-      { opacity: 1, y: 0, duration, delay, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
+      {
+        opacity: 1,
+        y: 0,
+        duration,
+        delay,
+        ease: 'power2.out',
+        clearProps: 'transform',
+        overwrite: 'auto',
+      }
     )
   },
 
@@ -30,7 +46,15 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, x: -20 },
-      { opacity: 1, x: 0, duration, delay, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
+      {
+        opacity: 1,
+        x: 0,
+        duration,
+        delay,
+        ease: 'power2.out',
+        clearProps: 'transform',
+        overwrite: 'auto',
+      }
     )
   },
 
@@ -39,17 +63,21 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, x: 20 },
-      { opacity: 1, x: 0, duration, delay, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
+      {
+        opacity: 1,
+        x: 0,
+        duration,
+        delay,
+        ease: 'power2.out',
+        clearProps: 'transform',
+        overwrite: 'auto',
+      }
     )
   },
 
   // Simple fade in
   fadeIn: (element: Element | Element[], duration = 0.3, delay = 0) => {
-    return gsap.fromTo(
-      element,
-      { opacity: 0 },
-      { opacity: 1, duration, delay, ease: 'power2.out' }
-    )
+    return gsap.fromTo(element, { opacity: 0 }, { opacity: 1, duration, delay, ease: 'power2.out' })
   },
 
   // Staggered fade in for lists
@@ -57,7 +85,15 @@ export const animations = {
     return gsap.fromTo(
       elements,
       { opacity: 0, y: 10 },
-      { opacity: 1, y: 0, duration, stagger, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
+      {
+        opacity: 1,
+        y: 0,
+        duration,
+        stagger,
+        ease: 'power2.out',
+        clearProps: 'transform',
+        overwrite: 'auto',
+      }
     )
   },
 
@@ -65,11 +101,7 @@ export const animations = {
   modalEnter: (backdrop: Element, content: Element) => {
     const tl = gsap.timeline()
 
-    tl.fromTo(
-      backdrop,
-      { opacity: 0 },
-      { opacity: 1, duration: 0.3, ease: 'power2.out' }
-    ).fromTo(
+    tl.fromTo(backdrop, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: 'power2.out' }).fromTo(
       content,
       { opacity: 0, scale: 0.9, y: 20 },
       { opacity: 1, scale: 1, y: 0, duration: 0.4, ease: 'back.out(1.7)' },
@@ -129,7 +161,14 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, y: 20 },
-      { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
+      {
+        opacity: 1,
+        y: 0,
+        duration: 0.5,
+        ease: 'power2.out',
+        clearProps: 'transform',
+        overwrite: 'auto',
+      }
     )
   },
 
@@ -166,7 +205,14 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, scale: 0.8 },
-      { opacity: 1, scale: 1, duration: 0.2, ease: 'back.out(1.7)', clearProps: 'transform', overwrite: 'auto' }
+      {
+        opacity: 1,
+        scale: 1,
+        duration: 0.2,
+        ease: 'back.out(1.7)',
+        clearProps: 'transform',
+        overwrite: 'auto',
+      }
     )
   },
 
@@ -201,7 +247,16 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, scale: 0.5, y: 20 },
-      { opacity: 1, scale: 1, y: 0, duration: 0.5, delay, ease: 'back.out(1.7)', clearProps: 'transform', overwrite: 'auto' }
+      {
+        opacity: 1,
+        scale: 1,
+        y: 0,
+        duration: 0.5,
+        delay,
+        ease: 'back.out(1.7)',
+        clearProps: 'transform',
+        overwrite: 'auto',
+      }
     )
   },
 
@@ -210,7 +265,14 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, y: -20 },
-      { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
+      {
+        opacity: 1,
+        y: 0,
+        duration: 0.4,
+        ease: 'power2.out',
+        clearProps: 'transform',
+        overwrite: 'auto',
+      }
     )
   },
 
@@ -219,7 +281,15 @@ export const animations = {
     return gsap.fromTo(
       element,
       { opacity: 0, x: -20 },
-      { opacity: 1, x: 0, duration: 0.3, delay, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
+      {
+        opacity: 1,
+        x: 0,
+        duration: 0.3,
+        delay,
+        ease: 'power2.out',
+        clearProps: 'transform',
+        overwrite: 'auto',
+      }
     )
   },
 
@@ -228,7 +298,15 @@ export const animations = {
     return gsap.fromTo(
       elements,
       { opacity: 0, y: 15 },
-      { opacity: 1, y: 0, duration, stagger, ease: 'power2.out', clearProps: 'transform', overwrite: 'auto' }
+      {
+        opacity: 1,
+        y: 0,
+        duration,
+        stagger,
+        ease: 'power2.out',
+        clearProps: 'transform',
+        overwrite: 'auto',
+      }
     )
   },
 }

@@ -51,9 +51,12 @@ export async function resolvePostingAccount(
 
   const account = fallback[0]
   if (!account) {
-    throw new HttpError('No active cash account exists. Create one in Settings first.', 400, 'NO_ACCOUNT', [
-      { path: 'accountId', message: 'No active account available' },
-    ])
+    throw new HttpError(
+      'No active cash account exists. Create one in Settings first.',
+      400,
+      'NO_ACCOUNT',
+      [{ path: 'accountId', message: 'No active account available' }]
+    )
   }
   return account._id!
 }

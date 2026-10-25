@@ -3,12 +3,7 @@ import { authorize } from '@/lib/authorization'
 import { NextRequest } from 'next/server'
 import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
-import {
-  Budget,
-  BudgetRevision,
-  getBudgetCollection,
-  budgetToJSON,
-} from '@/lib/models/Operations'
+import { Budget, BudgetRevision, getBudgetCollection, budgetToJSON } from '@/lib/models/Operations'
 import { budgetUpdateSchema } from '@/lib/schemas/operations'
 import { getKarachiDate } from '@/lib/date'
 import { notFoundError, successResponse, validationError } from '@/lib/api-response'
@@ -76,7 +71,8 @@ function diffBudgetCategories(
   for (const [category, amount] of nextMap) {
     const before = prevMap.get(category)
     if (before === undefined) changes.push(`+${category} ${formatPaisa(amount)}`)
-    else if (before !== amount) changes.push(`${category} ${formatPaisa(before)} → ${formatPaisa(amount)}`)
+    else if (before !== amount)
+      changes.push(`${category} ${formatPaisa(before)} → ${formatPaisa(amount)}`)
   }
   for (const [category, amount] of prevMap) {
     if (!nextMap.has(category)) changes.push(`−${category} ${formatPaisa(amount)}`)
@@ -133,10 +129,14 @@ async function __PUT(request: NextRequest, context: RouteContext) {
       const startRange = karachiDateInputRange(parsed.data.periodStart ?? '')
       const endRange = karachiDateInputRange(parsed.data.periodEnd ?? '')
       if (!startRange && parsed.data.periodStart) {
-        return validationError('Invalid period', [{ path: 'periodStart', message: 'Must be YYYY-MM-DD' }])
+        return validationError('Invalid period', [
+          { path: 'periodStart', message: 'Must be YYYY-MM-DD' },
+        ])
       }
       if (!endRange && parsed.data.periodEnd) {
-        return validationError('Invalid period', [{ path: 'periodEnd', message: 'Must be YYYY-MM-DD' }])
+        return validationError('Invalid period', [
+          { path: 'periodEnd', message: 'Must be YYYY-MM-DD' },
+        ])
       }
       const nextStart = startRange?.start ?? existing.periodStart
       const nextEnd = endRange?.start ?? existing.periodEnd
@@ -158,7 +158,8 @@ async function __PUT(request: NextRequest, context: RouteContext) {
 
     if (parsed.data.categories) {
       const dupes = parsed.data.categories.filter(
-        (c, i, all) => all.findIndex((x) => x.category.toLowerCase() === c.category.toLowerCase()) !== i
+        (c, i, all) =>
+          all.findIndex((x) => x.category.toLowerCase() === c.category.toLowerCase()) !== i
       )
       if (dupes.length > 0) {
         return validationError('Duplicate categories', [

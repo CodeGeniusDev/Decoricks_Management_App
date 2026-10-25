@@ -9,11 +9,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { ObjectId, type Db } from 'mongodb'
-import {
-  POSITION_GAP,
-  type Column,
-  type TaskDoc,
-} from '@/lib/models/Tasks'
+import { POSITION_GAP, type Column, type TaskDoc } from '@/lib/models/Tasks'
 import {
   computePosition,
   createTaskNumber,
@@ -27,28 +23,29 @@ import { createMemDb, type MemDb } from './helpers/mem-mongo'
 
 const COLUMN_ID = new ObjectId('507f1f77bcf86cd799439101')
 
-const task = (over: Partial<TaskDoc> & { _id: ObjectId }): TaskDoc => ({
-  taskNumber: 'TASK-202610-0001',
-  boardId: new ObjectId('507f1f77bcf86cd799439100'),
-  columnId: COLUMN_ID,
-  position: POSITION_GAP,
-  title: 't',
-  assigneeIds: [],
-  assigneeName: '',
-  priority: 'medium',
-  dueDate: null,
-  labelIds: [],
-  checklist: [],
-  completedAt: null,
-  completedBy: null,
-  version: 1,
-  isArchived: false,
-  archivedAt: null,
-  createdBy: new ObjectId('507f1f77bcf86cd799439011'),
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  ...over,
-} as TaskDoc)
+const task = (over: Partial<TaskDoc> & { _id: ObjectId }): TaskDoc =>
+  ({
+    taskNumber: 'TASK-202610-0001',
+    boardId: new ObjectId('507f1f77bcf86cd799439100'),
+    columnId: COLUMN_ID,
+    position: POSITION_GAP,
+    title: 't',
+    assigneeIds: [],
+    assigneeName: '',
+    priority: 'medium',
+    dueDate: null,
+    labelIds: [],
+    checklist: [],
+    completedAt: null,
+    completedBy: null,
+    version: 1,
+    isArchived: false,
+    archivedAt: null,
+    createdBy: new ObjectId('507f1f77bcf86cd799439011'),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...over,
+  }) as TaskDoc
 
 describe('positionBetween', () => {
   it('gives a first card the standard gap', () => {

@@ -61,11 +61,10 @@ export async function emitNotification(db: Db, input: EmitInput): Promise<EmitRe
 
   // Fetch the recipient once: we need their active state, role (permission gate)
   // and notificationPrefs in the same read.
-  const user = await getUserCollection(db)
-    .findOne(
-      { _id: userId },
-      { projection: { _id: 1, isActive: 1, role: 1, notificationPrefs: 1 } }
-    )
+  const user = await getUserCollection(db).findOne(
+    { _id: userId },
+    { projection: { _id: 1, isActive: 1, role: 1, notificationPrefs: 1 } }
+  )
 
   if (!user || user.isActive !== true) return { created: false }
 
@@ -145,16 +144,11 @@ async function eligibleUsers(db: Db, module: string | null): Promise<User[]> {
  *
  * `userId` on the shared input is ignored; recipients are resolved here.
  */
-export async function emitToAllEligible(
-  db: Db,
-  input: Omit<EmitInput, 'userId'>
-): Promise<number> {
+export async function emitToAllEligible(db: Db, input: Omit<EmitInput, 'userId'>): Promise<number> {
   const permission = NOTIFICATION_PERMISSION[input.type]
   const recipients = await eligibleUsers(db, permission ? permission[0] : null)
   const results = await Promise.all(
-    recipients.map((user) =>
-      emitNotification(db, { ...input, userId: user._id as ObjectId })
-    )
+    recipients.map((user) => emitNotification(db, { ...input, userId: user._id as ObjectId }))
   )
   return results.filter((r) => r.created).length
 }
@@ -178,8 +172,6 @@ export async function emitToUsers(
 
 /** The Founder's user id(s) — for conflict and financial alerts to the owner. */
 export async function getFounderUserIds(db: Db): Promise<string[]> {
-  const founders = await getUserCollection(db)
-    .find({ role: 'founder', isActive: true })
-    .toArray()
+  const founders = await getUserCollection(db).find({ role: 'founder', isActive: true }).toArray()
   return founders.map((f) => f._id.toString())
 }

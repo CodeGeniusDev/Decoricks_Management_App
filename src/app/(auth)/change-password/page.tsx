@@ -178,7 +178,13 @@ export default function ChangePasswordPage() {
             {show ? 'Hide passwords' : 'Show passwords'}
           </button>
 
-          <Button type="submit" size="lg" loading={submitting} disabled={!canSubmit} className="w-full">
+          <Button
+            type="submit"
+            size="lg"
+            loading={submitting}
+            disabled={!canSubmit}
+            className="w-full"
+          >
             {submitting ? 'Saving…' : 'Save new password'}
           </Button>
         </form>
@@ -186,8 +192,7 @@ export default function ChangePasswordPage() {
         <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-ink-muted">
           <IconLock className="mt-0.5 shrink-0" size={14} />
           <span>
-            Changing your password signs out every other device. This session stays
-            active.
+            Changing your password signs out every other device. This session stays active.
           </span>
         </p>
       </div>

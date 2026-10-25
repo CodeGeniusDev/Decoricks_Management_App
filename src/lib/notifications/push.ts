@@ -1,10 +1,7 @@
 import type { Db } from 'mongodb'
 import { ObjectId } from 'mongodb'
 import { getEnv } from '@/lib/env'
-import {
-  ensurePushIndexes,
-  getPushSubscriptionCollection,
-} from '@/lib/models/PushSubscriptions'
+import { ensurePushIndexes, getPushSubscriptionCollection } from '@/lib/models/PushSubscriptions'
 
 /**
  * Phase 9 Web Push fan-out (design §10 Option B, decision D7).
@@ -91,10 +88,7 @@ export async function deliverPush(db: Db, userId: string, payload: PushPayload):
     await Promise.all(
       subs.map(async (sub) => {
         try {
-          await webpush.sendNotification(
-            { endpoint: sub.endpoint, keys: sub.keys },
-            data
-          )
+          await webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, data)
         } catch (error) {
           const statusCode = (error as { statusCode?: number }).statusCode
           // 410 Gone / 404: the subscription is dead — drop it. Any other error

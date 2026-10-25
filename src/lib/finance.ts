@@ -14,12 +14,7 @@
  */
 
 export type LedgerEntryType =
-  | 'income'
-  | 'expense'
-  | 'transfer'
-  | 'partner_capital'
-  | 'partner_withdrawal'
-  | 'reinvestment'
+  'income' | 'expense' | 'transfer' | 'partner_capital' | 'partner_withdrawal' | 'reinvestment'
 
 export type LedgerEntryStatus = 'posted' | 'reversed'
 
@@ -166,7 +161,9 @@ export interface LedgerSummary {
 }
 
 const emptyByType = (): LedgerSummary['byType'] =>
-  Object.fromEntries(LEDGER_ENTRY_TYPES.map((type) => [type, { count: 0, amount: 0 }])) as LedgerSummary['byType']
+  Object.fromEntries(
+    LEDGER_ENTRY_TYPES.map((type) => [type, { count: 0, amount: 0 }])
+  ) as LedgerSummary['byType']
 
 /**
  * Aggregate a set of entries.
@@ -316,7 +313,11 @@ export function karachiWeekRange(date: Date): DateRange {
 export function karachiMonthRange(date: Date): DateRange {
   const { year, month } = karachiCivil(date)
   const start = karachiMidnight(year, month, 1)
-  const nextMonthStart = karachiMidnight(month === 12 ? year + 1 : year, month === 12 ? 1 : month + 1, 1)
+  const nextMonthStart = karachiMidnight(
+    month === 12 ? year + 1 : year,
+    month === 12 ? 1 : month + 1,
+    1
+  )
   return { start, end: new Date(nextMonthStart.getTime() - 1) }
 }
 
@@ -357,9 +358,7 @@ export interface PeriodTotals {
 const summarizeRange = (entries: LedgerEntryLike[], range: DateRange): PeriodTotal => ({
   start: range.start,
   end: range.end,
-  summary: summarize(
-    entries.filter((entry) => isWithin(new Date(entry.date), range))
-  ),
+  summary: summarize(entries.filter((entry) => isWithin(new Date(entry.date), range))),
 })
 
 /** Day / week / month totals for the Karachi period containing `now`. */
@@ -395,7 +394,8 @@ export function computeAverages(entries: LedgerEntryLike[], range: DateRange): L
     perDay,
     perWeek: Math.round((summary.netCashFlow / days) * 7),
     perMonth: Math.round((summary.netCashFlow / days) * 30),
-    perEntry: summary.count > 0 ? Math.round((summary.revenue + summary.expense) / summary.count) : 0,
+    perEntry:
+      summary.count > 0 ? Math.round((summary.revenue + summary.expense) / summary.count) : 0,
   }
 }
 
@@ -416,9 +416,7 @@ export interface CsvColumn<T> {
 
 export function toCsv<T>(rows: T[], columns: CsvColumn<T>[]): string {
   const header = columns.map((column) => escapeCsv(column.label)).join(',')
-  const body = rows.map((row) =>
-    columns.map((column) => escapeCsv(column.value(row))).join(',')
-  )
+  const body = rows.map((row) => columns.map((column) => escapeCsv(column.value(row))).join(','))
   return [header, ...body].join('\r\n')
 }
 

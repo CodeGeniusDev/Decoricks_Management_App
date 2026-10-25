@@ -27,7 +27,9 @@ export const BACKUP_KEY_INLINE_ENV = 'DECORICKS_BACKUP_KEY'
 
 const GROUP_OR_WORLD_READABLE = 0o044
 
-export const readBackupPassphrase = (opts: { env?: Record<string, string | undefined> } = {}): string => {
+export const readBackupPassphrase = (
+  opts: { env?: Record<string, string | undefined> } = {}
+): string => {
   const env = opts.env ?? process.env
   const file = env[BACKUP_KEY_FILE_ENV]
 

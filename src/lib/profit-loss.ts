@@ -62,7 +62,11 @@ export interface ProfitLoss {
 export function resolveCogs(entries: LedgerEntryLike[], provided?: CogsInput | null): CogsInput {
   if (provided) return provided
   const purchasing = sumExpenseByCategory(entries, PL_CATEGORY_PURCHASING)
-  return { amount: purchasing, provisional: true, source: 'ledger product_purchasing (no inventory data yet)' }
+  return {
+    amount: purchasing,
+    provisional: true,
+    source: 'ledger product_purchasing (no inventory data yet)',
+  }
 }
 
 const sumExpenseByCategory = (entries: LedgerEntryLike[], category: string): number =>

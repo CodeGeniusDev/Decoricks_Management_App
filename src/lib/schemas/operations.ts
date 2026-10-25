@@ -22,7 +22,12 @@ const locations = ['sheikhupura', 'lahore'] as const
 /** A selling configuration (size/colour/fabric). Free-text name only. */
 export const productVariantSchema = z.object({
   name: z.string().trim().min(1, 'Variant name is required').max(120),
-  sku: z.string().trim().max(64).optional().or(z.literal('').transform(() => undefined)),
+  sku: z
+    .string()
+    .trim()
+    .max(64)
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
   sellingPrice: z.number().int().min(0).optional(),
 })
 
@@ -102,7 +107,10 @@ export const purchaseSchema = z.object({
   unitCost: z.number().int().min(1, 'Unit cost must be positive'),
   supplierId: objectId.optional(),
   /** YYYY-MM-DD; defaults to today (Karachi). */
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Date must be YYYY-MM-DD').optional(),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}/, 'Date must be YYYY-MM-DD')
+    .optional(),
   accountId: objectId.optional(),
   paymentMethod: z.string().trim().max(60).optional(),
   notes: z.string().trim().max(2000).optional(),
@@ -151,7 +159,10 @@ export const orderStatusUpdateSchema = z.object({
   /** Marks COD cash as received (delivered orders only). */
   cashReceived: z.boolean().optional(),
   /** YYYY-MM-DD of delivery/receipt; defaults to today (Karachi). */
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Date must be YYYY-MM-DD').optional(),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}/, 'Date must be YYYY-MM-DD')
+    .optional(),
   accountId: objectId.optional(),
   idempotencyKey: z.string().trim().min(8).max(120).optional(),
 })
@@ -190,7 +201,10 @@ export const returnSchema = z.object({
   courierCost: z.number().int().min(0).optional(),
   accountId: objectId.optional(),
   /** YYYY-MM-DD; defaults to today (Karachi). */
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Date must be YYYY-MM-DD').optional(),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}/, 'Date must be YYYY-MM-DD')
+    .optional(),
   notes: z.string().trim().max(2000).optional(),
   idempotencyKey: z.string().trim().min(8).max(120).optional(),
 })
@@ -223,7 +237,13 @@ export const supplierSchema = z.object({
   name: z.string().trim().min(1, 'Supplier name is required').max(200),
   contactPerson: z.string().trim().max(200).optional(),
   phone: z.string().trim().max(40).optional(),
-  email: z.string().trim().email('Enter a valid email').max(200).optional().or(z.literal('').transform(() => undefined)),
+  email: z
+    .string()
+    .trim()
+    .email('Enter a valid email')
+    .max(200)
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
   city: z.string().trim().min(1, 'City is required').max(100),
   address: z.string().trim().max(500).optional(),
   productsSupplied: z.array(z.string().trim().min(1).max(200)).default([]),
@@ -233,12 +253,12 @@ export const supplierSchema = z.object({
 
 /* --------------------------------- budgets --------------------------------- */
 
-export const BUDGET_PERIOD_KINDS = ['weekly', 'monthly', 'custom'] as const;
+export const BUDGET_PERIOD_KINDS = ['weekly', 'monthly', 'custom'] as const
 
 export const budgetCategorySchema = z.object({
   category: z.string().trim().min(1, 'Category is required').max(100),
   budgeted: z.number().int().min(0, 'Budget cannot be negative'),
-});
+})
 
 export const budgetSchema = z.object({
   name: z.string().trim().min(1, 'Budget name is required').max(200),
@@ -251,19 +271,25 @@ export const budgetSchema = z.object({
   approvedBy: z.string().trim().max(120).optional(),
   /** Client-generated retry guard; unique when present. */
   idempotencyKey: z.string().trim().min(8).max(120, 'Idempotency key is too long').optional(),
-});
+})
 
 /** Partial edits keep history; `status` transitions go through the action endpoint. */
 export const budgetUpdateSchema = z
   .object({
     name: z.string().trim().min(1, 'Budget name is required').max(200).optional(),
-    periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'Start date must be YYYY-MM-DD').optional(),
-    periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}/, 'End date must be YYYY-MM-DD').optional(),
+    periodStart: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}/, 'Start date must be YYYY-MM-DD')
+      .optional(),
+    periodEnd: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}/, 'End date must be YYYY-MM-DD')
+      .optional(),
     categories: z.array(budgetCategorySchema).min(1, 'Add at least one budget category').optional(),
   })
-  .refine((value) => Object.keys(value).length > 0, { message: 'No changes sent' });
+  .refine((value) => Object.keys(value).length > 0, { message: 'No changes sent' })
 
 export const budgetActionSchema = z.object({
   action: z.enum(['approve', 'archive', 'reopen']),
   reason: z.string().trim().max(500).optional(),
-});
+})

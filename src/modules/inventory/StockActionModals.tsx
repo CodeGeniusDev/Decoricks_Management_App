@@ -110,7 +110,10 @@ function useStockSubmit() {
     setError(null)
     setErrors({})
     try {
-      await apiJson(url, { method: 'POST', body: JSON.stringify({ ...body, idempotencyKey: keyRef.current }) })
+      await apiJson(url, {
+        method: 'POST',
+        body: JSON.stringify({ ...body, idempotencyKey: keyRef.current }),
+      })
       return true
     } catch (err) {
       if (err instanceof ApiError) {
@@ -118,8 +121,7 @@ function useStockSubmit() {
         setErrors(issues)
         if (err.code === 'INSUFFICIENT_STOCK') {
           setError(
-            err.message ||
-              'Not enough sellable stock for this. The movement was not posted.'
+            err.message || 'Not enough sellable stock for this. The movement was not posted.'
           )
         } else {
           setError(
@@ -239,8 +241,8 @@ export const TransferModal = ({
         {error && <ErrorBanner message={error} />}
         {writable.length < 2 && (
           <p className="rounded-md bg-status-warning-bg px-3 py-2 text-sm text-status-warning">
-            A transfer writes stock at both ends, so it needs permission for both locations.
-            The Founder can record transfers that involve Sheikhupura.
+            A transfer writes stock at both ends, so it needs permission for both locations. The
+            Founder can record transfers that involve Sheikhupura.
           </p>
         )}
         <Select
@@ -269,15 +271,14 @@ export const TransferModal = ({
             disabled={saving}
           />
         </div>
-        {productId && fromLocation && (
-          <PoolNote pool={poolOf(pools, productId, fromLocation)} />
-        )}
+        {productId && fromLocation && <PoolNote pool={poolOf(pools, productId, fromLocation)} />}
         <Input
           label="Quantity"
           inputMode="numeric"
           value={quantity}
           error={
-            errors.quantity ?? (parsedQuantity && !parsedQuantity.ok ? parsedQuantity.error : undefined)
+            errors.quantity ??
+            (parsedQuantity && !parsedQuantity.ok ? parsedQuantity.error : undefined)
           }
           hint={available > 0 ? `${available} available at the source` : undefined}
           onChange={(e) => setQuantity(e.target.value)}
@@ -358,7 +359,11 @@ export const CountModal = ({
     if (ok) {
       onDone(
         `Count recorded. An adjustment movement of ${
-          count.value === system ? '0' : count.value > system ? `+${count.value - system}` : count.value - system
+          count.value === system
+            ? '0'
+            : count.value > system
+              ? `+${count.value - system}`
+              : count.value - system
         } was posted against the ledger.`
       )
       onClose()
@@ -416,8 +421,9 @@ export const CountModal = ({
         />
         {difference !== null && difference !== 0 && (
           <p className="text-xs text-ink-secondary">
-            This posts an adjustment of <strong>{difference > 0 ? `+${difference}` : difference}</strong>{' '}
-            unit{difference === 1 || difference === -1 ? '' : 's'} at{' '}
+            This posts an adjustment of{' '}
+            <strong>{difference > 0 ? `+${difference}` : difference}</strong> unit
+            {difference === 1 || difference === -1 ? '' : 's'} at{' '}
             {LOCATION_LABELS[location] ?? location}.
           </p>
         )}
@@ -558,7 +564,8 @@ export const DamageModal = ({
           inputMode="numeric"
           value={quantity}
           error={
-            errors.quantity ?? (parsedQuantity && !parsedQuantity.ok ? parsedQuantity.error : undefined)
+            errors.quantity ??
+            (parsedQuantity && !parsedQuantity.ok ? parsedQuantity.error : undefined)
           }
           onChange={(e) => setQuantity(e.target.value)}
           disabled={saving}
@@ -633,9 +640,7 @@ export const ReverseMovementModal = ({
         method: 'POST',
         body: JSON.stringify({ reason: reason.trim(), idempotencyKey: keyRef.current }),
       })
-      onReversed(
-        'Reversal posted. The original movement stays in the ledger, marked reversed.'
-      )
+      onReversed('Reversal posted. The original movement stays in the ledger, marked reversed.')
       onClose()
     } catch (err) {
       if (err instanceof ApiError) {
@@ -688,7 +693,10 @@ export const ReverseMovementModal = ({
         </div>
 
         {error && (
-          <p role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-sm text-status-danger">
+          <p
+            role="alert"
+            className="rounded-md bg-status-danger-bg px-3 py-2 text-sm text-status-danger"
+          >
             {error}
           </p>
         )}

@@ -115,23 +115,25 @@ export function ensureFinanceDefaults(db: Db, actorId?: ObjectId): Promise<void>
             }))
           )
 
-          const accountOps: AnyBulkWriteOperation<Account>[] = SPEC_ACCOUNTS.map(([name, kind]) => ({
-            updateOne: {
-              filter: { name },
-              update: {
-                $setOnInsert: {
-                  name,
-                  kind,
-                  openingBalance: 0,
-                  isActive: true,
-                  createdAt: now,
-                  updatedAt: now,
-                  createdBy,
-                } satisfies Omit<Account, '_id'>,
+          const accountOps: AnyBulkWriteOperation<Account>[] = SPEC_ACCOUNTS.map(
+            ([name, kind]) => ({
+              updateOne: {
+                filter: { name },
+                update: {
+                  $setOnInsert: {
+                    name,
+                    kind,
+                    openingBalance: 0,
+                    isActive: true,
+                    createdAt: now,
+                    updatedAt: now,
+                    createdBy,
+                  } satisfies Omit<Account, '_id'>,
+                },
+                upsert: true,
               },
-              upsert: true,
-            },
-          }))
+            })
+          )
 
           /*
            * Index creation and the backfill run CONCURRENTLY, not index-then-write.

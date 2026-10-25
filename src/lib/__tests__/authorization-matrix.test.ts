@@ -83,10 +83,18 @@ describe('hasPermission', () => {
 
 describe('scoped grants', () => {
   it('applies the Lahore-stock default only to Hasnat, Ali and the Founder', async () => {
-    await expect(hasScopedGrant(ROLE_FOUNDER, SCOPED_LAHORE_STOCK_PERMISSION, fakeDb())).resolves.toBe(true)
-    await expect(hasScopedGrant(ROLE_HASNAT, SCOPED_LAHORE_STOCK_PERMISSION, fakeDb())).resolves.toBe(true)
-    await expect(hasScopedGrant(ROLE_ALI, SCOPED_LAHORE_STOCK_PERMISSION, fakeDb())).resolves.toBe(true)
-    await expect(hasScopedGrant(ROLE_AFNAN, SCOPED_LAHORE_STOCK_PERMISSION, fakeDb())).resolves.toBe(false)
+    await expect(
+      hasScopedGrant(ROLE_FOUNDER, SCOPED_LAHORE_STOCK_PERMISSION, fakeDb())
+    ).resolves.toBe(true)
+    await expect(
+      hasScopedGrant(ROLE_HASNAT, SCOPED_LAHORE_STOCK_PERMISSION, fakeDb())
+    ).resolves.toBe(true)
+    await expect(hasScopedGrant(ROLE_ALI, SCOPED_LAHORE_STOCK_PERMISSION, fakeDb())).resolves.toBe(
+      true
+    )
+    await expect(
+      hasScopedGrant(ROLE_AFNAN, SCOPED_LAHORE_STOCK_PERMISSION, fakeDb())
+    ).resolves.toBe(false)
   })
 
   it('keeps sales.full_edit Founder-only by default', async () => {
@@ -99,13 +107,17 @@ describe('scoped grants', () => {
     const granted = fakeDb([
       { name: ROLE_AFNAN, permissions: { [SCOPED_LAHORE_STOCK_PERMISSION]: { create: true } } },
     ])
-    await expect(hasScopedGrant(ROLE_AFNAN, SCOPED_LAHORE_STOCK_PERMISSION, granted)).resolves.toBe(true)
+    await expect(hasScopedGrant(ROLE_AFNAN, SCOPED_LAHORE_STOCK_PERMISSION, granted)).resolves.toBe(
+      true
+    )
 
     invalidateRoleCache()
     const revoked = fakeDb([
       { name: ROLE_HASNAT, permissions: { [SCOPED_LAHORE_STOCK_PERMISSION]: { create: false } } },
     ])
-    await expect(hasScopedGrant(ROLE_HASNAT, SCOPED_LAHORE_STOCK_PERMISSION, revoked)).resolves.toBe(false)
+    await expect(
+      hasScopedGrant(ROLE_HASNAT, SCOPED_LAHORE_STOCK_PERMISSION, revoked)
+    ).resolves.toBe(false)
   })
 
   it('canRecordLahoreStock mirrors the scoped default', async () => {

@@ -1,0 +1,16 @@
+# Build & dependency artifacts — never formatted, never checked.
+node_modules/
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Lockfiles are machine-generated; Prettier would only churn them.
+package-lock.json
+yarn.lock
+
+# Local-only env files (they hold secrets; never touch them).
+.env.local
+.env*.local

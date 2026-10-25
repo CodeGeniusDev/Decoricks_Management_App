@@ -261,7 +261,10 @@ export const ProductFormModal = ({
     >
       <div className="flex flex-col gap-4">
         {formError && (
-          <p role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-sm text-status-danger">
+          <p
+            role="alert"
+            className="rounded-md bg-status-danger-bg px-3 py-2 text-sm text-status-danger"
+          >
             {formError}
           </p>
         )}

@@ -66,7 +66,10 @@ export function ensureProductIndexes(db: Db): Promise<void> {
     productIndexesPromise = (async () => {
       try {
         await Promise.all([
-          getProductCollection(db).createIndex({ sku: 1 }, { unique: true, name: 'products_sku_unique' }),
+          getProductCollection(db).createIndex(
+            { sku: 1 },
+            { unique: true, name: 'products_sku_unique' }
+          ),
           getProductCollection(db).createIndex({ isActive: 1 }, { name: 'products_isActive' }),
           getProductCollection(db).createIndex({ category: 1 }, { name: 'products_category' }),
           getProductCollection(db).createIndex(

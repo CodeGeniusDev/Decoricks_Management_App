@@ -38,18 +38,19 @@ implemented, and nothing has been deployed.**
   ever made, it requires implementing §2 changes **A, B, C and E** first (D is
   optional). Their individual effort/risk is in §2; rolled up:
 
-  | Required change (§2) | Effort | Risk |
-  | -------------------- | ------ | ---- |
-  | A — Mongo-backed login/admin rate limits (TTL) | **M** (~0.5–1 day + tests) | Med |
-  | B — Serverless-safe Mongo client (reuse in prod, small pool) | **S** (~2–4 h + tests) | Low |
-  | C — Disable SSE → explicit polling | **S–M** (~half day + tests) | Low–Med |
-  | E — Force `TZ=Asia/Karachi` on the platform (config, not code) | **XS** (<1 h) | Low |
+  | Required change (§2)                                           | Effort                      | Risk    |
+  | -------------------------------------------------------------- | --------------------------- | ------- |
+  | A — Mongo-backed login/admin rate limits (TTL)                 | **M** (~0.5–1 day + tests)  | Med     |
+  | B — Serverless-safe Mongo client (reuse in prod, small pool)   | **S** (~2–4 h + tests)      | Low     |
+  | C — Disable SSE → explicit polling                             | **S–M** (~half day + tests) | Low–Med |
+  | E — Force `TZ=Asia/Karachi` on the platform (config, not code) | **XS** (<1 h)               | Low     |
 
   **Total ≈ 2–3 engineer-days**, and every change must be **env-gated** so the
   Render persistent host stays byte-for-byte unchanged. Until A/B/C/E land,
   Netlify means the degradations in §5 (polling-only realtime, diluted per-IP
   throttling, per-instance cold handshake) — which is exactly why it is the
   fallback, not the first move.
+
 - **Vercel Hobby — EXCLUDED.** Vercel's own pricing FAQ: "Our **Hobby plan is for
   personal, non-commercial use.**" Decoricks is a business internal tool, so the
   free Hobby plan is not an option; only the paid **Pro** plan would be, which is

@@ -61,7 +61,10 @@ export const NotificationBell = () => {
   useEffect(() => {
     if (!open) return
     const onPointerDown = (event: MouseEvent) => {
-      if (!panelRef.current?.contains(event.target as Node) && !bellRef.current?.contains(event.target as Node)) {
+      if (
+        !panelRef.current?.contains(event.target as Node) &&
+        !bellRef.current?.contains(event.target as Node)
+      ) {
         setOpen(false)
       }
     }
@@ -168,18 +171,26 @@ export const NotificationBell = () => {
                         <span className="flex items-center gap-1.5">
                           <span
                             className={`truncate text-sm ${
-                              item.isRead ? 'font-medium text-ink-secondary' : 'font-semibold text-decoricks-dark'
+                              item.isRead
+                                ? 'font-medium text-ink-secondary'
+                                : 'font-semibold text-decoricks-dark'
                             }`}
                           >
                             {item.title}
                           </span>
                           {!item.isRead && (
-                            <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-decoricks-brown" aria-hidden="true" />
+                            <span
+                              className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-decoricks-brown"
+                              aria-hidden="true"
+                            />
                           )}
                         </span>
-                        <span className="mt-0.5 block text-xs text-ink-secondary line-clamp-2">{item.message}</span>
+                        <span className="mt-0.5 block text-xs text-ink-secondary line-clamp-2">
+                          {item.message}
+                        </span>
                         <span className="mt-1 block text-2xs text-ink-muted">
-                          {NOTIFICATION_TYPE_LABELS[item.type]} · {relativeTime(item.createdAt, now)}
+                          {NOTIFICATION_TYPE_LABELS[item.type]} ·{' '}
+                          {relativeTime(item.createdAt, now)}
                         </span>
                       </span>
                     </button>
@@ -187,7 +198,13 @@ export const NotificationBell = () => {
                 ))}
                 {hasMore && (
                   <li className="p-2">
-                    <Button variant="ghost" size="sm" className="w-full" loading={loadMoreLoading} onClick={() => void loadMore()}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full"
+                      loading={loadMoreLoading}
+                      onClick={() => void loadMore()}
+                    >
                       Load older
                     </Button>
                   </li>

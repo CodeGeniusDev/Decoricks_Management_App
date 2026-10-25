@@ -86,5 +86,9 @@ export function monthLabelKarachi(month: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(month)
   if (!match) return month
   const date = Date.UTC(Number(match[1]), Number(match[2]) - 1, 1)
-  return new Date(date).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+  return new Date(date).toLocaleDateString('en-GB', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
 }

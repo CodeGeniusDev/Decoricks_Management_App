@@ -5,7 +5,7 @@ For the first **two weeks** the app runs **alongside** the old records
 app's numbers agree with the old records, then retire the old ones. Keep this
 file (or a printed copy) as the shared scoreboard.
 
-Start date: ____________   Target review date (start + 14 days): ____________
+Start date: ____________ Target review date (start + 14 days): ____________
 
 ---
 
@@ -45,9 +45,9 @@ Start date: ____________   Target review date (start + 14 days): ____________
 Record results (a ✔ means the app and old record agree within rounding):
 
 | Date | Cash | Income | Expenses | Stock | Orders/Tasks | Notes |
-|---|---|---|---|---|---|---|
-|  |  |  |  |  |  |  |
-|  |  |  |  |  |  |  |
+| ---- | ---- | ------ | -------- | ----- | ------------ | ----- |
+|      |      |        |          |       |              |       |
+|      |      |        |          |       |              |       |
 
 > The app is the more rigorous source: money is **append-only** and reversible,
 > figures are **recomputed** independently. If the app and the old record
@@ -110,5 +110,5 @@ switch date, and keep watching the Reconciliation screen daily for another week.
 
 > **Do not confuse this with deleting the Atlas `test` database.** That is a
 > separate, later, gated action described in `docs/MAINTENANCE.md` §6 — it needs
-> a final verified backup **and** two weeks of *stable app-only* use, and is
+> a final verified backup **and** two weeks of _stable app-only_ use, and is
 > never done inside this checklist.

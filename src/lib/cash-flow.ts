@@ -69,13 +69,18 @@ export function computeCashFlow(
   entriesInRange: LedgerEntryLike[],
   options: { excludeInactive?: boolean } = {}
 ): CashFlow {
-  const active = options.excludeInactive === false ? accounts : accounts.filter((a) => a.isActive !== false)
+  const active =
+    options.excludeInactive === false ? accounts : accounts.filter((a) => a.isActive !== false)
 
   const balancesStart = computeAccountBalances(active, entriesBefore)
   // computeAccountBalances on a fresh copy of the start balances gives the end
   // position without re-walking history.
   const balancesEnd = computeAccountBalances(
-    active.map((a) => ({ _id: a._id, openingBalance: balancesStart[a._id] ?? 0, isActive: a.isActive })),
+    active.map((a) => ({
+      _id: a._id,
+      openingBalance: balancesStart[a._id] ?? 0,
+      isActive: a.isActive,
+    })),
     entriesInRange
   )
 
@@ -169,6 +174,10 @@ export function resolveReportRange(searchParams: URLSearchParams): {
   const anchor = parsed ? parsed.start : new Date()
 
   const range =
-    period === 'day' ? karachiDayRange(anchor) : period === 'week' ? karachiWeekRange(anchor) : karachiMonthRange(anchor)
+    period === 'day'
+      ? karachiDayRange(anchor)
+      : period === 'week'
+        ? karachiWeekRange(anchor)
+        : karachiMonthRange(anchor)
   return { period, range }
 }

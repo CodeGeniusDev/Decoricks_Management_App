@@ -45,7 +45,13 @@ interface CalcView {
     totalValuation: number
     productCount: number
     lowStockCount: number
-    byLocation: { location: string; available: number; damaged: number; returned: number; valuation: number }[]
+    byLocation: {
+      location: string
+      available: number
+      damaged: number
+      returned: number
+      valuation: number
+    }[]
     rows: CalcValuationRow[]
   }
   cogs: {
@@ -137,46 +143,49 @@ export const InventoryCalcPanel = () => {
   const requestSeq = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
 
-  const load = useCallback(async (currentPeriod: string, currentFrom: string, currentTo: string) => {
-    const seq = ++requestSeq.current
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
+  const load = useCallback(
+    async (currentPeriod: string, currentFrom: string, currentTo: string) => {
+      const seq = ++requestSeq.current
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
 
-    const params = new URLSearchParams()
-    if (currentPeriod === 'custom') {
-      params.set('period', 'custom')
-      params.set('from', currentFrom)
-      params.set('to', currentTo)
-    } else {
-      params.set('period', currentPeriod)
-    }
+      const params = new URLSearchParams()
+      if (currentPeriod === 'custom') {
+        params.set('period', 'custom')
+        params.set('from', currentFrom)
+        params.set('to', currentTo)
+      } else {
+        params.set('period', currentPeriod)
+      }
 
-    try {
-      const result = await apiJson<CalcView>(`/api/reports/inventory-calc?${params.toString()}`, {
-        signal: controller.signal,
-      })
-      if (seq === requestSeq.current) {
-        setData(result)
-        setError(null)
+      try {
+        const result = await apiJson<CalcView>(`/api/reports/inventory-calc?${params.toString()}`, {
+          signal: controller.signal,
+        })
+        if (seq === requestSeq.current) {
+          setData(result)
+          setError(null)
+        }
+      } catch (err) {
+        if ((err as Error)?.name === 'AbortError') return
+        if (seq === requestSeq.current) {
+          // A custom range with missing bounds is a user fix, not a server fault.
+          setError(
+            err instanceof ApiError && err.status === 400
+              ? 'Pick both dates of the custom range.'
+              : err instanceof Error
+                ? err.message
+                : 'Could not load the calculation panel.'
+          )
+          setData(null)
+        }
+      } finally {
+        if (seq === requestSeq.current) setLoading(false)
       }
-    } catch (err) {
-      if ((err as Error)?.name === 'AbortError') return
-      if (seq === requestSeq.current) {
-        // A custom range with missing bounds is a user fix, not a server fault.
-        setError(
-          err instanceof ApiError && err.status === 400
-            ? 'Pick both dates of the custom range.'
-            : err instanceof Error
-              ? err.message
-              : 'Could not load the calculation panel.'
-        )
-        setData(null)
-      }
-    } finally {
-      if (seq === requestSeq.current) setLoading(false)
-    }
-  }, [])
+    },
+    []
+  )
 
   useEffect(() => {
     setLoading(true)
@@ -257,7 +266,10 @@ export const InventoryCalcPanel = () => {
           action={{ label: 'Retry', onClick: () => void load(period, from, to) }}
         />
       ) : !data ? (
-        <EmptyState title="Nothing to calculate yet" description="Record a purchase or a sale first." />
+        <EmptyState
+          title="Nothing to calculate yet"
+          description="Record a purchase or a sale first."
+        />
       ) : (
         <div className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
@@ -292,10 +304,7 @@ export const InventoryCalcPanel = () => {
                     <li className="text-xs text-ink-muted">No units on the shelf.</li>
                   )}
                   {data.valuation.rows.map((row) => (
-                    <li
-                      key={row._id}
-                      className="flex items-baseline justify-between gap-3 text-xs"
-                    >
+                    <li key={row._id} className="flex items-baseline justify-between gap-3 text-xs">
                       <span className="min-w-0 truncate text-ink-secondary">
                         {row.name} · {row.totalAvailable} × {money(row.cost)}
                       </span>
@@ -334,17 +343,15 @@ export const InventoryCalcPanel = () => {
               </div>
               {data.cogs.truncated && (
                 <p className="mt-2 text-xs text-ink-muted">
-                  More than 200 movement lines in this period — totals cover all of them; the
-                  ledger screen lists every line.
+                  More than 200 movement lines in this period — totals cover all of them; the ledger
+                  screen lists every line.
                 </p>
               )}
             </div>
 
             {/* Panel 3 — margins */}
             <div className="rounded-lg border border-line-subtle p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
-                Margins
-              </p>
+              <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Margins</p>
               <p className="mt-2 text-2xl font-semibold text-decoricks-dark">
                 {data.margins.grossMarginPercent === null
                   ? '—'
@@ -357,9 +364,7 @@ export const InventoryCalcPanel = () => {
                 <Line label="Net sales" value={money(data.margins.netSales)} />
                 <Line
                   label={
-                    data.margins.cogsProvisional
-                      ? 'COGS (provisional)'
-                      : 'COGS (movement ledger)'
+                    data.margins.cogsProvisional ? 'COGS (provisional)' : 'COGS (movement ledger)'
                   }
                   value={money(data.margins.cogs)}
                 />
@@ -416,9 +421,8 @@ export const InventoryCalcPanel = () => {
             <div className="mt-2 space-y-2 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-ink-secondary">
-                  Ledger cost flow vs panel valuation — difference {money(
-                    data.reconciliation.valuation.difference
-                  )}
+                  Ledger cost flow vs panel valuation — difference{' '}
+                  {money(data.reconciliation.valuation.difference)}
                 </span>
                 {data.reconciliation.valuation.difference === 0 ? (
                   <Badge variant="success" size="sm">
@@ -451,10 +455,9 @@ export const InventoryCalcPanel = () => {
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-ink-secondary">
-                  Ledger sales income vs orders cashed in period ({money(
-                    data.reconciliation.income.ledgerIncome
-                  )}{' '}
-                  vs {money(data.reconciliation.income.orderTotals)},{' '}
+                  Ledger sales income vs orders cashed in period (
+                  {money(data.reconciliation.income.ledgerIncome)} vs{' '}
+                  {money(data.reconciliation.income.orderTotals)},{' '}
                   {data.reconciliation.income.ordersCashed} order
                   {data.reconciliation.income.ordersCashed === 1 ? '' : 's'})
                 </span>

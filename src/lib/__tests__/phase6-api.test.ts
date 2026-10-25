@@ -77,32 +77,30 @@ const asActor = (userId: ObjectId, editOthers = false) => {
 /* ------------------------------- seeding --------------------------------- */
 
 const seedColumns = () => {
-  mem
-    .collection('columns')
-    .push(
-      {
-        _id: COL_TODO,
-        boardId: BOARD_ID,
-        name: 'To Do',
-        position: 1,
-        isDoneColumn: false,
-        isArchived: false,
-        createdBy: FOUNDER,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      {
-        _id: COL_DONE,
-        boardId: BOARD_ID,
-        name: 'Done',
-        position: 2,
-        isDoneColumn: true,
-        isArchived: false,
-        createdBy: FOUNDER,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }
-    )
+  mem.collection('columns').push(
+    {
+      _id: COL_TODO,
+      boardId: BOARD_ID,
+      name: 'To Do',
+      position: 1,
+      isDoneColumn: false,
+      isArchived: false,
+      createdBy: FOUNDER,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+    {
+      _id: COL_DONE,
+      boardId: BOARD_ID,
+      name: 'Done',
+      position: 2,
+      isDoneColumn: true,
+      isArchived: false,
+      createdBy: FOUNDER,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+  )
 }
 
 const seedTask = (over: Record<string, unknown> = {}): ObjectId => {

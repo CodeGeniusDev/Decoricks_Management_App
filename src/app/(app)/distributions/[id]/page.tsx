@@ -1,36 +1,36 @@
-'use client';
+'use client'
 
 import { useRealtimeSync } from '@/lib/sync/useRealtime'
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { PageTransition } from '@/components/PageTransition';
-import { PageHeader } from '@/components/layout/Page';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
-import { Modal } from '@/components/ui/Modal';
-import { Input } from '@/components/ui/Input';
-import { Select } from '@/components/ui/Select';
-import { Textarea } from '@/components/ui/Textarea';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { ErrorState } from '@/components/ui/ErrorState';
-import { CalcPanel } from '@/components/ui/CalcPanel';
-import { Toast } from '@/components/ui/Toast';
-import { Table } from '@/components/ui/Table';
-import { apiJson, ApiError } from '@/lib/api-client';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { can } from '@/lib/permissions-client';
-import { formatPaisa } from '@/lib/money';
-import { formatKarachiDate } from '@/lib/date';
-import { parsePkrAmount, toKarachiInputDate } from '@/modules/finance/finance-ui';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { useParams } from 'next/navigation'
+import { PageTransition } from '@/components/PageTransition'
+import { PageHeader } from '@/components/layout/Page'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Modal } from '@/components/ui/Modal'
+import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
+import { Textarea } from '@/components/ui/Textarea'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { CalcPanel } from '@/components/ui/CalcPanel'
+import { Toast } from '@/components/ui/Toast'
+import { Table } from '@/components/ui/Table'
+import { apiJson, ApiError } from '@/lib/api-client'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { can } from '@/lib/permissions-client'
+import { formatPaisa } from '@/lib/money'
+import { formatKarachiDate } from '@/lib/date'
+import { parsePkrAmount, toKarachiInputDate } from '@/modules/finance/finance-ui'
 import {
   STATUS_BADGE,
   STATUS_LABEL,
   monthLabelKarachi,
   type DistributionPartnerShareView,
   type DistributionView,
-} from '@/modules/finance/distribution-ui';
+} from '@/modules/finance/distribution-ui'
 
 /**
  * Profit Distribution detail — the full monthly calculation, Founder actions
@@ -45,7 +45,7 @@ import {
  * the lock instead of the form.
  */
 
-type ConfirmAction = 'approve' | 'distribute';
+type ConfirmAction = 'approve' | 'distribute'
 
 const CONFIRM_COPY: Record<ConfirmAction, { title: string; description: string; label: string }> = {
   approve: {
@@ -60,66 +60,70 @@ const CONFIRM_COPY: Record<ConfirmAction, { title: string; description: string; 
       'This records that the partners actually received their withdrawable amounts. It changes no figures; the numbers stay exactly as approved.',
     label: 'Mark distributed',
   },
-};
+}
 
 export default function DistributionDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
-  const canApprove = user ? can({ role: user.role }, 'finance', 'approve') : false;
+  const { id } = useParams<{ id: string }>()
+  const { user } = useAuth()
+  const canApprove = user ? can({ role: user.role }, 'finance', 'approve') : false
 
-  const [dist, setDist] = useState<DistributionView | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [dist, setDist] = useState<DistributionView | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
-  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
-  const [adjustOpen, setAdjustOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const busyRef = useRef(false);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
+  const [adjustOpen, setAdjustOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
 
   // Adjustment form state — reset every time the modal opens.
-  const [partnerName, setPartnerName] = useState('');
-  const [direction, setDirection] = useState<'bonus' | 'deduction'>('bonus');
-  const [amountText, setAmountText] = useState('');
-  const [reason, setReason] = useState('');
-  const [adjustErrors, setAdjustErrors] = useState<Record<string, string>>({});
+  const [partnerName, setPartnerName] = useState('')
+  const [direction, setDirection] = useState<'bonus' | 'deduction'>('bonus')
+  const [amountText, setAmountText] = useState('')
+  const [reason, setReason] = useState('')
+  const [adjustErrors, setAdjustErrors] = useState<Record<string, string>>({})
 
   useRealtimeSync('finance', () => {
     void load()
   })
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
-      setDist(await apiJson<DistributionView>(`/api/finance/distributions/${id}`));
+      setDist(await apiJson<DistributionView>(`/api/finance/distributions/${id}`))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load distribution');
+      setError(err instanceof Error ? err.message : 'Failed to load distribution')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, [id]);
+  }, [id])
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load()
+  }, [load])
 
   const ledgerHref = useMemo(() => {
-    if (!dist) return '#';
+    if (!dist) return '#'
     const params = new URLSearchParams({
       startDate: toKarachiInputDate(dist.periodStart),
       endDate: toKarachiInputDate(dist.periodEnd),
-    });
-    return `/finance/transactions?${params.toString()}`;
-  }, [dist]);
+    })
+    return `/finance/transactions?${params.toString()}`
+  }, [dist])
 
   /** Σ finalAmount — used for the "adds up exactly" proof row. */
   const sums = useMemo(() => {
-    if (!dist) return null;
-    const finalTotal = dist.partnerShares.reduce((sum, share) => sum + share.finalAmount, 0);
-    const reinvestTotal = dist.partnerShares.reduce((sum, share) => sum + share.reinvestedAmount, 0);
-    const withdrawableTotal = dist.partnerShares.reduce((sum, share) => sum + share.availableToWithdraw, 0);
-    const charityPlusFinalPlusRetained = dist.charityShare.amount + finalTotal + dist.retainedEarnings;
+    if (!dist) return null
+    const finalTotal = dist.partnerShares.reduce((sum, share) => sum + share.finalAmount, 0)
+    const reinvestTotal = dist.partnerShares.reduce((sum, share) => sum + share.reinvestedAmount, 0)
+    const withdrawableTotal = dist.partnerShares.reduce(
+      (sum, share) => sum + share.availableToWithdraw,
+      0
+    )
+    const charityPlusFinalPlusRetained =
+      dist.charityShare.amount + finalTotal + dist.retainedEarnings
     return {
       finalTotal,
       reinvestTotal,
@@ -127,84 +131,91 @@ export default function DistributionDetailPage() {
       charityPlusFinalPlusRetained,
       balanced: charityPlusFinalPlusRetained === dist.netProfit,
       reinvestMatches: reinvestTotal === dist.reinvestmentAmount,
-    };
-  }, [dist]);
+    }
+  }, [dist])
 
   const runAction = async (action: ConfirmAction) => {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setBusy(true);
+    if (busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
     try {
-      const updated = await apiJson<DistributionView>(`/api/finance/distributions/${id}/${action}`, {
-        method: 'POST',
-      });
+      const updated = await apiJson<DistributionView>(
+        `/api/finance/distributions/${id}/${action}`,
+        {
+          method: 'POST',
+        }
+      )
       // The route returns the full fresh record — adopt it, no refetch, no stale figures.
-      setDist(updated);
-      setConfirmAction(null);
+      setDist(updated)
+      setConfirmAction(null)
       setToast({
         type: 'success',
         message:
           action === 'approve'
             ? 'Distribution approved and locked. Recorded in the audit log.'
             : 'Distribution marked as distributed. Recorded in the audit log.',
-      });
+      })
     } catch (err) {
       setToast({
         type: 'error',
         message: err instanceof ApiError ? err.message : `Could not ${action} the distribution`,
-      });
+      })
     } finally {
-      busyRef.current = false;
-      setBusy(false);
+      busyRef.current = false
+      setBusy(false)
     }
-  };
+  }
 
   const openAdjust = () => {
-    if (dist && dist.partnerShares.length > 0) setPartnerName(dist.partnerShares[0].partnerName);
-    setDirection('bonus');
-    setAmountText('');
-    setReason('');
-    setAdjustErrors({});
-    setAdjustOpen(true);
-  };
+    if (dist && dist.partnerShares.length > 0) setPartnerName(dist.partnerShares[0].partnerName)
+    setDirection('bonus')
+    setAmountText('')
+    setReason('')
+    setAdjustErrors({})
+    setAdjustOpen(true)
+  }
 
   const submitAdjustment = async () => {
-    if (!dist || busyRef.current) return;
+    if (!dist || busyRef.current) return
 
-    const errors: Record<string, string> = {};
-    const parsed = parsePkrAmount(amountText);
-    const amountPaisa = parsed.ok ? parsed.paisa : 0;
-    if (amountPaisa <= 0) errors.amount = 'Enter a positive amount, e.g. 5000 or 5000.50';
-    if (reason.trim().length < 3) errors.reason = 'A reason is required — it goes into the audit log';
+    const errors: Record<string, string> = {}
+    const parsed = parsePkrAmount(amountText)
+    const amountPaisa = parsed.ok ? parsed.paisa : 0
+    if (amountPaisa <= 0) errors.amount = 'Enter a positive amount, e.g. 5000 or 5000.50'
+    if (reason.trim().length < 3)
+      errors.reason = 'A reason is required — it goes into the audit log'
     if (Object.keys(errors).length > 0) {
-      setAdjustErrors(errors);
-      return;
+      setAdjustErrors(errors)
+      return
     }
 
-    busyRef.current = true;
-    setBusy(true);
+    busyRef.current = true
+    setBusy(true)
     try {
-      const signed = direction === 'bonus' ? amountPaisa : -amountPaisa;
-      const updated = await apiJson<DistributionView>(`/api/finance/distributions/${id}/adjustments`, {
-        method: 'POST',
-        body: JSON.stringify({ partnerName, amount: signed, reason: reason.trim() }),
-      });
-      setDist(updated);
-      setAdjustOpen(false);
-      setToast({ type: 'success', message: 'Adjustment applied — the whole month was re-split.' });
+      const signed = direction === 'bonus' ? amountPaisa : -amountPaisa
+      const updated = await apiJson<DistributionView>(
+        `/api/finance/distributions/${id}/adjustments`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ partnerName, amount: signed, reason: reason.trim() }),
+        }
+      )
+      setDist(updated)
+      setAdjustOpen(false)
+      setToast({ type: 'success', message: 'Adjustment applied — the whole month was re-split.' })
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Could not apply the adjustment';
+      const message = err instanceof ApiError ? err.message : 'Could not apply the adjustment'
       if (err instanceof ApiError && err.code === 'DISTRIBUTION_LOCKED') {
         // Someone approved it in the meantime — resync instead of leaving a stale form.
-        setAdjustOpen(false);
-        void load();
+        setAdjustOpen(false)
+        void load()
       }
-      setToast({ type: 'error', message });
+      setToast({ type: 'error', message })
     } finally {
-      busyRef.current = false;
-      setBusy(false);
+      busyRef.current = false
+      setBusy(false)
     }
-  };
+  }
 
   // The realtime refresh in useRealtimeSync() must be the *silent* variant: a
   // background finance change reloads this record, but the body — including any
@@ -220,7 +231,7 @@ export default function DistributionDetailPage() {
         <Skeleton variant="rect" className="mt-4 h-72" />
         <Skeleton variant="rect" className="mt-4 h-72" />
       </PageTransition>
-    );
+    )
   }
 
   if (!dist) {
@@ -235,7 +246,7 @@ export default function DistributionDetailPage() {
           />
         </Card>
       </PageTransition>
-    );
+    )
   }
 
   const shareColumns = [
@@ -247,7 +258,7 @@ export default function DistributionDetailPage() {
     { key: 'adjustments', label: 'Adjustments' },
     { key: 'final', label: 'Final share' },
     { key: 'withdrawable', label: 'Withdrawable' },
-  ];
+  ]
 
   const shareRows = dist.partnerShares.map((share) => ({
     _id: share.partnerName,
@@ -272,19 +283,28 @@ export default function DistributionDetailPage() {
           ))}
         </div>
       ),
-    final: <span className="font-semibold tabular-nums text-decoricks-dark">{formatPaisa(share.finalAmount)}</span>,
+    final: (
+      <span className="font-semibold tabular-nums text-decoricks-dark">
+        {formatPaisa(share.finalAmount)}
+      </span>
+    ),
     withdrawable: (
-      <span className={`tabular-nums ${share.availableToWithdraw < 0 ? 'text-status-danger' : 'font-semibold text-decoricks-dark'}`}>
+      <span
+        className={`tabular-nums ${share.availableToWithdraw < 0 ? 'text-status-danger' : 'font-semibold text-decoricks-dark'}`}
+      >
         {formatPaisa(share.availableToWithdraw)}
       </span>
     ),
-  }));
+  }))
 
   const shareCard = (share: DistributionPartnerShareView) => (
     // key is read from the element itself — the md:hidden map below renders
     // whatever shareCard returns; partnerName is unique per distribution
     // (the settings schema rejects duplicate partner names).
-    <div key={share.partnerName} className="rounded-lg border border-line-subtle bg-surface-raised p-4">
+    <div
+      key={share.partnerName}
+      className="rounded-lg border border-line-subtle bg-surface-raised p-4"
+    >
       <div className="flex items-baseline justify-between gap-2">
         <p className="font-medium text-decoricks-dark">{share.partnerName}</p>
         <p className="text-xs text-ink-muted">
@@ -302,11 +322,15 @@ export default function DistributionDetailPage() {
         </div>
         <div>
           <dt className="text-2xs uppercase tracking-wide text-ink-muted">Final share</dt>
-          <dd className="font-semibold tabular-nums text-decoricks-dark">{formatPaisa(share.finalAmount)}</dd>
+          <dd className="font-semibold tabular-nums text-decoricks-dark">
+            {formatPaisa(share.finalAmount)}
+          </dd>
         </div>
         <div>
           <dt className="text-2xs uppercase tracking-wide text-ink-muted">Withdrawable</dt>
-          <dd className={`font-semibold tabular-nums ${share.availableToWithdraw < 0 ? 'text-status-danger' : 'text-decoricks-dark'}`}>
+          <dd
+            className={`font-semibold tabular-nums ${share.availableToWithdraw < 0 ? 'text-status-danger' : 'text-decoricks-dark'}`}
+          >
             {formatPaisa(share.availableToWithdraw)}
           </dd>
         </div>
@@ -337,13 +361,19 @@ export default function DistributionDetailPage() {
         </ul>
       )}
     </div>
-  );
+  )
 
-  const statementRow = (label: React.ReactNode, value: string, opts?: { strike?: boolean; bold?: boolean; muted?: boolean }) => (
+  const statementRow = (
+    label: React.ReactNode,
+    value: string,
+    opts?: { strike?: boolean; bold?: boolean; muted?: boolean }
+  ) => (
     <div
       className={`flex items-baseline justify-between gap-2 py-1.5 ${opts?.bold ? 'border-t-2 border-line-strong' : 'border-t border-line-subtle'}`}
     >
-      <dt className={opts?.bold ? 'font-semibold text-decoricks-dark' : 'text-ink-secondary'}>{label}</dt>
+      <dt className={opts?.bold ? 'font-semibold text-decoricks-dark' : 'text-ink-secondary'}>
+        {label}
+      </dt>
       <dd
         className={`tabular-nums ${opts?.bold ? 'font-semibold text-decoricks-dark' : ''} ${
           opts?.strike ? 'text-ink-muted line-through' : ''
@@ -352,7 +382,7 @@ export default function DistributionDetailPage() {
         {value}
       </dd>
     </div>
-  );
+  )
 
   return (
     <PageTransition>
@@ -376,7 +406,9 @@ export default function DistributionDetailPage() {
         {dist.locked && (
           <span className="text-xs text-ink-muted">
             Locked{dist.approvedByName ? ` by ${dist.approvedByName}` : ''}
-            {dist.approvedAt ? ` on ${formatKarachiDate(new Date(dist.approvedAt), 'datetime')}` : ''}
+            {dist.approvedAt
+              ? ` on ${formatKarachiDate(new Date(dist.approvedAt), 'datetime')}`
+              : ''}
           </span>
         )}
         {dist.distributedAt && (
@@ -390,7 +422,8 @@ export default function DistributionDetailPage() {
         <Card className="mb-4 p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-ink-secondary">
-              This is a proposal. Review every figure below, adjust if needed, then approve to lock it.
+              This is a proposal. Review every figure below, adjust if needed, then approve to lock
+              it.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={openAdjust} disabled={busy}>
@@ -421,8 +454,13 @@ export default function DistributionDetailPage() {
         {/* ── P&L snapshot ─────────────────────────────────────────────── */}
         <Card className="p-4 lg:col-span-2">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-decoricks-dark">Profit &amp; loss for the month</h2>
-            <Link href={ledgerHref} className="text-xs font-medium text-decoricks-brown hover:underline">
+            <h2 className="text-sm font-semibold text-decoricks-dark">
+              Profit &amp; loss for the month
+            </h2>
+            <Link
+              href={ledgerHref}
+              className="text-xs font-medium text-decoricks-brown hover:underline"
+            >
               Ledger records →
             </Link>
           </div>
@@ -434,7 +472,9 @@ export default function DistributionDetailPage() {
               <span className="flex items-center gap-2">
                 COGS
                 {dist.cogsProvisional && (
-                  <Badge size="sm" variant="warning">Provisional</Badge>
+                  <Badge size="sm" variant="warning">
+                    Provisional
+                  </Badge>
                 )}
               </span>,
               `− ${formatPaisa(dist.cogs)}`
@@ -465,14 +505,16 @@ export default function DistributionDetailPage() {
             }
           />
           <p className="mt-2 text-xs text-ink-muted">
-            These figures are a snapshot taken when the Founder pressed &quot;Calculate&quot;. Later ledger
-            entries do not silently change an approved distribution.
+            These figures are a snapshot taken when the Founder pressed &quot;Calculate&quot;. Later
+            ledger entries do not silently change an approved distribution.
           </p>
         </Card>
 
         {/* ── The split ────────────────────────────────────────────────── */}
         <Card className="p-4 lg:col-span-3">
-          <h2 className="mb-3 text-sm font-semibold text-decoricks-dark">How the profit was split</h2>
+          <h2 className="mb-3 text-sm font-semibold text-decoricks-dark">
+            How the profit was split
+          </h2>
 
           <div className="mb-3 flex items-baseline justify-between gap-2 rounded-md bg-surface-sunken px-3 py-2">
             <span className="text-sm text-ink-secondary">
@@ -491,21 +533,29 @@ export default function DistributionDetailPage() {
               caption="Per-partner share calculation for this month"
             />
           </div>
-          <div className="space-y-3 md:hidden">{dist.partnerShares.map((share) => shareCard(share))}</div>
+          <div className="space-y-3 md:hidden">
+            {dist.partnerShares.map((share) => shareCard(share))}
+          </div>
 
           {sums && (
             <div className="mt-4 space-y-1 rounded-md border border-line-subtle bg-surface-raised px-3 py-2 text-sm">
               <p className="flex items-baseline justify-between gap-2">
-                <span className="text-ink-secondary">Charity + final partner shares + retained earnings</span>
+                <span className="text-ink-secondary">
+                  Charity + final partner shares + retained earnings
+                </span>
                 <span className="font-semibold tabular-nums text-decoricks-dark">
                   {formatPaisa(sums.charityPlusFinalPlusRetained)}
                 </span>
               </p>
               <p className="flex items-baseline justify-between gap-2">
                 <span className="text-ink-secondary">Net profit</span>
-                <span className="font-semibold tabular-nums text-decoricks-dark">{formatPaisa(dist.netProfit)}</span>
+                <span className="font-semibold tabular-nums text-decoricks-dark">
+                  {formatPaisa(dist.netProfit)}
+                </span>
               </p>
-              <p className={`text-xs font-medium ${sums.balanced ? 'text-status-success' : 'text-status-danger'}`}>
+              <p
+                className={`text-xs font-medium ${sums.balanced ? 'text-status-success' : 'text-status-danger'}`}
+              >
                 {sums.balanced
                   ? 'Adds up exactly — no paisa lost or invented by rounding.'
                   : 'Mismatch — do not approve; reopen and recalculate.'}
@@ -527,7 +577,9 @@ export default function DistributionDetailPage() {
               { label: 'Charity %', value: `${dist.policySnapshot.charityPercentage}%` },
               {
                 label: 'Partner %',
-                value: dist.policySnapshot.partners.map((p) => `${p.name} ${p.percentage}%`).join(', '),
+                value: dist.policySnapshot.partners
+                  .map((p) => `${p.name} ${p.percentage}%`)
+                  .join(', '),
               },
               { label: 'Charity', value: formatPaisa(dist.charityShare.amount) },
               { label: 'Σ partner final shares', value: sums ? formatPaisa(sums.finalTotal) : '—' },
@@ -537,9 +589,13 @@ export default function DistributionDetailPage() {
           />
 
           <p className="mt-3 text-xs text-ink-muted">
-            <strong className="text-ink-secondary">Payouts:</strong> Approving/distributing this record does{' '}
-            <strong>not</strong> post ledger entries. Partner payouts go through the existing{' '}
-            <Link href="/finance/transactions?new=1" className="font-medium text-decoricks-brown hover:underline">
+            <strong className="text-ink-secondary">Payouts:</strong> Approving/distributing this
+            record does <strong>not</strong> post ledger entries. Partner payouts go through the
+            existing{' '}
+            <Link
+              href="/finance/transactions?new=1"
+              className="font-medium text-decoricks-brown hover:underline"
+            >
               Founder-approved partner withdrawal flow
             </Link>{' '}
             (Finance → Transactions). Only a Founder can record partner withdrawals.
@@ -558,15 +614,20 @@ export default function DistributionDetailPage() {
             <Button variant="ghost" onClick={() => setConfirmAction(null)} disabled={busy}>
               Cancel
             </Button>
-            <Button onClick={() => confirmAction && void runAction(confirmAction)} loading={busy} disabled={busy}>
+            <Button
+              onClick={() => confirmAction && void runAction(confirmAction)}
+              loading={busy}
+              disabled={busy}
+            >
               {confirmAction ? CONFIRM_COPY[confirmAction].label : ''}
             </Button>
           </>
         }
       >
         <p className="text-sm text-ink-secondary">
-          Net profit {formatPaisa(dist.netProfit)} · Charity {formatPaisa(dist.charityShare.amount)} ·{' '}
-          Partners {sums ? formatPaisa(sums.finalTotal) : '—'} · Retained {formatPaisa(dist.retainedEarnings)}
+          Net profit {formatPaisa(dist.netProfit)} · Charity {formatPaisa(dist.charityShare.amount)}{' '}
+          · Partners {sums ? formatPaisa(sums.finalTotal) : '—'} · Retained{' '}
+          {formatPaisa(dist.retainedEarnings)}
         </p>
       </Modal>
 
@@ -592,7 +653,10 @@ export default function DistributionDetailPage() {
             label="Partner"
             value={partnerName}
             onChange={(e) => setPartnerName(e.target.value)}
-            options={dist.partnerShares.map((share) => ({ value: share.partnerName, label: share.partnerName }))}
+            options={dist.partnerShares.map((share) => ({
+              value: share.partnerName,
+              label: share.partnerName,
+            }))}
           />
           <Select
             label="Direction"
@@ -600,7 +664,10 @@ export default function DistributionDetailPage() {
             onChange={(e) => setDirection(e.target.value as 'bonus' | 'deduction')}
             options={[
               { value: 'bonus', label: 'Bonus — add to this partner (from retained earnings)' },
-              { value: 'deduction', label: 'Deduction — take from this partner (redistributed to the others)' },
+              {
+                value: 'deduction',
+                label: 'Deduction — take from this partner (redistributed to the others)',
+              },
             ]}
           />
           <Input
@@ -620,11 +687,11 @@ export default function DistributionDetailPage() {
             error={adjustErrors.reason}
           />
           <p className="text-xs text-ink-muted">
-            Charity is never redistributed. A deduction moves paisa to the other partners in proportion to
-            their configured percentages.
+            Charity is never redistributed. A deduction moves paisa to the other partners in
+            proportion to their configured percentages.
           </p>
         </div>
       </Modal>
     </PageTransition>
-  );
+  )
 }

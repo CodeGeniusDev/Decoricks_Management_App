@@ -15,7 +15,7 @@ import {
 describe('Money Utilities', () => {
   describe('pkrToPaisa', () => {
     it('should convert PKR to paisa correctly', () => {
-      expect(pkrToPaisa(150.50)).toBe(15050)
+      expect(pkrToPaisa(150.5)).toBe(15050)
       expect(pkrToPaisa(0)).toBe(0)
       expect(pkrToPaisa(1)).toBe(100)
       expect(pkrToPaisa(1000)).toBe(100000)

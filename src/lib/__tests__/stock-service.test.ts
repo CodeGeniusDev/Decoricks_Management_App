@@ -248,9 +248,27 @@ describe('postMovement', () => {
   it('derives damaged and returned pools instead of storing them', async () => {
     seed(PRODUCT_ID, 'lahore', 5)
 
-    await post({ productId: PRODUCT_ID, movementType: 'sale_out', quantity: 3, fromLocation: 'lahore', unitCost: 50_000 })
-    await post({ productId: PRODUCT_ID, movementType: 'return_damaged', quantity: 1, toLocation: 'lahore', unitCost: 50_000 })
-    await post({ productId: PRODUCT_ID, movementType: 'return_writeoff', quantity: 1, toLocation: 'lahore', unitCost: 50_000 })
+    await post({
+      productId: PRODUCT_ID,
+      movementType: 'sale_out',
+      quantity: 3,
+      fromLocation: 'lahore',
+      unitCost: 50_000,
+    })
+    await post({
+      productId: PRODUCT_ID,
+      movementType: 'return_damaged',
+      quantity: 1,
+      toLocation: 'lahore',
+      unitCost: 50_000,
+    })
+    await post({
+      productId: PRODUCT_ID,
+      movementType: 'return_writeoff',
+      quantity: 1,
+      toLocation: 'lahore',
+      unitCost: 50_000,
+    })
 
     const pools = derivedPools().get(`${PRODUCT_ID.toString()}|lahore`)
     // The ledger alone says: 3 sold out, 1 damaged return, 1 written-off return.
@@ -270,16 +288,25 @@ describe('applyAvailableDelta', () => {
 
     // A read-then-write would happily go to -1 here; the guard must refuse.
     await expect(
-      applyAvailableDelta(db, PRODUCT_ID, 'sheikhupura', -5, { allowNegative: false, session: SESSION })
+      applyAvailableDelta(db, PRODUCT_ID, 'sheikhupura', -5, {
+        allowNegative: false,
+        session: SESSION,
+      })
     ).rejects.toBeInstanceOf(InsufficientStockError)
     expect(await getAvailableAt(db, PRODUCT_ID, 'sheikhupura', SESSION)).toBe(4)
 
-    await applyAvailableDelta(db, PRODUCT_ID, 'sheikhupura', -4, { allowNegative: false, session: SESSION })
+    await applyAvailableDelta(db, PRODUCT_ID, 'sheikhupura', -4, {
+      allowNegative: false,
+      session: SESSION,
+    })
     expect(await getAvailableAt(db, PRODUCT_ID, 'sheikhupura', SESSION)).toBe(0)
   })
 
   it('is a no-op for a zero delta', async () => {
-    await applyAvailableDelta(db, PRODUCT_ID, 'lahore', 0, { allowNegative: false, session: SESSION })
+    await applyAvailableDelta(db, PRODUCT_ID, 'lahore', 0, {
+      allowNegative: false,
+      session: SESSION,
+    })
     expect(mem.collection('stock').docs).toHaveLength(0)
   })
 })
@@ -373,7 +400,9 @@ describe('reverseMovement', () => {
   })
 
   it('404s on a movement that does not exist', async () => {
-    await expect(rev(new ObjectId(), { allowNegative: false })).rejects.toMatchObject({ status: 404 })
+    await expect(rev(new ObjectId(), { allowNegative: false })).rejects.toMatchObject({
+      status: 404,
+    })
   })
 })
 

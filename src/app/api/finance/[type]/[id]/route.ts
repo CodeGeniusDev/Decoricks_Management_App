@@ -16,8 +16,7 @@ const notPermitted = () =>
     {
       success: false,
       error: {
-        message:
-          'Financial records cannot be edited or deleted. Post a reversal entry instead.',
+        message: 'Financial records cannot be edited or deleted. Post a reversal entry instead.',
         code: 'METHOD_NOT_ALLOWED',
       },
       timestamp: new Date().toISOString(),

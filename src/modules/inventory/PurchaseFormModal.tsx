@@ -96,7 +96,9 @@ export const PurchaseFormModal = ({
   const parsedQty = quantity.trim() ? parseQuantity(quantity) : null
   const parsedCost = unitCost.trim() ? parsePkrAmount(unitCost) : null
   const totalPaisa =
-    parsedQty && parsedQty.ok && parsedCost && parsedCost.ok ? parsedQty.value * parsedCost.paisa : null
+    parsedQty && parsedQty.ok && parsedCost && parsedCost.ok
+      ? parsedQty.value * parsedCost.paisa
+      : null
 
   /** The weighted average the server will store, previewed with the same maths. */
   const wacPreview = useMemo(() => {
@@ -116,7 +118,8 @@ export const PurchaseFormModal = ({
     if (!productId) next.productId = 'Choose the product received'
     if (!location) next.location = 'Choose where the stock is going'
     else if (!canWriteLocation(location)) next.location = 'You cannot write stock at this location'
-    if (!parsedQty || !parsedQty.ok) next.quantity = parsedQty ? parsedQty.error : 'Quantity is required'
+    if (!parsedQty || !parsedQty.ok)
+      next.quantity = parsedQty ? parsedQty.error : 'Quantity is required'
     if (!parsedCost || !parsedCost.ok) {
       next.unitCost = parsedCost ? parsedCost.error : 'Unit cost is required'
     }
@@ -167,7 +170,9 @@ export const PurchaseFormModal = ({
               : err.message || 'The purchase could not be recorded.')
         )
       } else {
-        setFormError('Could not reach the server. Press Save again — the retry will not double-record.')
+        setFormError(
+          'Could not reach the server. Press Save again — the retry will not double-record.'
+        )
       }
     } finally {
       savingRef.current = false
@@ -196,7 +201,10 @@ export const PurchaseFormModal = ({
     >
       <div className="flex flex-col gap-4">
         {formError && (
-          <p role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-sm text-status-danger">
+          <p
+            role="alert"
+            className="rounded-md bg-status-danger-bg px-3 py-2 text-sm text-status-danger"
+          >
             {formError}
           </p>
         )}
@@ -216,7 +224,10 @@ export const PurchaseFormModal = ({
                 onChange={(e) => setProductId(e.target.value)}
                 options={[
                   { value: '', label: 'Choose a product' },
-                  ...products.map((item) => ({ value: item._id, label: `${item.name} · ${item.sku}` })),
+                  ...products.map((item) => ({
+                    value: item._id,
+                    label: `${item.name} · ${item.sku}`,
+                  })),
                 ]}
                 disabled={saving}
               />
@@ -246,7 +257,9 @@ export const PurchaseFormModal = ({
                 label="Quantity"
                 inputMode="numeric"
                 value={quantity}
-                error={errors.quantity ?? (parsedQty && !parsedQty.ok ? parsedQty.error : undefined)}
+                error={
+                  errors.quantity ?? (parsedQty && !parsedQty.ok ? parsedQty.error : undefined)
+                }
                 onChange={(e) => setQuantity(e.target.value)}
                 disabled={saving}
               />
@@ -254,8 +267,12 @@ export const PurchaseFormModal = ({
                 label="Unit cost (PKR)"
                 inputMode="decimal"
                 value={unitCost}
-                error={errors.unitCost ?? (parsedCost && !parsedCost.ok ? parsedCost.error : undefined)}
-                hint={product ? `Current weighted average: ${formatPaisa(product.cost)}` : undefined}
+                error={
+                  errors.unitCost ?? (parsedCost && !parsedCost.ok ? parsedCost.error : undefined)
+                }
+                hint={
+                  product ? `Current weighted average: ${formatPaisa(product.cost)}` : undefined
+                }
                 onChange={(e) => setUnitCost(e.target.value)}
                 disabled={saving}
               />
@@ -329,8 +346,9 @@ export const PurchaseFormModal = ({
               {wacPreview && (
                 <p className="mt-2 text-xs text-ink-muted">
                   ({wacPreview.heldUnits} units × {formatPaisa(wacPreview.before)} +{' '}
-                  {parsedQty?.ok ? parsedQty.value : 0} × {formatPaisa(parsedCost?.ok ? parsedCost.paisa : 0)})
-                  ÷ {wacPreview.heldUnits + (parsedQty?.ok ? parsedQty.value : 0)} ={' '}
+                  {parsedQty?.ok ? parsedQty.value : 0} ×{' '}
+                  {formatPaisa(parsedCost?.ok ? parsedCost.paisa : 0)}) ÷{' '}
+                  {wacPreview.heldUnits + (parsedQty?.ok ? parsedQty.value : 0)} ={' '}
                   {formatPaisa(wacPreview.after)}
                 </p>
               )}

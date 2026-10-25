@@ -96,9 +96,13 @@ export function movementEffects(m: MovementLike): PoolDelta[] {
       return [{ location: req(m.toLocation), available: 0, damaged: 0, returned: q }]
     case 'damage':
       // Found broken in the warehouse: leaves available, joins damaged.
-      return [{ location: req(m.fromLocation ?? m.toLocation), available: -q, damaged: q, returned: 0 }]
+      return [
+        { location: req(m.fromLocation ?? m.toLocation), available: -q, damaged: q, returned: 0 },
+      ]
     case 'writeoff':
-      return [{ location: req(m.fromLocation ?? m.toLocation), available: -q, damaged: 0, returned: 0 }]
+      return [
+        { location: req(m.fromLocation ?? m.toLocation), available: -q, damaged: 0, returned: 0 },
+      ]
     case 'transfer':
       return [
         { location: req(m.fromLocation), available: -q, damaged: 0, returned: 0 },
@@ -106,7 +110,14 @@ export function movementEffects(m: MovementLike): PoolDelta[] {
       ]
     case 'adjustment': {
       const delta = m.direction === 'out' ? -q : q
-      return [{ location: req(m.fromLocation ?? m.toLocation), available: delta, damaged: 0, returned: 0 }]
+      return [
+        {
+          location: req(m.fromLocation ?? m.toLocation),
+          available: delta,
+          damaged: 0,
+          returned: 0,
+        },
+      ]
     }
   }
 }
@@ -141,7 +152,11 @@ export function deriveStock(movements: MovementLike[]): Map<string, DerivedStock
 }
 
 /** Available units of a product at one location (0 when never moved). */
-export function availableAt(derived: Map<string, DerivedStock>, productId: string, location: string): number {
+export function availableAt(
+  derived: Map<string, DerivedStock>,
+  productId: string,
+  location: string
+): number {
   return derived.get(`${productId}|${location}`)?.available ?? 0
 }
 

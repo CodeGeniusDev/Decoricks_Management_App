@@ -10,6 +10,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "seed": "tsx scripts/seed.ts",
     "migrate:task-assignees": "tsx scripts/migrate-tasks-assignees.ts",

@@ -36,13 +36,20 @@ interface Props {
 }
 
 const failureCopy: Record<string, string> = {
-  'permission-denied': 'Notifications are blocked in your browser settings. Allow them for this site, then try again.',
-  'permission-dismissed': 'You dismissed the permission prompt, so desktop alerts stay off. You can enable them any time.',
-  'sw-unavailable': 'Your browser could not start the background worker needed for alerts. Reload and try again.',
-  'not-configured': 'The owner has not enabled push keys for this deployment yet, so desktop alerts are unavailable.',
-  'subscribe-failed': 'The browser refused the push subscription. This can happen on a flaky connection — try again.',
-  'store-failed': 'Your device subscribed, but the server could not save it. Check your connection and try again.',
-  'insecure-context': 'Desktop alerts need HTTPS (or localhost). You are on an insecure connection.',
+  'permission-denied':
+    'Notifications are blocked in your browser settings. Allow them for this site, then try again.',
+  'permission-dismissed':
+    'You dismissed the permission prompt, so desktop alerts stay off. You can enable them any time.',
+  'sw-unavailable':
+    'Your browser could not start the background worker needed for alerts. Reload and try again.',
+  'not-configured':
+    'The owner has not enabled push keys for this deployment yet, so desktop alerts are unavailable.',
+  'subscribe-failed':
+    'The browser refused the push subscription. This can happen on a flaky connection — try again.',
+  'store-failed':
+    'Your device subscribed, but the server could not save it. Check your connection and try again.',
+  'insecure-context':
+    'Desktop alerts need HTTPS (or localhost). You are on an insecure connection.',
   unsupported: 'This browser does not support Web Push. In-app notifications still work.',
 }
 
@@ -87,7 +94,8 @@ export const PushEnableControl = ({ compact = false }: Props) => {
     setBusy(true)
     setMessage(null)
     const result = await enablePush()
-    if (!result.ok && result.reason) setMessage(failureCopy[result.reason] ?? 'Could not enable alerts.')
+    if (!result.ok && result.reason)
+      setMessage(failureCopy[result.reason] ?? 'Could not enable alerts.')
     await probe()
     setBusy(false)
     busyRef.current = false
@@ -114,9 +122,17 @@ export const PushEnableControl = ({ compact = false }: Props) => {
       <div className={compact ? 'flex items-center gap-2' : 'space-y-2'}>
         {!compact && <Badge variant="success">Desktop alerts on</Badge>}
         <p className={compact ? 'text-xs text-ink-muted' : 'text-sm text-ink-secondary'}>
-          {compact ? 'Desktop alerts are on for this device.' : 'You will get an alert even when the app is closed, for as long as this device stays registered.'}
+          {compact
+            ? 'Desktop alerts are on for this device.'
+            : 'You will get an alert even when the app is closed, for as long as this device stays registered.'}
         </p>
-        <Button ref={buttonRef} variant="ghost" size="sm" disabled={busy} onClick={() => void onDisable()}>
+        <Button
+          ref={buttonRef}
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => void onDisable()}
+        >
           {compact ? 'Turn off' : 'Turn off desktop alerts'}
         </Button>
       </div>
@@ -135,12 +151,16 @@ export const PushEnableControl = ({ compact = false }: Props) => {
   // Device/browser can't do it, or the server has no keys: state it plainly.
   if (!status.supported) {
     return (
-      <p className={`text-xs text-ink-muted ${compact ? '' : 'text-sm'}`}>{failureCopy.unsupported}</p>
+      <p className={`text-xs text-ink-muted ${compact ? '' : 'text-sm'}`}>
+        {failureCopy.unsupported}
+      </p>
     )
   }
   if (!status.configured) {
     return (
-      <p className={`text-xs text-ink-muted ${compact ? '' : 'text-sm'}`}>{failureCopy['not-configured']}</p>
+      <p className={`text-xs text-ink-muted ${compact ? '' : 'text-sm'}`}>
+        {failureCopy['not-configured']}
+      </p>
     )
   }
 
@@ -159,8 +179,8 @@ export const PushEnableControl = ({ compact = false }: Props) => {
       {!compact && (
         <p className="text-xs text-ink-muted">
           You will be asked for browser permission now — never automatically. On iPhone/iPad this
-          only works once the app is added to the Home Screen, and alerts can be late while the
-          free host is asleep; the in-app bell is always the source of truth.
+          only works once the app is added to the Home Screen, and alerts can be late while the free
+          host is asleep; the in-app bell is always the source of truth.
         </p>
       )}
       {message && (

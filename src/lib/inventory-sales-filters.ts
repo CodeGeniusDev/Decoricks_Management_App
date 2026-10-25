@@ -93,10 +93,7 @@ export function buildOrderFilter(params: OrderFilterParams): Record<string, unkn
  * bound was supplied. Mirrors what every Phase 5 read route already does, in
  * one place so an export cannot cover a different window than its list.
  */
-export function karachiDayWindow(
-  from?: string,
-  to?: string
-): { $gte?: Date; $lte?: Date } | null {
+export function karachiDayWindow(from?: string, to?: string): { $gte?: Date; $lte?: Date } | null {
   const filter: { $gte?: Date; $lte?: Date } = {}
   if (from) {
     const range = karachiDateInputRange(from)

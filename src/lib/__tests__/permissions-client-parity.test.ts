@@ -25,10 +25,9 @@ describe('client permission defaults match the seeded roles', () => {
       for (const mod of PERMISSION_MODULES) {
         for (const action of ALL_PERMISSION_ACTIONS) {
           const expected = role.permissions[mod]?.[action] === true
-          expect(
-            can({ role: role.name }, mod, action),
-            `${role.name}.${mod}.${action}`
-          ).toBe(expected)
+          expect(can({ role: role.name }, mod, action), `${role.name}.${mod}.${action}`).toBe(
+            expected
+          )
         }
       }
     })

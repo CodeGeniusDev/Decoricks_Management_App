@@ -45,8 +45,7 @@ import {
 const FOUNDER = new ObjectId('507f1f77bcf86cd799439011')
 
 /** Minimal Request stand-in — the handler only ever calls `.json()`. */
-const jsonRequest = (body: unknown) =>
-  ({ json: async () => body }) as unknown as Request
+const jsonRequest = (body: unknown) => ({ json: async () => body }) as unknown as Request
 
 /* ------------------------------ 1. roles PUT ------------------------------ */
 
@@ -126,10 +125,9 @@ describe('Phase 1 — permission save reaches MongoDB (roles PUT)', () => {
   })
 
   it('still rejects an unknown action key (the fix does not widen what is storable)', async () => {
-    const res = await putRole(
-      jsonRequest({ permissions: { tasks: { totallyMadeUp: true } } }),
-      { params: Promise.resolve({ id: ROLE_ID.toString() }) }
-    )
+    const res = await putRole(jsonRequest({ permissions: { tasks: { totallyMadeUp: true } } }), {
+      params: Promise.resolve({ id: ROLE_ID.toString() }),
+    })
 
     expect(res.status).toBe(400)
   })

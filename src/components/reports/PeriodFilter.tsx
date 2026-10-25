@@ -61,9 +61,7 @@ export const PeriodFilter = ({ value, onChange, busy = false }: PeriodFilterProp
         label="Period"
         value={value.period}
         disabled={busy}
-        onChange={(event) =>
-          onChange({ ...value, period: event.target.value as ReportPeriod })
-        }
+        onChange={(event) => onChange({ ...value, period: event.target.value as ReportPeriod })}
         options={[
           { value: 'day', label: 'Day' },
           { value: 'week', label: 'Week (Mon–Sun)' },

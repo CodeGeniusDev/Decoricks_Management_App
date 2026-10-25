@@ -21,10 +21,7 @@ interface ErrorStateProps {
  * action label because almost every caller here is a failed fetch.
  */
 export const ErrorState = ({ title, description, action }: ErrorStateProps) => (
-  <div
-    className="flex flex-col items-center gap-2 px-4 py-10 text-center sm:py-12"
-    role="alert"
-  >
+  <div className="flex flex-col items-center gap-2 px-4 py-10 text-center sm:py-12" role="alert">
     <span className="mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-status-danger-bg text-status-danger">
       <IconAlert size={20} />
     </span>

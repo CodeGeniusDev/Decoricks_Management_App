@@ -154,24 +154,39 @@ export const verifyNoDrift = async (db: Db): Promise<DriftReport> => {
     const col = db.collection(entry.collection)
     const live = await col.countDocuments()
     const objectIds = entry.ids.map((id) => new ObjectId(id))
-    const found = await col
-      .find({ _id: { $in: objectIds } }, { projection: { _id: 1 } })
-      .toArray()
+    const found = await col.find({ _id: { $in: objectIds } }, { projection: { _id: 1 } }).toArray()
     const presentIds = new Set(found.map((d) => String(d._id)))
     const missing = entry.ids.filter((id) => !presentIds.has(id))
     const present = presentIds.size
     totalPresent += present
     const extra = live - present
 
-    perCollection.push({ collection: entry.collection, expected: entry.ids.length, live, present, missing, extra })
+    perCollection.push({
+      collection: entry.collection,
+      expected: entry.ids.length,
+      live,
+      present,
+      missing,
+      extra,
+    })
 
     if (missing.length > 0)
-      reasons.push(`${entry.collection}: ${missing.length} frozen id(s) not present (${missing.join(', ')})`)
+      reasons.push(
+        `${entry.collection}: ${missing.length} frozen id(s) not present (${missing.join(', ')})`
+      )
     if (extra > 0)
-      reasons.push(`${entry.collection}: ${extra} unexpected live document(s) beyond the frozen set — refusing to assume they are demo`)
+      reasons.push(
+        `${entry.collection}: ${extra} unexpected live document(s) beyond the frozen set — refusing to assume they are demo`
+      )
   }
 
-  return { ok: reasons.length === 0, totalExpected: EXPECTED_TOTAL, totalPresent, perCollection, reasons }
+  return {
+    ok: reasons.length === 0,
+    totalExpected: EXPECTED_TOTAL,
+    totalPresent,
+    perCollection,
+    reasons,
+  }
 }
 
 export interface DeleteResult {
@@ -267,9 +282,18 @@ export const assertZeroActivity = async (db: Db): Promise<ZeroActivityResult> =>
     // With no ledger rows, the balance must equal the stored opening balance.
     const opening = Number(a.openingBalance ?? 0)
     const delta = ledger.reduce((sum, e) => {
-      const ids = [e.accountId, e.fromAccountId, e.toAccountId].filter((x) => x && String(x) === String(a._id))
+      const ids = [e.accountId, e.fromAccountId, e.toAccountId].filter(
+        (x) => x && String(x) === String(a._id)
+      )
       if (ids.length === 0) return sum
-      const sign = e.type === 'expense' || e.type === 'partner_withdrawal' ? -1 : e.type === 'transfer' ? (e.fromAccountId && String(e.fromAccountId) === String(a._id) ? -1 : 1) : 1
+      const sign =
+        e.type === 'expense' || e.type === 'partner_withdrawal'
+          ? -1
+          : e.type === 'transfer'
+            ? e.fromAccountId && String(e.fromAccountId) === String(a._id)
+              ? -1
+              : 1
+            : 1
       const amt = Number(e.amount ?? 0) * (e.isReversal ? -1 : 1)
       return sum + sign * amt
     }, 0)
@@ -286,11 +310,12 @@ export const assertZeroActivity = async (db: Db): Promise<ZeroActivityResult> =>
   const productCount = await db.collection('products').countDocuments()
   if (stockCount !== 0 || productCount !== 0) {
     ok = false
-    details.push(`FAIL inventory not empty: stock=${stockCount} products=${productCount} (expected 0/0)`)
+    details.push(
+      `FAIL inventory not empty: stock=${stockCount} products=${productCount} (expected 0/0)`
+    )
   } else {
     details.push('ok inventory value = 0 (no products/stock)')
   }
 
   return { ok, details }
 }
-

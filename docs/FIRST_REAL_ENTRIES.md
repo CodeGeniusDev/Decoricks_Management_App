@@ -17,8 +17,8 @@ own engines — the numbers shown are real output, not illustrations.
 
 Every paisa in your accounts must be explained **exactly once** — either as an
 account's opening balance or as a ledger entry. Explained twice = double
-counted. The reconciliation screen checks that the books are *consistent*, not
-that they are *true* — this is the single most important thing to understand
+counted. The reconciliation screen checks that the books are _consistent_, not
+that they are _true_ — this is the single most important thing to understand
 before your first entries (proved with real output below).
 
 ---
@@ -71,7 +71,7 @@ Reconciliation (all 9 checks): ALL PASS
 
 Same cash as Approach 1 — and on top of it: per-partner attribution, a dated
 auditable trail, the money visible as a real inflow in Cash Flow (under
-*Capital in*, never under revenue), and no effect on P&L or distributions.
+_Capital in_, never under revenue), and no effect on P&L or distributions.
 **This is the recommended method: keep all opening balances at 0 and post the
 contributions as `Partner capital` entries.**
 
@@ -110,8 +110,8 @@ paisa, but the cost is genuinely the business's.
 the same date:**
 
 1. Finance → + New entry → **Partner capital**: Ali, PKR 18,000, account =
-   Bank, note *"In-kind capital: paid PKR 18,000 fabric from personal pocket
-   before the app"*.
+   Bank, note _"In-kind capital: paid PKR 18,000 fabric from personal pocket
+   before the app"_.
 2. Finance → + New entry → **Expense**: PKR 18,000, account = Bank, category
    (e.g. Product Purchasing / Miscellaneous), same note.
 
@@ -141,6 +141,7 @@ Why this is correct on all three fronts at once:
   `Partner withdrawal` (or unequal profit split) can reference it.
 
 Wrong alternatives, and how they break:
+
 - **Expense only** (bank account debited): cash drops by PKR 18,000 the
   business never had — the Bank balance now lies by 18,000.
 - **Not recording it at all**: Ali's PKR 43,000 is invisible; a later
@@ -160,18 +161,18 @@ only for months where P&L shows positive net profit.
 Order matters only in two places: partners and accounts must exist before you
 reference them, and products must exist before stock or orders can move them.
 
-| Step | Screen | Enter |
-| --- | --- | --- |
-| 1 | **Settings → Users / Business** | Confirm the four partner users and the profit-sharing percentages + charity %. Set the withdrawal lock date if capital shouldn't leave yet. |
-| 2 | **Finance → Accounts** | Keep Cash / Bank / Wallet opening balances at **0** — your real money arrives in step 3 as ledger entries. (Use the opening-balance field only for money genuinely in an account that you cannot or choose not to trace to a contribution.) |
-| 3 | **Finance → + New entry → Partner capital** | The four PKR 25,000 contributions (one entry per partner, dated, payment method, note). This is your verified start. |
-| 4 | **Finance → + New entry → Expense (+ capital pair)** | Any pre-app costs a partner paid personally — as the pair shown in (b). |
-| 5 | **Suppliers** | Add your real suppliers (name, contact, payment terms). |
-| 6 | **Inventory → Products** | Add real products with prices. |
-| 7 | **Inventory → Purchase (stock-in)** | First stock purchase from a supplier, paid from the Bank account — the purchase posts the expense/COGS side and raises stock value together, in one flow. |
-| 8 | **Sales → New order** | First real customer order. Order income and delivery flows post through the ledger the same way the demo records did. |
-| 9 | **Finance → Cash Flow / Profit & Loss** | Cross-check: *capital in* PKR 100,000, revenue/expense matching steps 4–8. |
-| 10 | **Reconciliation** | Run it (Founder). All checks pass = every screen tells the same story. Then do the same on the last day of the month before running **Distributions**. |
+| Step | Screen                                               | Enter                                                                                                                                                                                                                                       |
+| ---- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | **Settings → Users / Business**                      | Confirm the four partner users and the profit-sharing percentages + charity %. Set the withdrawal lock date if capital shouldn't leave yet.                                                                                                 |
+| 2    | **Finance → Accounts**                               | Keep Cash / Bank / Wallet opening balances at **0** — your real money arrives in step 3 as ledger entries. (Use the opening-balance field only for money genuinely in an account that you cannot or choose not to trace to a contribution.) |
+| 3    | **Finance → + New entry → Partner capital**          | The four PKR 25,000 contributions (one entry per partner, dated, payment method, note). This is your verified start.                                                                                                                        |
+| 4    | **Finance → + New entry → Expense (+ capital pair)** | Any pre-app costs a partner paid personally — as the pair shown in (b).                                                                                                                                                                     |
+| 5    | **Suppliers**                                        | Add your real suppliers (name, contact, payment terms).                                                                                                                                                                                     |
+| 6    | **Inventory → Products**                             | Add real products with prices.                                                                                                                                                                                                              |
+| 7    | **Inventory → Purchase (stock-in)**                  | First stock purchase from a supplier, paid from the Bank account — the purchase posts the expense/COGS side and raises stock value together, in one flow.                                                                                   |
+| 8    | **Sales → New order**                                | First real customer order. Order income and delivery flows post through the ledger the same way the demo records did.                                                                                                                       |
+| 9    | **Finance → Cash Flow / Profit & Loss**              | Cross-check: _capital in_ PKR 100,000, revenue/expense matching steps 4–8.                                                                                                                                                                  |
+| 10   | **Reconciliation**                                   | Run it (Founder). All checks pass = every screen tells the same story. Then do the same on the last day of the month before running **Distributions**.                                                                                      |
 
 Every step from 3 onwards writes an append-only audit entry (who, when, what,
 before/after). Nothing here needs Atlas; the app is the only correct place to

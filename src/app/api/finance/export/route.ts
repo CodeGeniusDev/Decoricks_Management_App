@@ -42,7 +42,10 @@ async function __GET(request: NextRequest) {
     const { filter } = buildLedgerFilter(parsed.data)
 
     const [entries, accounts, categories] = await Promise.all([
-      getLedgerCollection(db).find(filter as never).sort({ date: -1, createdAt: -1 }).toArray(),
+      getLedgerCollection(db)
+        .find(filter as never)
+        .sort({ date: -1, createdAt: -1 })
+        .toArray(),
       loadAccounts(db),
       loadCategories(db),
     ])

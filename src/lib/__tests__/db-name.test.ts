@@ -301,10 +301,7 @@ describe('productionDatabaseRefusal / assertProductionRunnable — hard boot gat
   const prod = { nodeEnv: 'production', inTestRunner: false }
 
   it('refuses a production process with no explicit database (driver would fall back to "test")', () => {
-    const msg = productionDatabaseRefusal(
-      { dbName: undefined, source: 'driver default' },
-      prod,
-    )
+    const msg = productionDatabaseRefusal({ dbName: undefined, source: 'driver default' }, prod)
     expect(msg).toMatch(/no explicit database/)
     expect(msg).toMatch(/decoricks_prod/)
   })
@@ -324,19 +321,26 @@ describe('productionDatabaseRefusal / assertProductionRunnable — hard boot gat
 
   it('allows the real production database', () => {
     expect(
-      productionDatabaseRefusal({ dbName: 'decoricks_prod', source: 'MONGODB_DB' }, prod),
+      productionDatabaseRefusal({ dbName: 'decoricks_prod', source: 'MONGODB_DB' }, prod)
     ).toBeNull()
   })
 
   it('exempts a real test runner even under NODE_ENV=production (Playwright web-server)', () => {
     const runner = { nodeEnv: 'production', inTestRunner: true }
-    expect(productionDatabaseRefusal({ dbName: 'test_e2e', source: 'MONGODB_DB' }, runner)).toBeNull()
-    expect(productionDatabaseRefusal({ dbName: 'test', source: 'driver default' }, runner)).toBeNull()
+    expect(
+      productionDatabaseRefusal({ dbName: 'test_e2e', source: 'MONGODB_DB' }, runner)
+    ).toBeNull()
+    expect(
+      productionDatabaseRefusal({ dbName: 'test', source: 'driver default' }, runner)
+    ).toBeNull()
   })
 
   it('is a no-op outside production (dev still only warns, never refuses)', () => {
     expect(
-      productionDatabaseRefusal({ dbName: 'test', source: 'MONGODB_DB' }, { nodeEnv: 'development', inTestRunner: false }),
+      productionDatabaseRefusal(
+        { dbName: 'test', source: 'MONGODB_DB' },
+        { nodeEnv: 'development', inTestRunner: false }
+      )
     ).toBeNull()
   })
 
@@ -344,14 +348,18 @@ describe('productionDatabaseRefusal / assertProductionRunnable — hard boot gat
     // No MONGODB_DB + empty-path URI → driver default → would land on "test".
     expect(() => assertProductionRunnable(BASE)).toThrow(/no explicit database/)
     expect(() =>
-      assertProductionRunnable({ MONGODB_URI: 'mongodb://h', MONGODB_DB: 'test', NODE_ENV: 'production' }),
+      assertProductionRunnable({
+        MONGODB_URI: 'mongodb://h',
+        MONGODB_DB: 'test',
+        NODE_ENV: 'production',
+      })
     ).toThrow(/against database "test"/)
     expect(() =>
       assertProductionRunnable({
         MONGODB_URI: 'mongodb://h',
         MONGODB_DB: 'decoricks_test',
         NODE_ENV: 'production',
-      }),
+      })
     ).toThrow(/test-shaped/)
   })
 
@@ -361,9 +369,11 @@ describe('productionDatabaseRefusal / assertProductionRunnable — hard boot gat
         MONGODB_URI: 'mongodb://h',
         MONGODB_DB: 'decoricks_prod',
         NODE_ENV: 'production',
-      }),
+      })
     ).not.toThrow()
-    expect(() => assertProductionRunnable({ MONGODB_URI: 'mongodb://h', NODE_ENV: 'development' })).not.toThrow()
+    expect(() =>
+      assertProductionRunnable({ MONGODB_URI: 'mongodb://h', NODE_ENV: 'development' })
+    ).not.toThrow()
   })
 })
 
@@ -377,7 +387,14 @@ describe('isProductionDatabaseName — the absolute seed/restore gate (Stage 2)'
   it('does not treat dev, test sandboxes, the bare legacy "test", or near-miss typos as production', () => {
     // A typo like decoricks_prod2 is NOT production and falls through to the
     // ordinary consent rules rather than being silently refused as prod.
-    for (const name of ['decoricks_dev', 'decoricks_test', 'test', 'test_e2e', 'decoricks_prod2', 'decoricks']) {
+    for (const name of [
+      'decoricks_dev',
+      'decoricks_test',
+      'test',
+      'test_e2e',
+      'decoricks_prod2',
+      'decoricks',
+    ]) {
       expect(isProductionDatabaseName(name), `${name} is not the prod name`).toBe(false)
     }
   })

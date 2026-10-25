@@ -36,7 +36,11 @@ import os from 'node:os'
 import { createHash } from 'node:crypto'
 import { MongoClient, ObjectId } from 'mongodb'
 import { getEnv } from '../src/lib/env'
-import { resolveDatabase, assertScriptDatabaseConsent, looksLikeTestDatabase } from '../src/lib/db-name'
+import {
+  resolveDatabase,
+  assertScriptDatabaseConsent,
+  looksLikeTestDatabase,
+} from '../src/lib/db-name'
 import { reconcile } from '../src/lib/metrics/reconciliation'
 import {
   DEMO_MANIFEST,
@@ -66,7 +70,10 @@ const CONFIRM = process.argv.find((a) => a.startsWith(CONFIRM_PREFIX))?.slice(CO
 
 const redactedHosts = (uri: string): string => {
   const s = uri.replace(/^mongodb(\+srv)?:\/\//i, '')
-  return s.slice(s.lastIndexOf('@') + 1).split('/')[0].split('?')[0]
+  return s
+    .slice(s.lastIndexOf('@') + 1)
+    .split('/')[0]
+    .split('?')[0]
 }
 
 /** Transactions are unsupported on standalone mongod; detect the family of errors. */
@@ -93,7 +100,15 @@ const findFreshVerifiedBackup = (
     .map((f) => {
       const p = path.join(dir, f)
       try {
-        return { p, meta: JSON.parse(readFileSync(p, 'utf8')) as { sourceDatabase: string; archive: string; sha256: string; generatedAt: string } }
+        return {
+          p,
+          meta: JSON.parse(readFileSync(p, 'utf8')) as {
+            sourceDatabase: string
+            archive: string
+            sha256: string
+            generatedAt: string
+          },
+        }
       } catch {
         return null
       }
@@ -109,7 +124,9 @@ const findFreshVerifiedBackup = (
     if (age > maxAgeMs) continue
     const actual = createHash('sha256').update(readFileSync(encPath)).digest('hex')
     if (actual !== meta.sha256) {
-      console.error(`Backup integrity check FAILED for ${meta.archive}: manifest sha256 ${meta.sha256}, recomputed ${actual}`)
+      console.error(
+        `Backup integrity check FAILED for ${meta.archive}: manifest sha256 ${meta.sha256}, recomputed ${actual}`
+      )
       continue
     }
     return { encPath, sha256: actual, ageMinutes: Math.round(age / 60000) }
@@ -134,7 +151,11 @@ const loadCheckpoint = (dbName: string): Checkpoint => {
 }
 
 /** Ordered deletes with a resumable checkpoint (fallback when transactions are unavailable). */
-const deleteWithCheckpoint = async (client: MongoClient, dbName: string, mode: 'ordered-checkpoint') => {
+const deleteWithCheckpoint = async (
+  client: MongoClient,
+  dbName: string,
+  mode: 'ordered-checkpoint'
+) => {
   const db = client.db(dbName)
   const cp = loadCheckpoint(dbName)
   const counts: Record<string, number> = {}
@@ -172,12 +193,16 @@ async function main(): Promise<void> {
     console.log(`  host(s)   : ${redactedHosts(uri)} (credentials redacted)`)
     console.log(`  database  : ${dbName} (resolved from ${target.source})`)
     console.log(`  mode      : ${APPLY ? 'APPLY (will delete)' : 'DRY-RUN (nothing deleted)'}`)
-    console.log(`  frozen set: ${EXPECTED_TOTAL} documents across ${DEMO_MANIFEST.length} collections\n`)
+    console.log(
+      `  frozen set: ${EXPECTED_TOTAL} documents across ${DEMO_MANIFEST.length} collections\n`
+    )
 
     // 3. confirm gate + 4. consent gate (only enforced for a real write).
     if (APPLY) {
       if (CONFIRM !== dbName) {
-        console.error(`Refusing to delete: --confirm=${CONFIRM ?? '(missing)'} does not match the target "${dbName}".\nRe-run with --confirm=${dbName}`)
+        console.error(
+          `Refusing to delete: --confirm=${CONFIRM ?? '(missing)'} does not match the target "${dbName}".\nRe-run with --confirm=${dbName}`
+        )
         process.exitCode = 1
         return
       }
@@ -204,7 +229,9 @@ async function main(): Promise<void> {
         return
       }
       backupSha256 = fresh.sha256
-      console.log(`Backup OK: ${path.basename(fresh.encPath)} (${readFileSync(fresh.encPath).length} bytes, ${fresh.ageMinutes} min old)`)
+      console.log(
+        `Backup OK: ${path.basename(fresh.encPath)} (${readFileSync(fresh.encPath).length} bytes, ${fresh.ageMinutes} min old)`
+      )
       console.log(`  sha256 ${backupSha256}\n`)
     }
 
@@ -212,7 +239,9 @@ async function main(): Promise<void> {
     const drift = await verifyNoDrift(db)
     console.log('Drift check (live counts vs frozen set):')
     for (const c of drift.perCollection)
-      console.log(`  ${c.collection.padEnd(18)} expected=${c.expected} live=${c.live} present=${c.present}${c.extra ? ` EXTRA=${c.extra}` : ''}${c.missing.length ? ` MISSING=${c.missing.length}` : ''}`)
+      console.log(
+        `  ${c.collection.padEnd(18)} expected=${c.expected} live=${c.live} present=${c.present}${c.extra ? ` EXTRA=${c.extra}` : ''}${c.missing.length ? ` MISSING=${c.missing.length}` : ''}`
+      )
     if (!drift.ok) {
       console.error('\nABORT — database has drifted from the reviewed Stage-1 set:')
       drift.reasons.forEach((r) => console.error(`  - ${r}`))
@@ -225,13 +254,17 @@ async function main(): Promise<void> {
     const configLines: string[] = []
     for (const [name, expected] of Object.entries(CONFIG_BASELINE_PROD)) {
       const actual = await db.collection(name).countDocuments()
-      configLines.push(`  ${name.padEnd(18)} ${actual === expected ? 'ok' : 'CHECK'} = ${actual} (baseline ${expected})`)
+      configLines.push(
+        `  ${name.padEnd(18)} ${actual === expected ? 'ok' : 'CHECK'} = ${actual} (baseline ${expected})`
+      )
     }
     console.log('Configuration (must stay untouched):')
     configLines.forEach((l) => console.log(l))
 
     if (!APPLY) {
-      console.log(`\nDRY-RUN complete. To apply: --apply --confirm=${dbName} (with DECORICKS_ALLOW_PROD_DB=1 and a fresh backup).`)
+      console.log(
+        `\nDRY-RUN complete. To apply: --apply --confirm=${dbName} (with DECORICKS_ALLOW_PROD_DB=1 and a fresh backup).`
+      )
       return
     }
 
@@ -249,23 +282,40 @@ async function main(): Promise<void> {
         counts = Object.fromEntries(result.perCollection.map((c) => [c.collection, c.deleted]))
         total = result.totalDeleted
         // 7. audit entry inside the same transaction.
-        await db
-          .collection('auditLog')
-          .insertOne(buildCleanupAuditDoc({ database: dbName, counts, totalDeleted: total, backupSha256, operator, mode: 'transaction' }) as never, { session })
+        await db.collection('auditLog').insertOne(
+          buildCleanupAuditDoc({
+            database: dbName,
+            counts,
+            totalDeleted: total,
+            backupSha256,
+            operator,
+            mode: 'transaction',
+          }) as never,
+          { session }
+        )
       })
       transactionSucceeded = true
       usedMode = 'transaction'
       console.log('\nDeletion ran in a SINGLE TRANSACTION.')
     } catch (err) {
       if (!isTransactionUnsupported(err)) throw err
-      console.log(`\nCluster does not support transactions (${(err as Error).message}); falling back to ORDERED RESUMABLE deletes with a checkpoint file.`)
+      console.log(
+        `\nCluster does not support transactions (${(err as Error).message}); falling back to ORDERED RESUMABLE deletes with a checkpoint file.`
+      )
       usedMode = 'ordered-checkpoint'
       const fallback = await deleteWithCheckpoint(client, dbName, 'ordered-checkpoint')
       counts = fallback.counts
       total = fallback.total
-      await db
-        .collection('auditLog')
-        .insertOne(buildCleanupAuditDoc({ database: dbName, counts, totalDeleted: total, backupSha256, operator, mode: 'ordered-checkpoint' }) as never)
+      await db.collection('auditLog').insertOne(
+        buildCleanupAuditDoc({
+          database: dbName,
+          counts,
+          totalDeleted: total,
+          backupSha256,
+          operator,
+          mode: 'ordered-checkpoint',
+        }) as never
+      )
       rmSync(checkpointPath(dbName), { force: true })
     } finally {
       await session.endSession()
@@ -287,16 +337,28 @@ async function main(): Promise<void> {
     console.log('\nPost-check: full-history reconcile()')
     const now = new Date()
     const report = await reconcile(db, { start: new Date(0), end: now }, now)
-    report.checks.forEach((c) => console.log(`  ${c.pass ? 'PASS' : 'FAIL'} ${c.name}: a=${c.a} b=${c.b} diff=${c.difference}`))
+    report.checks.forEach((c) =>
+      console.log(`  ${c.pass ? 'PASS' : 'FAIL'} ${c.name}: a=${c.a} b=${c.b} diff=${c.difference}`)
+    )
 
     const configIntactAfter = await Promise.all(
-      Object.entries(CONFIG_BASELINE_PROD).map(async ([name, expected]) => ({ name, actual: await db.collection(name).countDocuments(), expected }))
+      Object.entries(CONFIG_BASELINE_PROD).map(async ([name, expected]) => ({
+        name,
+        actual: await db.collection(name).countDocuments(),
+        expected,
+      }))
     )
     const configOk = configIntactAfter.every((c) => c.actual === c.expected)
     console.log(`\nConfig intact after cleanup: ${configOk ? 'yes' : 'NO — REVIEW IMMEDIATELY'}`)
 
-    const success = zero.ok && report.allPass && configOk && (usedMode === 'ordered-checkpoint' || transactionSucceeded)
-    console.log(`\nRESULT: ${success ? 'CLEAN — zero activity, opening balances intact, all reconcile checks pass.' : 'PROBLEM — review the FAIL/CHECK lines above.'}`)
+    const success =
+      zero.ok &&
+      report.allPass &&
+      configOk &&
+      (usedMode === 'ordered-checkpoint' || transactionSucceeded)
+    console.log(
+      `\nRESULT: ${success ? 'CLEAN — zero activity, opening balances intact, all reconcile checks pass.' : 'PROBLEM — review the FAIL/CHECK lines above.'}`
+    )
     process.exitCode = success ? 0 : 1
   } finally {
     await client.close()
@@ -307,4 +369,3 @@ void main().catch((err) => {
   console.error('Cleanup failed:', err instanceof Error ? err.message : String(err))
   process.exit(1)
 })
-

@@ -1,14 +1,14 @@
 import { NextRequest } from 'next/server'
 import { ObjectId, type ClientSession, type Db } from 'mongodb'
 import { handleRouteError, withAuth, getRequestMeta, HttpError, logRouteFailure } from '@/lib/http'
-import { authorize, authorizeScoped, authorizeStockWrite, SCOPED_SALES_FULL_EDIT } from '@/lib/authorization'
-import { getDatabase } from '@/lib/mongodb'
 import {
-  getOrderCollection,
-  orderToJSON,
-  type Order,
-  type OrderItem,
-} from '@/lib/models/Sales'
+  authorize,
+  authorizeScoped,
+  authorizeStockWrite,
+  SCOPED_SALES_FULL_EDIT,
+} from '@/lib/authorization'
+import { getDatabase } from '@/lib/mongodb'
+import { getOrderCollection, orderToJSON, type Order, type OrderItem } from '@/lib/models/Sales'
 import { ensureInventoryIndexes } from '@/lib/models/Inventory'
 import { getProductCollection, type Location } from '@/lib/models/Product'
 import { orderStatusUpdateSchema, orderEditSchema } from '@/lib/schemas/operations'
@@ -163,9 +163,7 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
 
     const willCancel = target === 'cancelled' && existing.orderStatus !== 'cancelled'
     const willRefuse =
-      parsed.data.codOutcome === 'refused' &&
-      existing.codOutcome !== 'refused' &&
-      !willCancel
+      parsed.data.codOutcome === 'refused' && existing.codOutcome !== 'refused' && !willCancel
     const restoresStock = willCancel || willRefuse
 
     if (willRefuse && existing.orderStatus !== 'shipped' && existing.orderStatus !== 'returned') {
@@ -203,7 +201,10 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
     // Stock authorization for restores uses the location the reservation was
     // made at; a missing one (legacy order) has no movements to restore.
     if (restoresStock && (existing.stockMovementIds?.length ?? 0) > 0) {
-      await authorizeStockWrite([existing.shipFromLocation ?? 'sheikhupura', existing.shipFromLocation ?? 'lahore'])
+      await authorizeStockWrite([
+        existing.shipFromLocation ?? 'sheikhupura',
+        existing.shipFromLocation ?? 'lahore',
+      ])
     }
 
     const allowNegative = await getAllowNegativeStock(db)
@@ -237,7 +238,12 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
       // Dispatch: record the courier expense exactly once.
       const dispatching = target === 'shipped' && !fresh.courierExpenseTransactionId
       if (dispatching && (fresh.courierCharges ?? 0) > 0) {
-        const courierAccountId = await resolvePostingAccount(db, accountId, 'purchasingAccountId', session)
+        const courierAccountId = await resolvePostingAccount(
+          db,
+          accountId,
+          'purchasingAccountId',
+          session
+        )
         const ledger = await createLedgerEntry(
           db,
           {
@@ -247,7 +253,9 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
             accountId: courierAccountId.toString(),
             category: COURIER_CATEGORY,
             note: `Order ${fresh.orderNumber}: courier ${fresh.courierName ? `(${fresh.courierName}) ` : ''}charges`,
-            idempotencyKey: idempotencyKey ? `${idempotencyKey}:courier` : `order:${fresh._id!.toString()}:courier`,
+            idempotencyKey: idempotencyKey
+              ? `${idempotencyKey}:courier`
+              : `order:${fresh._id!.toString()}:courier`,
           },
           actor,
           { session }
@@ -257,25 +265,33 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
 
       // Delivered + cash confirmed: the one income posting for the order.
       const willBeDelivered = target === 'delivered' || fresh.orderStatus === 'delivered'
-      const confirmCash = cashReceived === true && !fresh.incomeTransactionId && !fresh.codCashReceivedAt
+      const confirmCash =
+        cashReceived === true && !fresh.incomeTransactionId && !fresh.codCashReceivedAt
       if (confirmCash) {
         if (!willBeDelivered) {
           throw new HttpError('Cash receipt requires a delivered order', 400, 'VALIDATION_ERROR', [
             { path: 'cashReceived', message: 'Deliver the order first' },
           ])
         }
-        const incomeAccountId = await resolvePostingAccount(db, accountId, 'salesIncomeAccountId', session)
+        const incomeAccountId = await resolvePostingAccount(
+          db,
+          accountId,
+          'salesIncomeAccountId',
+          session
+        )
         const ledger = await createLedgerEntry(
           db,
           {
             type: 'income',
             amount: fresh.total,
-            date: (date ? parseLedgerDate(date) : fresh.deliveryDate ?? now).toISOString(),
+            date: (date ? parseLedgerDate(date) : (fresh.deliveryDate ?? now)).toISOString(),
             accountId: incomeAccountId.toString(),
             category: INCOME_CATEGORY,
             paymentMethod: fresh.paymentMethod,
             note: `Order ${fresh.orderNumber}: ${fresh.customerName} (${fresh.salesChannel}) — ${formatPaisa(fresh.total)}`,
-            idempotencyKey: idempotencyKey ? `${idempotencyKey}:income` : `order:${fresh._id!.toString()}:income`,
+            idempotencyKey: idempotencyKey
+              ? `${idempotencyKey}:income`
+              : `order:${fresh._id!.toString()}:income`,
           },
           actor,
           { session }
@@ -418,7 +434,14 @@ async function __PUT(request: NextRequest, context: RouteContext) {
 
       if (mustReReserve) {
         const gen = (fresh.reserveGeneration ?? 0) + 1
-        await restoreReservedStock(db, fresh, actor.id, `re-reserved (edit #${gen})`, allowNegative, session)
+        await restoreReservedStock(
+          db,
+          fresh,
+          actor.id,
+          `re-reserved (edit #${gen})`,
+          allowNegative,
+          session
+        )
 
         const items = pricedItems ?? fresh.items
         const location = nextLocation ?? fresh.shipFromLocation

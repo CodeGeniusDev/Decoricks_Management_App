@@ -172,7 +172,11 @@ export function TaskDetailPanel(props: TaskDetailProps) {
 
   const remove = useCallback(
     async (id: string) => {
-      if (!window.confirm('Delete this comment? The row stays in the audit trail with its body redacted.'))
+      if (
+        !window.confirm(
+          'Delete this comment? The row stays in the audit trail with its body redacted.'
+        )
+      )
         return
       try {
         const res = await apiFetch(`/api/tasks/${taskId}/comments/${id}`, { method: 'DELETE' })
@@ -223,9 +227,7 @@ export function TaskDetailPanel(props: TaskDetailProps) {
                     <span title={c.createdAt}>{relTime(c.createdAt, now)}</span>
                   </div>
                   {c.isDeleted ? (
-                    <p className="mt-1 text-sm italic text-ink-muted">
-                      This comment was deleted.
-                    </p>
+                    <p className="mt-1 text-sm italic text-ink-muted">This comment was deleted.</p>
                   ) : showEditBox ? (
                     <div className="mt-2 flex flex-col gap-2">
                       <Textarea
@@ -246,7 +248,11 @@ export function TaskDetailPanel(props: TaskDetailProps) {
                         >
                           Cancel
                         </Button>
-                        <Button size="sm" onClick={() => void saveEdit(c._id)} disabled={savingEdit}>
+                        <Button
+                          size="sm"
+                          onClick={() => void saveEdit(c._id)}
+                          disabled={savingEdit}
+                        >
                           {savingEdit ? 'Saving…' : 'Save'}
                         </Button>
                       </div>
@@ -287,7 +293,11 @@ export function TaskDetailPanel(props: TaskDetailProps) {
             <p className="text-xs text-ink-muted">
               Editable for {editWindowMinutes} min after posting.
             </p>
-            <Button size="sm" onClick={() => void post()} disabled={posting || composer.trim().length === 0}>
+            <Button
+              size="sm"
+              onClick={() => void post()}
+              disabled={posting || composer.trim().length === 0}
+            >
               {posting ? 'Posting…' : 'Comment'}
             </Button>
           </div>
@@ -319,4 +329,3 @@ export function TaskDetailPanel(props: TaskDetailProps) {
     </div>
   )
 }
-

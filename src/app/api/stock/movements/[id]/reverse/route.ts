@@ -3,7 +3,11 @@ import { ObjectId } from 'mongodb'
 import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorizeStockWrite, requireAuth } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
-import { getStockMovementCollection, ensureInventoryIndexes, movementToJSON } from '@/lib/models/Inventory'
+import {
+  getStockMovementCollection,
+  ensureInventoryIndexes,
+  movementToJSON,
+} from '@/lib/models/Inventory'
 import { stockMovementReverseSchema } from '@/lib/schemas/operations'
 import { notFoundError, successResponse, validationError } from '@/lib/api-response'
 import { recordAuditEntry } from '@/lib/audit'
@@ -41,7 +45,9 @@ async function __POST(request: NextRequest, context: RouteContext) {
     const db = await getDatabase()
     await ensureInventoryIndexes(db)
 
-    const original = await getStockMovementCollection(db).findOne({ _id: new ObjectId(id) } as never)
+    const original = await getStockMovementCollection(db).findOne({
+      _id: new ObjectId(id),
+    } as never)
     if (!original) return notFoundError('Stock movement not found')
     if (original.isReversal || original.status === 'reversed') {
       return validationError('Already corrected', [
@@ -51,7 +57,9 @@ async function __POST(request: NextRequest, context: RouteContext) {
 
     // The reversal touches the same locations as the original; STRICT rule:
     // every stock write checks per location.
-    const locations = [...new Set([original.fromLocation, original.toLocation].filter(Boolean))] as string[]
+    const locations = [
+      ...new Set([original.fromLocation, original.toLocation].filter(Boolean)),
+    ] as string[]
     await authorizeStockWrite(locations.length > 0 ? locations : ['sheikhupura', 'lahore'])
     const auth = await requireAuth()
 
@@ -80,7 +88,11 @@ async function __POST(request: NextRequest, context: RouteContext) {
         entityType: 'stock',
         entityId: original._id ?? null,
         oldValue: { status: original.status },
-        newValue: { status: 'reversed', reversalId: result.reversal._id?.toString(), reason: parsed.data.reason },
+        newValue: {
+          status: 'reversed',
+          reversalId: result.reversal._id?.toString(),
+          reason: parsed.data.reason,
+        },
         details: `Reversed ${original.movementType} of ${original.quantity} unit(s): ${parsed.data.reason}`,
         ipAddress: meta.ipAddress,
         userAgent: meta.userAgent,

@@ -890,14 +890,14 @@ Indexes:
 - createdAt: -1
 ```
 
-#### 3.1.20 offlineQueue *(dropped — DECISION D2)*
+#### 3.1.20 offlineQueue _(dropped — DECISION D2)_
 
 The durable server-side `offlineQueue` collection is **not used** by the shipped
 design. Offline sync relies on client-side queuing + ledger idempotency keys +
 audit/logging and notifications; there is no server collection for replay.
 (`docs/OFFLINE_AND_NOTIFICATIONS.md` §D2)
 
-#### 3.1.21 notifications *(user-scoped module — shipped)*
+#### 3.1.21 notifications _(user-scoped module — shipped)_
 
 Notifications are a **user-scoped** sync/realtime module (delivered via **SSE + polling fallback**). Events are filtered per connection by the caller's user id and carry dataless signals where appropriate; clients re-fetch via guarded REST routes.
 
@@ -963,7 +963,7 @@ Indexes:
 - `taskLabels` → (standalone; joined via `tasks.labelIds`)
 - `messages` → `users` (senderId)
 - `auditLog` → `users` (userId)
-- `offlineQueue` → `users` (userId) *(dropped; no server collection used — D2)*
+- `offlineQueue` → `users` (userId) _(dropped; no server collection used — D2)_
 - `notifications` → `users` (userId)
 
 ---
@@ -1407,7 +1407,7 @@ user123_order_create_1728038400000_abc123
 - Financial operations are wrapped in database transactions
 - If any part fails, entire operation is rolled back
 
-### 6.9 Offline Capabilities *(DECISIONS D1–D3)*
+### 6.9 Offline Capabilities _(DECISIONS D1–D3)_
 
 **DECISION D1:** Offline scope = **finance + budget creates only** (offline chat is **online-only**; offline order creation is not in the shipped offline scope).
 

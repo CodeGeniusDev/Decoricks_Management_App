@@ -92,7 +92,9 @@ export function PermissionsTab() {
       const data = await apiJson<RolesResponse>('/api/roles')
       const list = data.roles ?? []
       setRoles(list)
-      setSelected((current) => current || list.find((r) => r.name !== 'founder')?.name || list[0]?.name || '')
+      setSelected(
+        (current) => current || list.find((r) => r.name !== 'founder')?.name || list[0]?.name || ''
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load roles')
     } finally {
@@ -196,7 +198,9 @@ export function PermissionsTab() {
           <table className="min-w-full divide-y divide-line-subtle text-sm">
             <thead className="bg-surface-sunken">
               <tr>
-                <th className="px-3 py-3 text-left font-medium text-ink-secondary sm:px-4">Module</th>
+                <th className="px-3 py-3 text-left font-medium text-ink-secondary sm:px-4">
+                  Module
+                </th>
                 {ALL_ACTIONS.map((action) => (
                   <th
                     key={action}

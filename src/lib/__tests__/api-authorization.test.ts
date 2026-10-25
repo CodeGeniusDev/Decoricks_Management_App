@@ -26,10 +26,11 @@ import {
 const mockedAuthorize = vi.mocked(authorize)
 const mockedRequireFounder = vi.mocked(requireFounder)
 
-const readJson = async (response: Response) => (await response.json()) as Record<string, never> & {
-  success: boolean
-  error?: { code?: string }
-}
+const readJson = async (response: Response) =>
+  (await response.json()) as Record<string, never> & {
+    success: boolean
+    error?: { code?: string }
+  }
 
 beforeEach(() => {
   mockedAuthorize.mockClear()

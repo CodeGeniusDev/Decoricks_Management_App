@@ -33,10 +33,7 @@ export const BudgetBars = ({ rows, caption }: { rows: BudgetBarRow[]; caption: s
   return (
     <figure className="m-0">
       <figcaption className="mb-3 text-xs font-medium text-ink-muted">{caption}</figcaption>
-      <div
-        className="mb-2 flex items-center gap-4 text-2xs text-ink-secondary"
-        aria-hidden="true"
-      >
+      <div className="mb-2 flex items-center gap-4 text-2xs text-ink-secondary" aria-hidden="true">
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-sm bg-decoricks-brown" /> Allocated
         </span>

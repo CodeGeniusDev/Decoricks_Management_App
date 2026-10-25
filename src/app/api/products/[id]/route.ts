@@ -65,7 +65,9 @@ async function __PUT(request: NextRequest, context: RouteContext) {
     if (parsed.data.sku) {
       const clash = await col.findOne({ sku: parsed.data.sku, _id: { $ne: _id } } as never)
       if (clash) {
-        return validationError('SKU already exists', [{ path: 'sku', message: 'This SKU is already in use' }])
+        return validationError('SKU already exists', [
+          { path: 'sku', message: 'This SKU is already in use' },
+        ])
       }
     }
 

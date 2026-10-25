@@ -20,9 +20,7 @@ export const PageHeader = ({ title, description, actions }: PageHeaderProps) => 
       <h1 className="text-xl font-semibold tracking-tight text-decoricks-dark md:text-2xl">
         {title}
       </h1>
-      {description && (
-        <p className="mt-1 text-sm text-ink-muted">{description}</p>
-      )}
+      {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
     </div>
     {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
   </div>
@@ -54,9 +52,7 @@ export const PageSection = ({
     {(title || actions) && (
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          {title && (
-            <h2 className="text-md font-semibold text-decoricks-dark">{title}</h2>
-          )}
+          {title && <h2 className="text-md font-semibold text-decoricks-dark">{title}</h2>}
           {description && <p className="mt-0.5 text-sm text-ink-muted">{description}</p>}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -89,7 +85,9 @@ const toneClasses: Record<NonNullable<MetricProps['tone']>, string> = {
 export const Metric = ({ label, value, hint, tone = 'default' }: MetricProps) => (
   <div className="min-w-0 px-4 py-3.5">
     <p className="truncate text-xs font-medium text-ink-muted">{label}</p>
-    <p className={`mt-1 truncate text-lg font-semibold tabular-nums ${toneClasses[tone]}`}>{value}</p>
+    <p className={`mt-1 truncate text-lg font-semibold tabular-nums ${toneClasses[tone]}`}>
+      {value}
+    </p>
     {hint && <p className="mt-0.5 truncate text-xs text-ink-muted">{hint}</p>}
   </div>
 )

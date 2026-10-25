@@ -1,11 +1,21 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 vi.mock('@/lib/mongodb', () => ({ getDatabase: vi.fn() }))
-vi.mock('@/lib/models/Tasks', () => ({ getTaskDocCollection: vi.fn(), getTaskCommentCollection: vi.fn() }))
+vi.mock('@/lib/models/Tasks', () => ({
+  getTaskDocCollection: vi.fn(),
+  getTaskCommentCollection: vi.fn(),
+}))
 vi.mock('@/lib/models/Chat', () => ({ getMessageCollection: vi.fn() }))
 vi.mock('@/lib/models/Sales', () => ({ getOrderCollection: vi.fn(), getReturnCollection: vi.fn() }))
-vi.mock('@/lib/models/Product', () => ({ getProductCollection: vi.fn(), getStockCollection: vi.fn() }))
-vi.mock('@/lib/models/Ledger', () => ({ getLedgerCollection: vi.fn(), getAccountCollection: vi.fn(), getFinanceCategoryCollection: vi.fn() }))
+vi.mock('@/lib/models/Product', () => ({
+  getProductCollection: vi.fn(),
+  getStockCollection: vi.fn(),
+}))
+vi.mock('@/lib/models/Ledger', () => ({
+  getLedgerCollection: vi.fn(),
+  getAccountCollection: vi.fn(),
+  getFinanceCategoryCollection: vi.fn(),
+}))
 vi.mock('@/lib/models/Operations', () => ({ getBudgetCollection: vi.fn() }))
 vi.mock('@/lib/models/Notifications', () => ({ getNotificationCollection: vi.fn() }))
 vi.mock('@/lib/models/Distribution', () => ({ getProfitDistributionCollection: vi.fn() }))
@@ -28,7 +38,9 @@ function chain(doc: any) {
 describe('sync cursor delete/archive propagation (polling)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    ;(getTaskCommentCollection as any).mockReturnValue(chain({ createdAt: new Date('2024-01-01T00:00:00Z') }))
+    ;(getTaskCommentCollection as any).mockReturnValue(
+      chain({ createdAt: new Date('2024-01-01T00:00:00Z') })
+    )
   })
 
   it('tasks cursor queries with filter isArchived false so archiving newest row changes max timestamp', async () => {

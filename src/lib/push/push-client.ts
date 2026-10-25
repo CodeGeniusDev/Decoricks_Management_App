@@ -20,7 +20,11 @@
  */
 
 import { apiFetch, apiJson } from '@/lib/api-client'
-import { ensureServiceWorker, getServiceWorker, isServiceWorkerSupported } from './register-service-worker'
+import {
+  ensureServiceWorker,
+  getServiceWorker,
+  isServiceWorkerSupported,
+} from './register-service-worker'
 
 export type PushFailure =
   | 'unsupported'
@@ -57,7 +61,9 @@ const isPushCapable = (): boolean =>
 
 /** `Notification.permission` without touching the API on the server. */
 export const currentPermission = (): NotificationPermission | 'unsupported' =>
-  typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
+  typeof window !== 'undefined' && 'Notification' in window
+    ? Notification.permission
+    : 'unsupported'
 
 /** VAPID applicationServerKey is base64url; PushManager needs raw bytes. */
 const urlBase64ToUint8Array = (base64String: string): Uint8Array<ArrayBuffer> => {
@@ -115,7 +121,13 @@ export async function getPushStatus(): Promise<PushStatus> {
  */
 export async function enablePush(): Promise<EnablePushResult> {
   if (!isPushCapable()) {
-    return { ok: false, reason: typeof window !== 'undefined' && !window.isSecureContext ? 'insecure-context' : 'unsupported' }
+    return {
+      ok: false,
+      reason:
+        typeof window !== 'undefined' && !window.isSecureContext
+          ? 'insecure-context'
+          : 'unsupported',
+    }
   }
 
   // The only place we ever ask for the Notification permission, and only because

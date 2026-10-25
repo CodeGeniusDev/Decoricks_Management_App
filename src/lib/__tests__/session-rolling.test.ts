@@ -326,12 +326,8 @@ describe('absolute session lifetime cap', () => {
 
     expect(auth).not.toBeNull()
     // The slide must not push the deadline past the absolute cap either.
-    expect(auth!.session.expiresAt.getTime()).toBeLessThanOrEqual(
-      Date.now() + TWELVE_HOURS + 1000
-    )
-    expect(auth!.session.expiresAt.getTime()).toBeLessThanOrEqual(
-      Date.now() + 1 * DAY_MS + 1000
-    )
+    expect(auth!.session.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + TWELVE_HOURS + 1000)
+    expect(auth!.session.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 1 * DAY_MS + 1000)
   })
 
   it('caps the browser cookie at the absolute maximum, not just the sliding window', async () => {

@@ -119,7 +119,8 @@ const toJSON = (entry: AuditLogEntry) => ({
  * but they make the append-only guarantee legible and give the client a clear
  * body instead of a framework error.
  */
-const methodNotAllowed = () => errorResponse('Audit log entries are append-only', 405, 'METHOD_NOT_ALLOWED')
+const methodNotAllowed = () =>
+  errorResponse('Audit log entries are append-only', 405, 'METHOD_NOT_ALLOWED')
 
 export const PUT = methodNotAllowed
 export const PATCH = methodNotAllowed

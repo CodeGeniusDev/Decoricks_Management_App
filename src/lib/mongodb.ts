@@ -180,7 +180,7 @@ export async function getDatabase(): Promise<Db> {
     // Elsewhere (dev) the same condition stays a loud, non-fatal warning.
     const refusal = productionDatabaseRefusal(
       { dbName, source },
-      { nodeEnv: process.env.NODE_ENV ?? '', inTestRunner: process.env.E2E_TEST_MODE === '1' },
+      { nodeEnv: process.env.NODE_ENV ?? '', inTestRunner: process.env.E2E_TEST_MODE === '1' }
     )
     if (refusal) throw new Error(`[mongodb] ${refusal}`)
 

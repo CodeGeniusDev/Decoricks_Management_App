@@ -18,8 +18,7 @@ export interface PricedOrderItem {
 }
 
 export type PriceItemsResult =
-  | { ok: true; items: PricedOrderItem[] }
-  | { ok: false; response: Response }
+  { ok: true; items: PricedOrderItem[] } | { ok: false; response: Response }
 
 export async function priceOrderItems(
   submitted: Array<{ productId: string; quantity: number }>,

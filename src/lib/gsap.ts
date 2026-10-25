@@ -162,7 +162,12 @@ export const usePressScale = <T extends HTMLElement>(ref: React.RefObject<T | nu
     const el = ref.current
     if (!el || prefersReducedMotion()) return
 
-    const press = gsap.to(el, { scale: 0.97, duration: 0.09, ease: 'power2.out', overwrite: 'auto' })
+    const press = gsap.to(el, {
+      scale: 0.97,
+      duration: 0.09,
+      ease: 'power2.out',
+      overwrite: 'auto',
+    })
     const release = gsap.to(el, { scale: 1, duration: 0.16, ease: 'power2.out', overwrite: 'auto' })
 
     const onDown = () => press.play()

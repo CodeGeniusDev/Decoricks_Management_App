@@ -222,7 +222,9 @@ export const authorize = async (
 }
 
 /** Authentication only, for endpoints that need a caller but no module grant. */
-export const requireAuth = async (options: { allowPasswordChange?: boolean } = {}): Promise<AuthenticatedUser> => {
+export const requireAuth = async (
+  options: { allowPasswordChange?: boolean } = {}
+): Promise<AuthenticatedUser> => {
   const db = await getDatabase()
   const auth = await timeStage('auth:session', () => getAuthenticatedUser(db))
   if (!auth) throw new AuthenticationError()

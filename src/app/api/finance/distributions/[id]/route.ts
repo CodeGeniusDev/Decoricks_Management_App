@@ -20,7 +20,9 @@ async function __GET(_request: NextRequest, context: RouteContext) {
     }
 
     const db = await getDatabase()
-    const doc = await getProfitDistributionCollection(db).findOne({ _id: new ObjectId(id) } as never)
+    const doc = await getProfitDistributionCollection(db).findOne({
+      _id: new ObjectId(id),
+    } as never)
     if (!doc) return notFoundError('Distribution not found')
 
     return successResponse(serializeDistribution(doc))

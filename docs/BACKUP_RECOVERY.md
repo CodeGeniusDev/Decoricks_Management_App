@@ -32,7 +32,7 @@ the last one).
 How to create it the very first time (before your first backup ever):
 
 1. Generate a random value with your password manager's generator (or any tool
-   that only *prints* a value — nothing that redirects into the key file).
+   that only _prints_ a value — nothing that redirects into the key file).
 2. Open `~/.decoricks/backup.key` in a text editor yourself (create the
    `~/.decoricks` folder first) and paste the value as the only line.
 3. Lock it down: `chmod 600 ~/.decoricks/backup.key`.

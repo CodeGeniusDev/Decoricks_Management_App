@@ -35,7 +35,8 @@ vi.mock('@/lib/mongodb', () => ({
 }))
 
 vi.mock('@/lib/models/Finance', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/models/Finance')>('@/lib/models/Finance')
+  const actual =
+    await vi.importActual<typeof import('@/lib/models/Finance')>('@/lib/models/Finance')
   return {
     ...actual,
     ensureFinanceIndexes: vi.fn(async () => undefined),
@@ -51,7 +52,11 @@ vi.mock('@/lib/models/Ledger', async () => {
 })
 
 const makeRequest = (url: string, init?: RequestInit) => new Request(url, init) as never
-const json = (body: unknown) => ({ method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } })
+const json = (body: unknown) => ({
+  method: 'POST',
+  body: JSON.stringify(body),
+  headers: { 'Content-Type': 'application/json' },
+})
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -60,24 +65,50 @@ beforeEach(() => {
     insertedId: new ObjectId('507f1f77bcf86cd799439011'),
     ...doc,
   }))
-  transactionsCollection.find.mockReturnValue({ sort: () => ({ toArray: async () => [] }), toArray: async () => [] })
-  accountsCollection.findOne.mockResolvedValue({ _id: new ObjectId('507f1f77bcf86cd799439011'), isActive: true })
-  accountsCollection.find.mockReturnValue({ toArray: async () => [{ _id: new ObjectId('507f1f77bcf86cd799439011'), name: 'Cash', kind: 'cash', openingBalance: 0, isActive: true, createdAt: new Date(), updatedAt: new Date() }], sort: () => ({ toArray: async () => [] }) })
+  transactionsCollection.find.mockReturnValue({
+    sort: () => ({ toArray: async () => [] }),
+    toArray: async () => [],
+  })
+  accountsCollection.findOne.mockResolvedValue({
+    _id: new ObjectId('507f1f77bcf86cd799439011'),
+    isActive: true,
+  })
+  accountsCollection.find.mockReturnValue({
+    toArray: async () => [
+      {
+        _id: new ObjectId('507f1f77bcf86cd799439011'),
+        name: 'Cash',
+        kind: 'cash',
+        openingBalance: 0,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ],
+    sort: () => ({ toArray: async () => [] }),
+  })
   categoriesCollection.findOne.mockResolvedValue({ name: 'sales', type: 'income', isActive: true })
-  categoriesCollection.find.mockReturnValue({ sort: () => ({ toArray: async () => [] }), toArray: async () => [] })
+  categoriesCollection.find.mockReturnValue({
+    sort: () => ({ toArray: async () => [] }),
+    toArray: async () => [],
+  })
   businessSettingsCollection.findOne.mockResolvedValue(null)
 })
 
 describe('PUT/DELETE legacy finance routes', () => {
   it('rejects PUT with 405 (no silent edits)', async () => {
     const { PUT } = await import('@/app/api/finance/[type]/[id]/route')
-    const res = await PUT(makeRequest('http://localhost/api/finance/income/507f1f77bcf86cd799439011', json({}))) as any
+    const res = (await PUT(
+      makeRequest('http://localhost/api/finance/income/507f1f77bcf86cd799439011', json({}))
+    )) as any
     expect(res.status).toBe(405)
   })
 
   it('rejects DELETE with 405 (no hard deletes)', async () => {
     const { DELETE } = await import('@/app/api/finance/[type]/[id]/route')
-    const res = await DELETE(makeRequest('http://localhost/api/finance/expense/507f1f77bcf86cd799439011')) as any
+    const res = (await DELETE(
+      makeRequest('http://localhost/api/finance/expense/507f1f77bcf86cd799439011')
+    )) as any
     expect(res.status).toBe(405)
   })
 })

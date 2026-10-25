@@ -268,7 +268,7 @@ export const resolveDatabase = (env: DbEnv = getEnv()): ResolvedDatabase => {
  */
 export const productionDatabaseRefusal = (
   resolved: ResolvedDatabase,
-  opts: { nodeEnv: string; inTestRunner: boolean },
+  opts: { nodeEnv: string; inTestRunner: boolean }
 ): string | null => {
   if (opts.nodeEnv !== 'production') return null
   if (opts.inTestRunner) return null

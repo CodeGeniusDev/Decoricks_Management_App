@@ -1,6 +1,6 @@
-'use client';
+'use client'
 
-import type { LedgerAverages, LedgerEntryType, LedgerSummary } from '@/lib/finance';
+import type { LedgerAverages, LedgerEntryType, LedgerSummary } from '@/lib/finance'
 
 /**
  * Client-side types and helpers for the Phase 3 finance screens.
@@ -11,54 +11,54 @@ import type { LedgerAverages, LedgerEntryType, LedgerSummary } from '@/lib/finan
  */
 
 export interface EntryView {
-  _id: string;
-  type: LedgerEntryType;
-  amount: number;
-  amountDisplay: string;
-  date: string;
-  accountId?: string;
-  accountName?: string;
-  fromAccountId?: string;
-  fromAccountName?: string;
-  toAccountId?: string;
-  toAccountName?: string;
-  category?: string;
-  categoryLabel?: string;
-  partnerId?: string;
-  partnerName?: string;
-  paymentMethod?: string;
-  note?: string;
-  isReversal: boolean;
-  reversesId?: string;
-  status: 'posted' | 'reversed';
-  createdAt?: string;
+  _id: string
+  type: LedgerEntryType
+  amount: number
+  amountDisplay: string
+  date: string
+  accountId?: string
+  accountName?: string
+  fromAccountId?: string
+  fromAccountName?: string
+  toAccountId?: string
+  toAccountName?: string
+  category?: string
+  categoryLabel?: string
+  partnerId?: string
+  partnerName?: string
+  paymentMethod?: string
+  note?: string
+  isReversal: boolean
+  reversesId?: string
+  status: 'posted' | 'reversed'
+  createdAt?: string
 }
 
 export interface AccountView {
-  _id: string;
-  name: string;
-  kind: 'cash' | 'bank' | 'wallet';
-  kindLabel: string;
-  openingBalance: number;
-  openingBalanceDisplay: string;
-  balance: number;
-  balanceDisplay: string;
-  isActive: boolean;
-  note?: string;
+  _id: string
+  name: string
+  kind: 'cash' | 'bank' | 'wallet'
+  kindLabel: string
+  openingBalance: number
+  openingBalanceDisplay: string
+  balance: number
+  balanceDisplay: string
+  isActive: boolean
+  note?: string
 }
 
 export interface CategoryView {
-  _id: string;
-  name: string;
-  label: string;
-  type: 'expense' | 'income';
-  isActive: boolean;
+  _id: string
+  name: string
+  label: string
+  type: 'expense' | 'income'
+  isActive: boolean
 }
 
 export interface PartnerView {
-  _id: string;
-  name: string;
-  role: string;
+  _id: string
+  name: string
+  role: string
 }
 
 /** LedgerSummary once JSON-stringified: Date fields become ISO strings. */
@@ -66,51 +66,51 @@ export interface SummaryView extends LedgerSummary {}
 
 /** The overview adds pre-formatted `*Display` strings server-side. */
 export type DisplaySummary = LedgerSummary & {
-  revenueDisplay: string;
-  expenseDisplay: string;
-  netProfitDisplay: string;
-  cashInDisplay: string;
-  cashOutDisplay: string;
-  netCashFlowDisplay: string;
-  capitalDisplay: string;
-  withdrawalsDisplay: string;
-  reinvestmentDisplay: string;
-};
+  revenueDisplay: string
+  expenseDisplay: string
+  netProfitDisplay: string
+  cashInDisplay: string
+  cashOutDisplay: string
+  netCashFlowDisplay: string
+  capitalDisplay: string
+  withdrawalsDisplay: string
+  reinvestmentDisplay: string
+}
 
 export interface PeriodView {
-  start: string;
-  end: string;
-  summary: DisplaySummary;
+  start: string
+  end: string
+  summary: DisplaySummary
 }
 
 export interface OverviewView {
-  accounts: AccountView[];
-  totalCash: number;
-  totalCashDisplay: string;
-  overall: DisplaySummary;
-  periods: { day: PeriodView; week: PeriodView; month: PeriodView };
-  recentTransactions: EntryView[];
-  withdrawalLockedUntil: string | null;
-  withdrawalsLocked: boolean;
+  accounts: AccountView[]
+  totalCash: number
+  totalCashDisplay: string
+  overall: DisplaySummary
+  periods: { day: PeriodView; week: PeriodView; month: PeriodView }
+  recentTransactions: EntryView[]
+  withdrawalLockedUntil: string | null
+  withdrawalsLocked: boolean
 }
 
 export interface TransactionsView {
-  items: EntryView[];
-  pagination: { page: number; limit: number; total: number; totalPages: number };
-  summary: SummaryView;
-  averages: LedgerAverages;
+  items: EntryView[]
+  pagination: { page: number; limit: number; total: number; totalPages: number }
+  summary: SummaryView
+  averages: LedgerAverages
   periods: {
-    day: { start: string; end: string; summary: SummaryView };
-    week: { start: string; end: string; summary: SummaryView };
-    month: { start: string; end: string; summary: SummaryView };
-  };
-  range: { start: string; end: string };
+    day: { start: string; end: string; summary: SummaryView }
+    week: { start: string; end: string; summary: SummaryView }
+    month: { start: string; end: string; summary: SummaryView }
+  }
+  range: { start: string; end: string }
 }
 
 export interface SettingsView {
-  withdrawalLockedUntil: string | null;
-  withdrawalLockedUntilDisplay: string | null;
-  withdrawalsLocked: boolean;
+  withdrawalLockedUntil: string | null
+  withdrawalLockedUntilDisplay: string | null
+  withdrawalsLocked: boolean
 }
 
 /* -------------------------------------------------------------------------- */
@@ -130,7 +130,7 @@ export {
   parsePkrAmount,
   paisaToInputValue,
   fieldIssues,
-} from '@/lib/form-helpers';
+} from '@/lib/form-helpers'
 
 export const TYPE_BADGE_VARIANT: Record<
   LedgerEntryType,
@@ -142,7 +142,7 @@ export const TYPE_BADGE_VARIANT: Record<
   partner_capital: 'success',
   partner_withdrawal: 'warning',
   reinvestment: 'default',
-};
+}
 
 /** Payment methods offered in the entry form; the API accepts any short string. */
 export const PAYMENT_METHODS = [
@@ -153,4 +153,4 @@ export const PAYMENT_METHODS = [
   { value: 'cheque', label: 'Cheque' },
   { value: 'card', label: 'Card' },
   { value: 'other', label: 'Other' },
-];
+]

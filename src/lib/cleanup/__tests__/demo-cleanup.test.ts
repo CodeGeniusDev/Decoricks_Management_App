@@ -58,8 +58,7 @@ const seedManifest = async (db: Db): Promise<void> => {
   )
 }
 
-const freshDb = (): Db =>
-  client.db(`cleanup_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
+const freshDb = (): Db => client.db(`cleanup_${Date.now()}_${Math.floor(Math.random() * 1e6)}`)
 
 describe('demo-cleanup manifest', () => {
   it('freezes exactly 56 demo documents across 10 collections', () => {
@@ -177,4 +176,3 @@ describe('buildCleanupAuditDoc', () => {
     expect(String(doc.details)).toContain('abc123')
   })
 })
-

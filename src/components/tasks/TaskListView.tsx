@@ -89,7 +89,9 @@ export function TaskListView(props: TaskListViewProps) {
       {tasks.map((t) => {
         const overdue = isOverdue(t.dueDate, now)
         const assignees = t.assigneeIds.map((id) => userNames.get(id) ?? `User ${id.slice(-4)}`)
-        const labels = t.labelIds.map((id) => labelNames.get(id)).filter((n): n is string => Boolean(n))
+        const labels = t.labelIds
+          .map((id) => labelNames.get(id))
+          .filter((n): n is string => Boolean(n))
         return (
           <li key={t._id}>
             <button

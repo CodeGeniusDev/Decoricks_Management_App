@@ -46,7 +46,7 @@ already agrees with the brief on chat.
   scope for Phase 9**, revisit as its own phase.
 
 > **DECISION D1:** Offline scope = finance + budget creates only (no
-> orders/tasks/chat offline). Confirm offline *order* creation is deferred.
+> orders/tasks/chat offline). Confirm offline _order_ creation is deferred.
 
 ### D2 — The server `offlineQueue` collection (SPEC §3.1.20) is redundant
 
@@ -69,7 +69,7 @@ are **already enforced** by mechanisms shipped in Phase 3:
   Founder's conflict alert is a `notifications` row. The queue lives only on the
   device. This is simpler and cannot drift. `SPEC.md` §3.1.20 is marked
   superseded (kept for the shape vocabulary only).
-- **Alternative (if you want a server-visible sync trail):** a *transient*
+- **Alternative (if you want a server-visible sync trail):** a _transient_
   server `syncAttempts` log written by the sync route (idempotencyKey, outcome,
   reason) purely for Founder visibility — not a queue, no re-execution. Only if
   you ask for it.
@@ -155,7 +155,7 @@ change-streams and a global per-module cursor
 
 - **Recommendation (detailed in §2.6):** reuse the same SSE `/api/events` +
   polling transport, but add a **user-scoped** `notifications` module/stream whose
-  cursor is "newest `createdAt` among *this user's* notifications". No record
+  cursor is "newest `createdAt` among _this user's_ notifications". No record
   content rides the signal — the client refetches `/api/notifications` through
   the normal authed route, preserving the dataless/permission-safe invariant from
   REALTIME.md. This is an additive extension, not a rewrite.
@@ -224,7 +224,7 @@ Indexes:
 
 The unique `{userId, dedupeKey}` index is what guarantees **the same event never
 notifies twice**, even if the server wakes, double-fires, or a client tick races.
-An insert that violates it is swallowed (a duplicate is *not* an error).
+An insert that violates it is swallowed (a duplicate is _not_ an error).
 
 ### 2.2 Per-user settings (new home on `users`)
 
@@ -274,17 +274,17 @@ cannot see. Enforced **server-side at emit time**, mirroring REALTIME.md's
 
 ### 2.4 Event catalogue and where each is generated
 
-| type               | trigger                                   | recipients        | dedupe (per §2.7)                 |
-| ------------------ | ----------------------------------------- | ----------------- | --------------------------------- |
-| `low_stock`        | stock event drives a product ≤ reorderLevel | inventory.view   | per product per Karachi day       |
-| `task_overdue`     | task dueDate passed, not in a done column | assignees (tasks.view) | per task per Karachi day    |
-| `task_due_soon`    | dueDate within 24h, not done              | assignees          | per task once                     |
-| `budget_warning`   | a budget's spend crosses `warning`%        | finance.view       | per budget per crossing           |
-| `budget_critical`  | crosses `critical`% (default 100)         | finance.view       | per budget once                   |
-| `pending_approval` | budget awaiting approval / distribution   | approver (Founder) | per entity once                   |
-| `sync_failure`     | an offline entry exhausted its retry budget | entry owner      | per idempotencyKey once           |
-| `sync_conflict`    | an offline entry resolved to `conflict`   | owner + Founder  | per idempotencyKey once           |
-| `financial_event`  | withdrawal created / distribution locked / expense ≥ largeExpenseThreshold | Founder | per entity once |
+| type               | trigger                                                                    | recipients             | dedupe (per §2.7)           |
+| ------------------ | -------------------------------------------------------------------------- | ---------------------- | --------------------------- |
+| `low_stock`        | stock event drives a product ≤ reorderLevel                                | inventory.view         | per product per Karachi day |
+| `task_overdue`     | task dueDate passed, not in a done column                                  | assignees (tasks.view) | per task per Karachi day    |
+| `task_due_soon`    | dueDate within 24h, not done                                               | assignees              | per task once               |
+| `budget_warning`   | a budget's spend crosses `warning`%                                        | finance.view           | per budget per crossing     |
+| `budget_critical`  | crosses `critical`% (default 100)                                          | finance.view           | per budget once             |
+| `pending_approval` | budget awaiting approval / distribution                                    | approver (Founder)     | per entity once             |
+| `sync_failure`     | an offline entry exhausted its retry budget                                | entry owner            | per idempotencyKey once     |
+| `sync_conflict`    | an offline entry resolved to `conflict`                                    | owner + Founder        | per idempotencyKey once     |
+| `financial_event`  | withdrawal created / distribution locked / expense ≥ largeExpenseThreshold | Founder                | per entity once             |
 
 **State-based events** (low_stock, budget crossings, pending_approval,
 financial_event) are emitted from **server write hooks** — the existing create /
@@ -328,7 +328,7 @@ module:
   user is O(log n) and leaks nothing beyond "you have something newer".
 - `/api/events` and `/api/sync/cursor` treat `notifications` specially: instead of
   a `<module>.view` grant, it is permitted for **any authenticated user** (it can
-  only ever return *their own* newest timestamp). This is one branch in the
+  only ever return _their own_ newest timestamp). This is one branch in the
   `PERMISSION` resolution loop, not a fork of the transport.
 - On a successful `emitNotification` insert (one that actually wrote, i.e. not
   deduped away), the server calls `realtimeBus.publish('notifications', ts)`.
@@ -375,7 +375,7 @@ due-soon / daily sweeps are **lazy and idempotent**, evaluated on demand rather
 than pushed by a timer:
 
 - **Trigger points:** (a) whenever a client opens/returns to the app and the
-  notification cursor poll runs, the server also runs a *bounded, indexed* scan
+  notification cursor poll runs, the server also runs a _bounded, indexed_ scan
   for newly-overdue / due-soon tasks and today's low-stock/budget crossings,
   emitting deduped notifications; (b) any finance/inventory/task write in that
   scope (state events, §2.4). We keep the scan **cheap and windowed** — overdue
@@ -389,7 +389,7 @@ than pushed by a timer:
   became overdue 3 hours ago is notified once, on wake, not 3 times. This matches
   REALTIME.md's reconcile-on-wake model exactly.
 - **The honest limit:** a user who never opens the app while the server slept will
-  not *receive* the notification until they open it (this is a web app, not push —
+  not _receive_ the notification until they open it (this is a web app, not push —
   see §10). If we later add Web Push, wake-up fan-out is exactly the gap push
   fills; documented in §10.
 
@@ -412,7 +412,7 @@ The full mechanics are §4–§8. Summary of the shape:
 - **Dexie local queue** in IndexedDB — §4.
 - **Sync engine** (one tab leads, sequential, backoff, crash-safe) — §6.
 - **Server sync route** `POST /api/offline/sync` re-checking everything and
-  delegating to the *existing* `createLedgerEntry` / budget-create logic — §6.4.
+  delegating to the _existing_ `createLedgerEntry` / budget-create logic — §6.4.
 - **Sync screen** (pending/synced/failed/conflict + last synced + retry/edit/
   discard) and offline UI states — §7.
 - **Device data security + wipe-on-logout** — §8.
@@ -437,17 +437,17 @@ One database `decoricks-offline`, one store `queue` (per SPEC §6.3, extended wi
 
 ```typescript
 interface QueueEntry {
-  id: string                  // local UUID (Dexie primary key)
-  userId: string              // owner — prevents cross-user leakage on shared device
+  id: string // local UUID (Dexie primary key)
+  userId: string // owner — prevents cross-user leakage on shared device
   operation: 'create_finance' | 'create_budget'
-  payload: object             // the validated create body (paisa ints, slugs, ids)
-  idempotencyKey: string      // SPEC §6.4 format, reused by the server create
+  payload: object // the validated create body (paisa ints, slugs, ids)
+  idempotencyKey: string // SPEC §6.4 format, reused by the server create
   status: 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict'
-  attempts: number            // default 0
-  lastAttemptAt?: number      // epoch ms
-  nextRetryAt?: number        // backoff schedule (§6.3)
-  errorMessage?: string       // human reason for failed/conflict
-  conflictData?: object       // server state returned on conflict
+  attempts: number // default 0
+  lastAttemptAt?: number // epoch ms
+  nextRetryAt?: number // backoff schedule (§6.3)
+  errorMessage?: string // human reason for failed/conflict
+  conflictData?: object // server state returned on conflict
   createdAt: number
   updatedAt: number
 }
@@ -502,7 +502,7 @@ colors = brand colors (no gradients), `start_url: '/'`, `scope: '/'`.
   `UPDATE_READY` to clients; the UI shows a small "New version available —
   Refresh" prompt (GSAP fade, respects reduced-motion); refreshing (or the user
   clicking the prompt, which posts `SKIP_WAITING`) activates the new version. This
-  gives a *controlled* update, no half-swapped cache, no stale-swipe.
+  gives a _controlled_ update, no half-swapped cache, no stale-swipe.
 - `navigator.serviceWorker.register()` + an `update()` check on app open and
   every N hours (client timer, not SW) to detect new deploys on the sleeping host.
 
@@ -566,14 +566,14 @@ mechanism — `src/lib/api-client.ts:64`). Body is one operation. The route:
 
 1. **Re-authenticate** (session cookie) → `401 AUTH_REQUIRED` if gone.
 2. **Re-check current permission** server-side: `authorize('finance', type ===
-   'partner_withdrawal' ? 'approve' : 'create')` or `authorize('budget','create')`
+'partner_withdrawal' ? 'approve' : 'create')` or `authorize('budget','create')`
    → `403 PERMISSION_REVOKED` (this is "permission revoked while offline").
 3. **Validate the payload** with the **same zod schemas the online forms use**
    (`src/lib/schemas/finance.ts` `ledgerEntrySchema`, budget schema) → `400
-   VALIDATION_ERROR` with field issues ("validation changed").
+VALIDATION_ERROR` with field issues ("validation changed").
 4. **Delegate to the existing write engines** — NOT a reimplementation:
    finance → `createLedgerEntry(db, parsed, actor)` (`src/lib/finance-ledger.ts:375`)
-   which *already* enforces idempotency (returns existing doc, `created:false`),
+   which _already_ enforces idempotency (returns existing doc, `created:false`),
    accounts must exist+active, category must exist+active+type-match, transfer
    legs differ, and the withdrawal lock (409 `WITHDRAWALS_LOCKED`). Budget create →
    the existing budgets POST logic.
@@ -593,16 +593,16 @@ add accounting-period locks later, the sync route is where that check goes (§7)
 
 ### 6.5 Mapping outcomes → client state
 
-| server result                    | client state + action                                   |
-| -------------------------------- | ------------------------------------------------------- |
-| 201 `{created:true}`             | `synced` → clear after grace; refresh via realtime       |
-| 200 `{created:false}` (replay)   | `synced` (deduped by key — replay is safe, exactly once) |
-| 401 session expired              | **keep queue**; set queue "needs login"; prompt re-login (never wipe) |
-| 403 permission revoked           | `conflict` (reason: no access) — stays visible           |
-| 400 validation changed           | `failed` with field messages — edit & resubmit           |
-| 409 WITHDRAWALS_LOCKED           | `conflict` (reason: locked until date) — stays visible   |
-| 409 ACCOUNT/CATEGORY archived    | `conflict` (reason: account/category inactive)           |
-| 5xx / network                    | `failed`/backoff retry (transient)                       |
+| server result                  | client state + action                                                 |
+| ------------------------------ | --------------------------------------------------------------------- |
+| 201 `{created:true}`           | `synced` → clear after grace; refresh via realtime                    |
+| 200 `{created:false}` (replay) | `synced` (deduped by key — replay is safe, exactly once)              |
+| 401 session expired            | **keep queue**; set queue "needs login"; prompt re-login (never wipe) |
+| 403 permission revoked         | `conflict` (reason: no access) — stays visible                        |
+| 400 validation changed         | `failed` with field messages — edit & resubmit                        |
+| 409 WITHDRAWALS_LOCKED         | `conflict` (reason: locked until date) — stays visible                |
+| 409 ACCOUNT/CATEGORY archived  | `conflict` (reason: account/category inactive)                        |
+| 5xx / network                  | `failed`/backoff retry (transient)                                    |
 
 ---
 
@@ -612,7 +612,7 @@ SPEC §6.6 says financial conflicts require manual resolution — never silent
 overwrite, never silent drop. Every non-2xx leaves the entry **visible on the
 Sync screen** with a human reason and three actions: **Retry**, **Edit &
 resubmit** (re-opens the form with the payload, mints a fresh idempotencyKey
-because it is a *new* intended write), **Discard** (confirm modal; if the entry
+because it is a _new_ intended write), **Discard** (confirm modal; if the entry
 had ever reached the server — e.g. a conflict — the discard is **audit-logged
 server-side** via `POST /api/offline/discard`, else local-only removal).
 
@@ -718,6 +718,7 @@ Two viable, both-free options.
 
 **Option A — In-app center + browser Notification API while open (recommended for
 Phase 9 Step 2).**
+
 - What you get: bell, unread counts, full history, per-type settings, and OS
   toasts for the **active** user on desktop/mobile Chrome/Edge/Safari-while-open.
 - Cost/complexity: low. Reuses the Phase 7 SSE/poll layer exactly. No subscription
@@ -726,6 +727,7 @@ Phase 9 Step 2).**
   never opens the app won't see the low-stock alert until they do.
 
 **Option B — Add Web Push (VAPID), free, self-hosted.**
+
 - Library `web-push` (MIT). We generate VAPID keys (free), store per-user
   subscriptions in a `pushSubscriptions` collection, and POST to the browser
   endpoint on emit. Delivers **even when the app is closed** on desktop + Android
@@ -733,7 +735,7 @@ Phase 9 Step 2).**
 - Costs/risks: needs a **persistent always-on process** to fan out push on the
   lazy time-based sweep (§2.8) — which is exactly the thing a free host that
   **sleeps** cannot guarantee. On a sleeping host, background events don't fire,
-  so push would be *late*, undermining trust. Adds subscription lifecycle, expiry
+  so push would be _late_, undermining trust. Adds subscription lifecycle, expiry
   (410) cleanup, and VAPID key management to secure.
 - Fits naturally only once you settle on a non-sleeping free-ish host or a small
   VPS.
@@ -755,9 +757,9 @@ its value is gated on always-on infrastructure.
 ## 11. Offline UI (Step 3)
 
 - **Online/offline indicator** already in the header (`src/components/layout/
-  Header.tsx:120`, driven by `navigator.onLine`); we additionally surface the
+Header.tsx:120`, driven by `navigator.onLine`); we additionally surface the
   Phase 7 **connection state** (Live / Reconnecting / Offline) so the chip is
-  honest about *why* (offline vs reconnecting). No flicker: single shared store.
+  honest about _why_ (offline vs reconnecting). No flicker: single shared store.
 - **Offline banner** (subtle, GSAP fade, reduced-motion aware) when offline or
   when the queue has pending items.
 - **Forms work offline:** submit enqueues with a **Pending** badge (distinct color
@@ -774,6 +776,7 @@ its value is gated on always-on infrastructure.
 ## 12. Testing plan (maps to the brief's TESTS)
 
 **Unit (Vitest, `src/lib/__tests__`):**
+
 - Queue state machine transitions (pending→syncing→synced/failed/conflict),
   incl. crash-in-`syncing` replay path.
 - Retry/backoff schedule (`delay = 5000 × 2^(n-1)`, fail after 5, non-retryable
@@ -785,6 +788,7 @@ its value is gated on always-on infrastructure.
   low-stock transition using `buildStockSummary` fixtures; large-expense.
 
 **API tests:**
+
 - `/api/offline/sync`: 401/403/400/409 per case; duplicate key returns original
   without creating; permission revoked; locked; archived account/category; a
   partner-withdrawal offline create still honors the withdrawal lock.
@@ -793,6 +797,7 @@ its value is gated on always-on infrastructure.
   receives (or sees) a notification about an inaccessible record.
 
 **Playwright (Chromium + Mobile Chrome + Tablet, per `playwright.config.ts`):**
+
 - `context.setOffline(true)` → create finance + budget entries → assert Pending
   badges → `setOffline(false)` → assert each syncs **exactly once** (DB shows one
   row per key, ledger totals correct) → Sync screen shows synced.
@@ -839,7 +844,7 @@ its value is gated on always-on infrastructure.
 - **Checkpoint 3 (Step 3):** PWA (manifest + SW + versioned caches + offline
   fallback) → Dexie queue + sync engine + leader/BroadcastChannel →
   `/api/offline/sync` + `/api/offline/discard` → Sync screen + offline UI states
-  + wipe-on-logout. Tests → show output → **wait**.
+  - wipe-on-logout. Tests → show output → **wait**.
 - **Checkpoint 4:** final gates (typecheck/lint/test/build/full e2e) + real-phone
   verification steps + final report (built / tested / not-done / limits / run-on-
   Windows steps). **No Phase 10.**

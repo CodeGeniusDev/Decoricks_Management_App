@@ -133,7 +133,10 @@ export function AuditLogTab() {
         </p>
       </div>
 
-      <form onSubmit={applyFilters} className="flex flex-col gap-3 rounded-lg border border-line bg-surface-raised p-4">
+      <form
+        onSubmit={applyFilters}
+        className="flex flex-col gap-3 rounded-lg border border-line bg-surface-raised p-4"
+      >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Input
             label="Search"
@@ -202,12 +205,24 @@ export function AuditLogTab() {
             <table className="min-w-full divide-y divide-line-subtle text-sm">
               <thead className="bg-surface-sunken">
                 <tr>
-                  <th className="whitespace-nowrap px-3 py-3 text-left font-medium text-ink-secondary">When</th>
-                  <th className="whitespace-nowrap px-3 py-3 text-left font-medium text-ink-secondary">Actor</th>
-                  <th className="whitespace-nowrap px-3 py-3 text-left font-medium text-ink-secondary">Action</th>
-                  <th className="whitespace-nowrap px-3 py-3 text-left font-medium text-ink-secondary">Entity</th>
-                  <th className="whitespace-nowrap px-3 py-3 text-left font-medium text-ink-secondary">Outcome</th>
-                  <th className="whitespace-nowrap px-3 py-3 text-left font-medium text-ink-secondary">IP</th>
+                  <th className="whitespace-nowrap px-3 py-3 text-left font-medium text-ink-secondary">
+                    When
+                  </th>
+                  <th className="whitespace-nowrap px-3 py-3 text-left font-medium text-ink-secondary">
+                    Actor
+                  </th>
+                  <th className="whitespace-nowrap px-3 py-3 text-left font-medium text-ink-secondary">
+                    Action
+                  </th>
+                  <th className="whitespace-nowrap px-3 py-3 text-left font-medium text-ink-secondary">
+                    Entity
+                  </th>
+                  <th className="whitespace-nowrap px-3 py-3 text-left font-medium text-ink-secondary">
+                    Outcome
+                  </th>
+                  <th className="whitespace-nowrap px-3 py-3 text-left font-medium text-ink-secondary">
+                    IP
+                  </th>
                   <th className="px-3 py-3 text-left font-medium text-ink-secondary">Details</th>
                 </tr>
               </thead>
@@ -237,8 +252,13 @@ export function AuditLogTab() {
                         {e.outcome ?? '—'}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-ink-secondary">{e.ipAddress ?? '—'}</td>
-                    <td className="max-w-xs truncate px-3 py-3 text-ink-muted" title={e.details ?? ''}>
+                    <td className="whitespace-nowrap px-3 py-3 text-ink-secondary">
+                      {e.ipAddress ?? '—'}
+                    </td>
+                    <td
+                      className="max-w-xs truncate px-3 py-3 text-ink-muted"
+                      title={e.details ?? ''}
+                    >
                       {e.details ?? '—'}
                     </td>
                   </tr>

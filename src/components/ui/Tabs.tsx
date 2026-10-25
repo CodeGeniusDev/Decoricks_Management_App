@@ -30,7 +30,9 @@ export const Tabs = ({ tabs, defaultTab, children }: TabsProps) => {
     const next = tabs[clamped]
     if (!next) return
     setActiveTab(next.id)
-    const button = listRef.current?.querySelector<HTMLButtonElement>(`#${CSS.escape(`${baseId}-tab-${next.id}`)}`)
+    const button = listRef.current?.querySelector<HTMLButtonElement>(
+      `#${CSS.escape(`${baseId}-tab-${next.id}`)}`
+    )
     button?.focus()
   }
 

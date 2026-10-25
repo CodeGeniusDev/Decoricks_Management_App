@@ -85,10 +85,7 @@ function LoginForm() {
         />
 
         <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor="login-password"
-            className="text-xs font-medium text-ink-secondary"
-          >
+          <label htmlFor="login-password" className="text-xs font-medium text-ink-secondary">
             Password
           </label>
           <div className="relative">
@@ -126,8 +123,8 @@ function LoginForm() {
       <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-ink-muted">
         <IconLock className="mt-0.5 shrink-0" size={14} />
         <span>
-          After 5 failed attempts the account is locked for 15 minutes. There is
-          no self-service signup — a Founder creates each account.
+          After 5 failed attempts the account is locked for 15 minutes. There is no self-service
+          signup — a Founder creates each account.
         </span>
       </p>
 

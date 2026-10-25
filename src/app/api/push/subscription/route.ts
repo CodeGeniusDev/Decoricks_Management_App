@@ -4,10 +4,7 @@ import { getDatabase } from '@/lib/mongodb'
 import { requireAuth } from '@/lib/authorization'
 import { HttpError, handleRouteError } from '@/lib/http'
 import { successResponse } from '@/lib/api-response'
-import {
-  ensurePushIndexes,
-  getPushSubscriptionCollection,
-} from '@/lib/models/PushSubscriptions'
+import { ensurePushIndexes, getPushSubscriptionCollection } from '@/lib/models/PushSubscriptions'
 
 /**
  * /api/push/subscription — store / remove one browser's Web Push endpoint for the

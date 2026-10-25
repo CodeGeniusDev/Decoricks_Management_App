@@ -1,10 +1,6 @@
 import { z } from 'zod'
 import { getDatabase } from '@/lib/mongodb'
-import {
-  getUserCollection,
-  userToJSON,
-  type User,
-} from '@/lib/models/User'
+import { getUserCollection, userToJSON, type User } from '@/lib/models/User'
 import { successResponse, validationError, errorResponse } from '@/lib/api-response'
 import { getRequestMeta, handleRouteError } from '@/lib/http'
 import { authorize, requireFounder } from '@/lib/authorization'
@@ -121,7 +117,12 @@ export async function POST(request: Request) {
         action: 'create_user',
         entityType: 'user',
         entityId: result.insertedId,
-        newValue: { email: user.email, name: user.name, role: user.role, partnerId: user.partnerId },
+        newValue: {
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          partnerId: user.partnerId,
+        },
         details: `Created ${user.name} (${user.email}) as ${user.role}`,
         outcome: 'success',
         ipAddress: meta.ipAddress,

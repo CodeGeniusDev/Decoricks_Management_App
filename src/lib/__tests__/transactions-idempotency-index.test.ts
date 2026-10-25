@@ -7,7 +7,12 @@ vi.mock('@/lib/http', () => ({
   logRouteFailure: vi.fn(),
   handleRouteError: vi.fn((e: any) => ({ status: 500, body: { error: e?.message } })),
 }))
-vi.mock('@/lib/authorization', () => ({ authorize: vi.fn(async () => ({ user: { _id: { toString: () => 'u1' } }, permissions: { finance: { create: true } } })) }))
+vi.mock('@/lib/authorization', () => ({
+  authorize: vi.fn(async () => ({
+    user: { _id: { toString: () => 'u1' } },
+    permissions: { finance: { create: true } },
+  })),
+}))
 vi.mock('@/lib/finance-defaults', () => ({ ensureFinanceDefaults: vi.fn(async () => undefined) }))
 
 import { ensureFinanceDefaults } from '@/lib/finance-defaults'

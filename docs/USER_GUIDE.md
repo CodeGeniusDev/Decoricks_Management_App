@@ -43,11 +43,11 @@ the next taps are fast. See §7.
 - **Partner** — a team member. By default the three partner logins are set up
   with **different** access on purpose:
 
-  | Partner (default) | Sales | Finance | Inventory | Tasks / Chat |
-  |---|---|---|---|---|
-  | **Hasnat** | Create & edit orders, returns | View only | View (can record Lahore stock) | Own tasks / full chat |
-  | **Ali** | View only | View only | View (can record Lahore stock) | Own tasks / full chat |
-  | **Afnan** | View only | View only | View only | Own tasks / full chat |
+  | Partner (default) | Sales                         | Finance   | Inventory                      | Tasks / Chat          |
+  | ----------------- | ----------------------------- | --------- | ------------------------------ | --------------------- |
+  | **Hasnat**        | Create & edit orders, returns | View only | View (can record Lahore stock) | Own tasks / full chat |
+  | **Ali**           | View only                     | View only | View (can record Lahore stock) | Own tasks / full chat |
+  | **Afnan**         | View only                     | View only | View only                      | Own tasks / full chat |
 
   These are **defaults**. The Founder can grant more (or less) to any role in
   **Settings → Permissions**. If a button is missing for you, it usually means

@@ -7,7 +7,7 @@ import { BrandMark } from '@/components/layout/BrandMark'
 
 /**
  * Auth screens render bare — no sidebar, no header, no page gutter.
- * 
+ *
  * Redirect logic:
  * - /login: authenticated users go to dashboard or change-password
  * - /change-password: no automatic redirect (page handles its own logic)

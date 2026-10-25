@@ -10,7 +10,15 @@
  * values they themselves created.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, writeFileSync, chmodSync, mkdirSync, rmSync, existsSync, statSync } from 'node:fs'
+import {
+  mkdtempSync,
+  writeFileSync,
+  chmodSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+  statSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { readBackupPassphrase, BACKUP_KEY_FILE_ENV, BACKUP_KEY_INLINE_ENV } from '../keyfile'
@@ -38,7 +46,9 @@ afterEach(() => {
 describe('readBackupPassphrase — never creates or overwrites the key file', () => {
   it('a missing key file is a hard refusal and is NOT created as a side effect', () => {
     const p = keyPath()
-    expect(() => readBackupPassphrase({ env: { [BACKUP_KEY_FILE_ENV]: p } })).toThrow(/does not exist/)
+    expect(() => readBackupPassphrase({ env: { [BACKUP_KEY_FILE_ENV]: p } })).toThrow(
+      /does not exist/
+    )
     expect(existsSync(p)).toBe(false) // the reader left nothing behind
   })
 
@@ -82,9 +92,9 @@ describe('readBackupPassphrase — contents checks', () => {
 
   it('refuses when the key path is a directory, not a regular file', () => {
     mkdirSync(keyPath('not-a-file'))
-    expect(() => readBackupPassphrase({ env: { [BACKUP_KEY_FILE_ENV]: keyPath('not-a-file') } })).toThrow(
-      /not a regular file/
-    )
+    expect(() =>
+      readBackupPassphrase({ env: { [BACKUP_KEY_FILE_ENV]: keyPath('not-a-file') } })
+    ).toThrow(/not a regular file/)
   })
 })
 
@@ -122,13 +132,17 @@ describe('readBackupPassphrase — permission checks (POSIX read bits)', () => {
 
 describe('readBackupPassphrase — env resolution order', () => {
   it('the inline env var is used when no file is configured', () => {
-    expect(readBackupPassphrase({ env: { [BACKUP_KEY_INLINE_ENV]: 'inline-secret' } })).toBe('inline-secret')
+    expect(readBackupPassphrase({ env: { [BACKUP_KEY_INLINE_ENV]: 'inline-secret' } })).toBe(
+      'inline-secret'
+    )
   })
 
   it('the file takes precedence over the inline env var', () => {
     const p = makeKey('from-file\n')
     expect(
-      readBackupPassphrase({ env: { [BACKUP_KEY_FILE_ENV]: p, [BACKUP_KEY_INLINE_ENV]: 'ignored' } })
+      readBackupPassphrase({
+        env: { [BACKUP_KEY_FILE_ENV]: p, [BACKUP_KEY_INLINE_ENV]: 'ignored' },
+      })
     ).toBe('from-file')
   })
 

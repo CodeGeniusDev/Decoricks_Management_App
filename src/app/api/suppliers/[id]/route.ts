@@ -12,7 +12,8 @@ import { errorResponse, notFoundError, successResponse, validationError } from '
 type RouteContext = { params: Promise<{ id: string }> }
 
 const isObjectId = (v: string) => /^[0-9a-fA-F]{24}$/.test(v)
-const badId = () => validationError('Invalid supplier id', [{ path: 'id', message: 'Malformed id' }])
+const badId = () =>
+  validationError('Invalid supplier id', [{ path: 'id', message: 'Malformed id' }])
 
 /** GET /api/suppliers/[id] */
 async function __GET(_request: NextRequest, context: RouteContext) {
@@ -58,7 +59,10 @@ async function __PUT(request: NextRequest, context: RouteContext) {
 
     if (parsed.data.name) {
       const clash = await col.findOne({
-        name: { $regex: `^${parsed.data.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+        name: {
+          $regex: `^${parsed.data.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+          $options: 'i',
+        },
         _id: { $ne: _id },
       } as never)
       if (clash) {

@@ -91,7 +91,9 @@ export function budgetPeriodRange(periodStart: Date, periodEnd: Date) {
   return {
     start: karachiMidnight(startCivil.year, startCivil.month, startCivil.day),
     end: new Date(
-      karachiMidnight(endCivil.year, endCivil.month, endCivil.day).getTime() + 24 * 60 * 60 * 1000 - 1
+      karachiMidnight(endCivil.year, endCivil.month, endCivil.day).getTime() +
+        24 * 60 * 60 * 1000 -
+        1
     ),
   }
 }

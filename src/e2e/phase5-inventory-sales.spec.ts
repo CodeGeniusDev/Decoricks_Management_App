@@ -155,7 +155,9 @@ test('full flow: product → purchase → order → deliver → cash → return 
   await returnDialog.getByLabel('Reason').fill('Customer changed their mind')
   await returnDialog.getByLabel('Refund to customer (PKR)').fill('750')
   await returnDialog.getByRole('button', { name: 'Record return' }).click()
-  await expect(page.getByText('recorded — movements posted and refund entries linked')).toBeVisible()
+  await expect(
+    page.getByText('recorded — movements posted and refund entries linked')
+  ).toBeVisible()
   // A partial return does not rewrite the order status; the return record on
   // the order is the truth the UI must show.
   await expect(page.getByText('Returns on this order')).toBeVisible()
@@ -173,7 +175,9 @@ test('full flow: product → purchase → order → deliver → cash → return 
   await transferDialog.getByLabel('To').selectOption({ label: 'Lahore' })
   await transferDialog.getByLabel('Quantity').fill('3')
   await transferDialog.getByRole('button', { name: 'Transfer stock' }).click()
-  await expect(page.getByText('moved to Lahore. Purchases and sales were not touched')).toBeVisible()
+  await expect(
+    page.getByText('moved to Lahore. Purchases and sales were not touched')
+  ).toBeVisible()
 
   const finalSummary = await summaryFor(request, sku)
   expect(availableIn(finalSummary, 'sheikhupura')).toBe(6)

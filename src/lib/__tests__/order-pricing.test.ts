@@ -32,7 +32,9 @@ const orderCollection = {
 }
 
 const auditCollection = {
-  insertOne: vi.fn(async (_doc: Record<string, unknown>) => ({ insertedId: new ObjectId(KNOWN_ID) })),
+  insertOne: vi.fn(async (_doc: Record<string, unknown>) => ({
+    insertedId: new ObjectId(KNOWN_ID),
+  })),
   insertMany: vi.fn(),
 }
 
@@ -57,9 +59,7 @@ vi.mock('@/lib/mongodb', () => ({
 }))
 
 vi.mock('@/lib/models/Sales', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/models/Sales')>(
-    '@/lib/models/Sales'
-  )
+  const actual = await vi.importActual<typeof import('@/lib/models/Sales')>('@/lib/models/Sales')
   return {
     ...actual,
     getOrderCollection: vi.fn(() => orderCollection),
@@ -68,17 +68,15 @@ vi.mock('@/lib/models/Sales', async () => {
 })
 
 vi.mock('@/lib/models/Product', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/models/Product')>(
-    '@/lib/models/Product'
-  )
+  const actual =
+    await vi.importActual<typeof import('@/lib/models/Product')>('@/lib/models/Product')
   return { ...actual, getProductCollection: vi.fn(() => productCollection) }
 })
 
 // Index creation needs a real (replica-set) connection; irrelevant here.
 vi.mock('@/lib/models/Inventory', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/models/Inventory')>(
-    '@/lib/models/Inventory'
-  )
+  const actual =
+    await vi.importActual<typeof import('@/lib/models/Inventory')>('@/lib/models/Inventory')
   return { ...actual, ensureInventoryIndexes: vi.fn(async () => undefined) }
 })
 
@@ -100,9 +98,7 @@ const postMovement = vi.fn(
 const getAllowNegativeStock = vi.fn(async () => false)
 
 vi.mock('@/lib/stock-service', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/stock-service')>(
-    '@/lib/stock-service'
-  )
+  const actual = await vi.importActual<typeof import('@/lib/stock-service')>('@/lib/stock-service')
   return {
     ...actual,
     runInTransaction,
@@ -192,7 +188,10 @@ describe('POST /api/orders pricing', () => {
 
     // SPEC §10.2.6 Test 16: a successful create must leave an audit entry.
     expect(auditCollection.insertOne).toHaveBeenCalledTimes(1)
-    const audit = auditCollection.insertOne.mock.calls[0][0] as { action: string; entityType: string }
+    const audit = auditCollection.insertOne.mock.calls[0][0] as {
+      action: string
+      entityType: string
+    }
     expect(audit.action).toBe('order_created')
     expect(audit.entityType).toBe('order')
   })
@@ -245,7 +244,9 @@ describe('POST /api/orders pricing', () => {
 
   it('recomputes totals from priced lines rather than the submitted total', async () => {
     const { POST } = await import('@/app/api/orders/route')
-    await POST(post([{ productId: KNOWN_ID, quantity: 3, productName: 'Fake', unitPrice: 1, total: 999999 }]))
+    await POST(
+      post([{ productId: KNOWN_ID, quantity: 3, productName: 'Fake', unitPrice: 1, total: 999999 }])
+    )
 
     const inserted = orderCollection.insertOne.mock.calls[0][0] as { total: number }
     expect(inserted.total).toBe(750000)

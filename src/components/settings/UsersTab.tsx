@@ -147,7 +147,9 @@ export function UsersTab() {
                   Email
                 </th>
                 <th className="px-3 py-3 text-left font-medium text-ink-secondary sm:px-4">Role</th>
-                <th className="px-3 py-3 text-left font-medium text-ink-secondary sm:px-4">Status</th>
+                <th className="px-3 py-3 text-left font-medium text-ink-secondary sm:px-4">
+                  Status
+                </th>
                 <th className="px-3 py-3 text-right font-medium text-ink-secondary sm:px-4">
                   Actions
                 </th>
@@ -168,7 +170,9 @@ export function UsersTab() {
                           <p className="truncate font-medium text-ink">
                             {u.name}
                             {self && (
-                              <span className="ml-1.5 text-xs font-normal text-ink-muted">(you)</span>
+                              <span className="ml-1.5 text-xs font-normal text-ink-muted">
+                                (you)
+                              </span>
                             )}
                           </p>
                           <p className="truncate text-xs text-ink-muted sm:hidden">{u.email}</p>
@@ -406,7 +410,10 @@ function EditUserModal({
     if (!user || submitting) return
     setSubmitting(true)
     try {
-      const body: Record<string, unknown> = { name: name.trim(), partnerId: partnerId.trim() || null }
+      const body: Record<string, unknown> = {
+        name: name.trim(),
+        partnerId: partnerId.trim() || null,
+      }
       if (!founder && role !== user.role) body.role = role
       await apiPatch(`/api/users/${user._id}`, body)
       await onDone(`Updated ${name.trim()}.`)
@@ -444,9 +451,7 @@ function EditUserModal({
           onChange={(e) => setRole(e.target.value)}
           disabled={founder}
         />
-        {founder && (
-          <p className="text-xs text-ink-muted">The Founder role cannot be changed.</p>
-        )}
+        {founder && <p className="text-xs text-ink-muted">The Founder role cannot be changed.</p>}
         <Input
           label="Partner id (optional)"
           value={partnerId}

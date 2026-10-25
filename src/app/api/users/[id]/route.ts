@@ -7,12 +7,7 @@ import {
   isValidObjectId,
   userToJSON,
 } from '@/lib/models/User'
-import {
-  successResponse,
-  validationError,
-  errorResponse,
-  notFoundError,
-} from '@/lib/api-response'
+import { successResponse, validationError, errorResponse, notFoundError } from '@/lib/api-response'
 import { getRequestMeta, handleRouteError } from '@/lib/http'
 import { requireFounder } from '@/lib/authorization'
 import { hashPassword, validatePasswordStrength } from '@/lib/auth/password'
@@ -116,7 +111,11 @@ export async function PATCH(request: Request, context: RouteContext) {
       return validationError('No changes supplied')
     }
 
-    const auth = await requireFounder({ entityId: id, ipAddress: meta.ipAddress, userAgent: meta.userAgent })
+    const auth = await requireFounder({
+      entityId: id,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
 
     const found = await loadUser(id)
     if (!found) return notFoundError('User not found')
@@ -149,8 +148,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     // Deactivating or re-roling a user must invalidate their live sessions.
     const revokesSessions =
-      changes.isActive === false ||
-      (changes.role !== undefined && changes.role !== user.role)
+      changes.isActive === false || (changes.role !== undefined && changes.role !== user.role)
 
     if (revokesSessions) {
       update.sessionVersion = (user.sessionVersion ?? 1) + 1
@@ -168,7 +166,12 @@ export async function PATCH(request: Request, context: RouteContext) {
     await recordAuditEntry(db, {
       userId: auth.user._id,
       userEmail: auth.user.email,
-      action: changes.isActive === false ? 'deactivate_user' : changes.isActive === true ? 'reactivate_user' : 'update_user',
+      action:
+        changes.isActive === false
+          ? 'deactivate_user'
+          : changes.isActive === true
+            ? 'reactivate_user'
+            : 'update_user',
       entityType: 'user',
       entityId: user._id,
       oldValue: {
@@ -228,7 +231,11 @@ export async function POST(request: Request, context: RouteContext) {
       return validationError('Password does not meet the security policy', strength.errors)
     }
 
-    const auth = await requireFounder({ entityId: id, ipAddress: meta.ipAddress, userAgent: meta.userAgent })
+    const auth = await requireFounder({
+      entityId: id,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
 
     const found = await loadUser(id)
     if (!found) return notFoundError('User not found')

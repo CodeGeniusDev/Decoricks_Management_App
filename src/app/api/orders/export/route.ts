@@ -9,10 +9,7 @@ import { paisaToPkr } from '@/lib/money'
 import { formatKarachiDate } from '@/lib/date'
 import { getOrderCollection, type Order } from '@/lib/models/Sales'
 import { ensureOrdersIndexes } from '@/lib/models/Sales'
-import {
-  buildOrderFilter,
-  orderParamsFromUrl,
-} from '@/lib/inventory-sales-filters'
+import { buildOrderFilter, orderParamsFromUrl } from '@/lib/inventory-sales-filters'
 
 /**
  * GET /api/orders/export — the filtered order list as CSV.
@@ -62,8 +59,7 @@ async function __GET(request: NextRequest) {
       {
         key: 'items',
         label: 'Items',
-        value: (row) =>
-          row.items.map((i) => `${i.productName} x${i.quantity}`).join('; '),
+        value: (row) => row.items.map((i) => `${i.productName} x${i.quantity}`).join('; '),
       },
       {
         key: 'units',
@@ -97,7 +93,11 @@ async function __GET(request: NextRequest) {
       { key: 'paymentStatus', label: 'Payment status', value: (row) => row.paymentStatus },
       { key: 'codOutcome', label: 'COD outcome', value: (row) => row.codOutcome },
       { key: 'deliveryDate', label: 'Delivery date', value: (row) => day(row.deliveryDate) },
-      { key: 'cashReceived', label: 'COD cash received', value: (row) => day(row.codCashReceivedAt) },
+      {
+        key: 'cashReceived',
+        label: 'COD cash received',
+        value: (row) => day(row.codCashReceivedAt),
+      },
     ])
 
     return csvResponse(csv, 'orders')

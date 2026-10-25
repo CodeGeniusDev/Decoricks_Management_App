@@ -27,9 +27,7 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
     const { id } = await context.params
 
     if (!/^[0-9a-fA-F]{24}$/.test(id)) {
-      return validationError('Invalid account id', [
-        { path: 'id', message: 'Malformed id' },
-      ])
+      return validationError('Invalid account id', [{ path: 'id', message: 'Malformed id' }])
     }
 
     const body = await request.json().catch(() => ({}))
@@ -53,7 +51,8 @@ async function __PATCH(request: NextRequest, context: RouteContext) {
       const name = parsed.data.name.trim()
       if (name !== existing.name) {
         const duplicate = await collection.findOne({ name, _id: { $ne: objectId } })
-        if (duplicate) throw new HttpError('An account with that name already exists', 409, 'DUPLICATE')
+        if (duplicate)
+          throw new HttpError('An account with that name already exists', 409, 'DUPLICATE')
       }
       update.name = name
     }

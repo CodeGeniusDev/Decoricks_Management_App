@@ -156,7 +156,11 @@ export const ReturnFormModal = ({
       } else if (parsed.value > line.remaining) {
         next[`items.${index}.quantity`] = `Only ${line.remaining} can still be returned`
       } else {
-        items.push({ productId: line.productId, quantity: parsed.value, reason: line.reason.trim() })
+        items.push({
+          productId: line.productId,
+          quantity: parsed.value,
+          reason: line.reason.trim(),
+        })
       }
       if (!line.reason.trim()) next[`items.${index}.reason`] = 'A reason is required'
     })
@@ -273,7 +277,11 @@ export const ReturnFormModal = ({
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={handleSave} loading={saving} disabled={saving || returnable.length === 0}>
+          <Button
+            onClick={handleSave}
+            loading={saving}
+            disabled={saving || returnable.length === 0}
+          >
             Record return
           </Button>
         </>
@@ -281,7 +289,10 @@ export const ReturnFormModal = ({
     >
       <div className="flex flex-col gap-4">
         {formError && (
-          <p role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-sm text-status-danger">
+          <p
+            role="alert"
+            className="rounded-md bg-status-danger-bg px-3 py-2 text-sm text-status-danger"
+          >
             {formError}
           </p>
         )}
@@ -296,7 +307,7 @@ export const ReturnFormModal = ({
               <p className="text-xs font-medium text-ink-secondary">
                 Items · shipping from{' '}
                 {order.shipFromLocation
-                  ? LOCATION_LABELS[order.shipFromLocation] ?? order.shipFromLocation
+                  ? (LOCATION_LABELS[order.shipFromLocation] ?? order.shipFromLocation)
                   : 'the order location'}
               </p>
               <ul className="mt-2 flex flex-col gap-3">
@@ -404,9 +415,7 @@ export const ReturnFormModal = ({
                   variant="ghost"
                   size="sm"
                   onClick={() => setRefund(paisaToInputValue(order.total))}
-                  disabled={
-                    saving || (refundPaisa.ok && (refundPaisa.paisa ?? 0) >= order.total)
-                  }
+                  disabled={saving || (refundPaisa.ok && (refundPaisa.paisa ?? 0) >= order.total)}
                 >
                   Refund the full order total
                 </Button>

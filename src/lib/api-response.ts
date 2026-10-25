@@ -83,9 +83,7 @@ export function notFoundError(message: string = 'Resource not found'): NextRespo
  * @param message - Unauthorized message
  * @returns NextResponse with 401 status
  */
-export function unauthorizedError(
-  message: string = 'Unauthorized'
-): NextResponse<ApiResponse> {
+export function unauthorizedError(message: string = 'Unauthorized'): NextResponse<ApiResponse> {
   return errorResponse(message, 401, 'UNAUTHORIZED')
 }
 

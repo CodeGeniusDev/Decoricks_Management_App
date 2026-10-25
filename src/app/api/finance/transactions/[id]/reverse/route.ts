@@ -57,14 +57,10 @@ async function __POST(request: NextRequest, context: RouteContext) {
     }
 
     const { doc, created } = await runInTransaction((session: ClientSession) =>
-      reverseLedgerEntry(
-        db,
-        id,
-        parsed.data.reason,
-        actor,
-        parsed.data.idempotencyKey,
-        { session, audit: false }
-      )
+      reverseLedgerEntry(db, id, parsed.data.reason, actor, parsed.data.idempotencyKey, {
+        session,
+        audit: false,
+      })
     )
 
     if (created) {

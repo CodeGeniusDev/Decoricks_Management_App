@@ -144,8 +144,7 @@ async function navigateWithFallback(request) {
   const res = await network
   if (res) return res
   // Offline and never visited: controlled fallback page, never a white screen.
-  const fallback =
-    (await caches.match('/offline.html')) ?? (await fetch('/offline.html'))
+  const fallback = (await caches.match('/offline.html')) ?? (await fetch('/offline.html'))
   return new Response(await fallback.text(), {
     status: 503,
     headers: { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' },

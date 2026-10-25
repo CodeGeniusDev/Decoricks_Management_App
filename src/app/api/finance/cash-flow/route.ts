@@ -24,7 +24,10 @@ async function __GET(request: NextRequest) {
     const resolved = resolveReportRange(searchParams)
     if (!resolved) {
       return validationError('Invalid period', [
-        { path: 'period', message: 'Provide a valid period with date, or from and to (YYYY-MM-DD)' },
+        {
+          path: 'period',
+          message: 'Provide a valid period with date, or from and to (YYYY-MM-DD)',
+        },
       ])
     }
     const { period, range } = resolved
@@ -38,12 +41,10 @@ async function __GET(request: NextRequest) {
 
     const boundary = range.start.getTime()
     const before = entries.filter((entry) => new Date(entry.date).getTime() < boundary)
-    const inRange = entries.filter(
-      (entry) => {
-        const t = new Date(entry.date).getTime()
-        return t >= boundary && t <= range.end.getTime()
-      }
-    )
+    const inRange = entries.filter((entry) => {
+      const t = new Date(entry.date).getTime()
+      return t >= boundary && t <= range.end.getTime()
+    })
 
     const cashFlow = computeCashFlow(
       accounts.map((account) => ({

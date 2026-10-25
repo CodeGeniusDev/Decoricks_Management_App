@@ -26,12 +26,13 @@ test.describe('report exports (Founder)', () => {
     const button = page.getByTestId('export-csv')
     await expect(button).toBeVisible()
 
-    const download = await Promise.all([
-      page.waitForEvent('download'),
-      button.click(),
-    ]).then(([d]) => d)
+    const download = await Promise.all([page.waitForEvent('download'), button.click()]).then(
+      ([d]) => d
+    )
 
-    expect(download.suggestedFilename()).toMatch(/decoricks-(week|month)-report-\d{4}-\d{2}-\d{2}\.csv/)
+    expect(download.suggestedFilename()).toMatch(
+      /decoricks-(week|month)-report-\d{4}-\d{2}-\d{2}\.csv/
+    )
     const path = await download.path()
     const text = readFileSync(path!, 'utf8')
     expect(text).toContain('Section,Item,Value')
@@ -43,10 +44,9 @@ test.describe('report exports (Founder)', () => {
     const button = page.getByTestId('export-pdf')
     await expect(button).toBeVisible()
 
-    const download = await Promise.all([
-      page.waitForEvent('download'),
-      button.click(),
-    ]).then(([d]) => d)
+    const download = await Promise.all([page.waitForEvent('download'), button.click()]).then(
+      ([d]) => d
+    )
 
     expect(download.suggestedFilename()).toMatch(/\.pdf$/)
     const buf = (await download.createReadStream())!

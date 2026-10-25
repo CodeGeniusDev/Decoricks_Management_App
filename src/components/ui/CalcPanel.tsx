@@ -30,7 +30,14 @@ interface CalcPanelProps {
   className?: string
 }
 
-export const CalcPanel = ({ formula, inputs = [], link, note, label, className = '' }: CalcPanelProps) => {
+export const CalcPanel = ({
+  formula,
+  inputs = [],
+  link,
+  note,
+  label,
+  className = '',
+}: CalcPanelProps) => {
   const [open, setOpen] = useState(false)
   const panelId = useId()
 

@@ -6,7 +6,13 @@ import { successResponse, validationError, errorResponse } from '@/lib/api-respo
 import { getRequestMeta, handleRouteError } from '@/lib/http'
 import { requireAuth } from '@/lib/authorization'
 import { hashPassword, validatePasswordStrength, verifyPassword } from '@/lib/auth/password'
-import { SESSION_COOKIE, clearSessionCookies, createSession, hashToken, writeSessionCookies } from '@/lib/auth/session'
+import {
+  SESSION_COOKIE,
+  clearSessionCookies,
+  createSession,
+  hashToken,
+  writeSessionCookies,
+} from '@/lib/auth/session'
 import { recordAuditEntry } from '@/lib/audit'
 import { changePasswordRateLimiter } from '@/lib/rate-limit'
 

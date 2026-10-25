@@ -6,7 +6,11 @@ import { getTaskCommentCollection, getTaskDocCollection } from '@/lib/models/Tas
 import { getMessageCollection } from '@/lib/models/Chat'
 import { getOrderCollection, getReturnCollection } from '@/lib/models/Sales'
 import { getProductCollection, getStockCollection } from '@/lib/models/Product'
-import { getAccountCollection, getFinanceCategoryCollection, getLedgerCollection } from '@/lib/models/Ledger'
+import {
+  getAccountCollection,
+  getFinanceCategoryCollection,
+  getLedgerCollection,
+} from '@/lib/models/Ledger'
 import { getNotificationCollection } from '@/lib/models/Notifications'
 import type { SyncCursor, SyncModule } from './types'
 

@@ -62,24 +62,24 @@ module.exports = {
 
       borderRadius: {
         // Restrained. Nothing exceeds 10px; pills are opt-in via `rounded-full`.
-        'sm': '0.25rem',
-        'DEFAULT': '0.375rem',
-        'md': '0.375rem',
-        'lg': '0.5rem',
-        'xl': '0.625rem',
+        sm: '0.25rem',
+        DEFAULT: '0.375rem',
+        md: '0.375rem',
+        lg: '0.5rem',
+        xl: '0.625rem',
         '2xl': '0.75rem',
         '3xl': '0.75rem',
-        'full': '9999px', // pills, avatars and status dots only
+        full: '9999px', // pills, avatars and status dots only
       },
 
       boxShadow: {
         // One restrained scale. Overlays only — static surfaces use a border.
         // The previous `glass`/`glass-lg`/`glass-xl` keys are gone: they only
         // existed to support translucent panels, which this system does not have.
-        'xs': '0 1px 2px rgba(10, 9, 8, 0.04)',
-        'sm': '0 1px 3px rgba(10, 9, 8, 0.06), 0 1px 2px rgba(10, 9, 8, 0.04)',
-        'md': '0 6px 16px rgba(10, 9, 8, 0.1), 0 2px 6px rgba(10, 9, 8, 0.06)',
-        'lg': '0 16px 40px rgba(10, 9, 8, 0.14), 0 4px 12px rgba(10, 9, 8, 0.08)',
+        xs: '0 1px 2px rgba(10, 9, 8, 0.04)',
+        sm: '0 1px 3px rgba(10, 9, 8, 0.06), 0 1px 2px rgba(10, 9, 8, 0.04)',
+        md: '0 6px 16px rgba(10, 9, 8, 0.1), 0 2px 6px rgba(10, 9, 8, 0.06)',
+        lg: '0 16px 40px rgba(10, 9, 8, 0.14), 0 4px 12px rgba(10, 9, 8, 0.08)',
       },
 
       fontSize: {

@@ -2,12 +2,7 @@ import { ObjectId } from 'mongodb'
 import type { Db } from 'mongodb'
 import { getProductCollection, type Location, type Product } from '@/lib/models/Product'
 import { getStockMovementCollection, type StockMovement } from '@/lib/models/Inventory'
-import {
-  STOCK_LOCATIONS,
-  deriveStock,
-  valuationLine,
-  type DerivedStock,
-} from '@/lib/stock-math'
+import { STOCK_LOCATIONS, deriveStock, valuationLine, type DerivedStock } from '@/lib/stock-math'
 
 /**
  * Inventory valuation from the movement ledger (SPEC §5.7).

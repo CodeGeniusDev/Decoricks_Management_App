@@ -177,7 +177,13 @@ export async function reportToPdf(report: PeriodReport, meta: ReportMeta): Promi
     ensure(40)
     page.drawText('Section', { x: MARGIN, y, size: 10, font: bold, color: BLACK })
     page.drawText('Item', { x: MARGIN + COL_SECTION, y, size: 10, font: bold, color: BLACK })
-    page.drawText('Value', { x: MARGIN + COL_SECTION + COL_ITEM, y, size: 10, font: bold, color: BLACK })
+    page.drawText('Value', {
+      x: MARGIN + COL_SECTION + COL_ITEM,
+      y,
+      size: 10,
+      font: bold,
+      color: BLACK,
+    })
     y -= 6
     page.drawLine({
       start: { x: MARGIN, y },

@@ -9,83 +9,91 @@ import { z } from 'zod'
  * `SESSION_SECRET` (spec §8.2 keeps the same "generate a 32-byte random
  * secret" intent) plus the session/lockout knobs from spec §10.1.1.
  */
-const envSchema = z.object({
-  MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
-  SESSION_SECRET: z.string().min(16, 'SESSION_SECRET must be at least 16 characters'),
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+const envSchema = z
+  .object({
+    MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
+    SESSION_SECRET: z.string().min(16, 'SESSION_SECRET must be at least 16 characters'),
+    NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
-  /**
-   * Sliding *inactivity* window, in minutes. The window restarts on each
-   * qualifying authenticated request.
-   *
-   * Policy decision (Phase 10 §4a): 12 hours of inactivity ends the session.
-   * SPEC §10.1.1 Threat 2 originally specified 30 minutes, which the product
-   * later replaced with a 7-day inactivity timeout; Phase 10 tightens it to a
-   * 12-hour sliding window. Both numbers are configurable so a deployment can
-   * tighten further without a code change.
-   */
-  SESSION_TTL_MINUTES: z.coerce.number().int().positive().default(12 * 60),
+    /**
+     * Sliding *inactivity* window, in minutes. The window restarts on each
+     * qualifying authenticated request.
+     *
+     * Policy decision (Phase 10 §4a): 12 hours of inactivity ends the session.
+     * SPEC §10.1.1 Threat 2 originally specified 30 minutes, which the product
+     * later replaced with a 7-day inactivity timeout; Phase 10 tightens it to a
+     * 12-hour sliding window. Both numbers are configurable so a deployment can
+     * tighten further without a code change.
+     */
+    SESSION_TTL_MINUTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(12 * 60),
 
-  /**
-   * Absolute session lifetime, in minutes, measured from the moment the session
-   * was created.
-   *
-   * Policy decision (Phase 10 §4a): a session may slide for at most 7 days no
-   * matter how active the user is. This is the backstop that stops a stolen or
-   * shared session from being kept alive indefinitely by automated traffic.
-   * Must be greater than or equal to SESSION_TTL_MINUTES; the schema refinement
-   * below rejects a configuration that would make the absolute cap unreachable.
-   */
-  SESSION_MAX_LIFETIME_MINUTES: z.coerce.number().int().positive().default(7 * 24 * 60),
+    /**
+     * Absolute session lifetime, in minutes, measured from the moment the session
+     * was created.
+     *
+     * Policy decision (Phase 10 §4a): a session may slide for at most 7 days no
+     * matter how active the user is. This is the backstop that stops a stolen or
+     * shared session from being kept alive indefinitely by automated traffic.
+     * Must be greater than or equal to SESSION_TTL_MINUTES; the schema refinement
+     * below rejects a configuration that would make the absolute cap unreachable.
+     */
+    SESSION_MAX_LIFETIME_MINUTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(7 * 24 * 60),
 
-  // Minimum gap between session "slides" so a burst of requests does not turn
-  // into a burst of writes. Background / auto-polling requests never slide.
-  SESSION_SLIDE_INTERVAL_SECONDS: z.coerce.number().int().nonnegative().default(60),
+    // Minimum gap between session "slides" so a burst of requests does not turn
+    // into a burst of writes. Background / auto-polling requests never slide.
+    SESSION_SLIDE_INTERVAL_SECONDS: z.coerce.number().int().nonnegative().default(60),
 
-  // Account lockout. SPEC §10.2.1 Test 2 is authoritative: 5 failed attempts
-  // inside 15 minutes locks the account for 15 minutes.
-  LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
-  LOGIN_WINDOW_MINUTES: z.coerce.number().int().positive().default(15),
-  LOCKOUT_MINUTES: z.coerce.number().int().positive().default(15),
+    // Account lockout. SPEC §10.2.1 Test 2 is authoritative: 5 failed attempts
+    // inside 15 minutes locks the account for 15 minutes.
+    LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+    LOGIN_WINDOW_MINUTES: z.coerce.number().int().positive().default(15),
+    LOCKOUT_MINUTES: z.coerce.number().int().positive().default(15),
 
-  // SPEC §10.1.1 Threat 1: min 12 characters, complexity required.
-  PASSWORD_MIN_LENGTH: z.coerce.number().int().positive().default(12),
-  BCRYPT_COST: z.coerce.number().int().min(10).max(15).default(12),
+    // SPEC §10.1.1 Threat 1: min 12 characters, complexity required.
+    PASSWORD_MIN_LENGTH: z.coerce.number().int().positive().default(12),
+    BCRYPT_COST: z.coerce.number().int().min(10).max(15).default(12),
 
-  /**
-   * Database name used ONLY by the automated test suite. Tests connect to a
-   * separate database (`decoricks_test`) so production data is never touched.
-   * Unset in every deployed environment.
-   */
-  MONGODB_TEST_DB: z.string().min(1).optional(),
+    /**
+     * Database name used ONLY by the automated test suite. Tests connect to a
+     * separate database (`decoricks_test`) so production data is never touched.
+     * Unset in every deployed environment.
+     */
+    MONGODB_TEST_DB: z.string().min(1).optional(),
 
-  /**
-   * Explicit production/development database name (Phase 5 §5).
-   *
-   * Without it the application database is whatever `MONGODB_URI` says after
-   * the authority section — and the Atlas "Connect" URI generated by the console
-   * has an *empty* path there, which makes the driver fall back to a database
-   * literally named `test`. Setting this variable removes that ambiguity; it is
-   * optional only because the deployed URI currently relies on the fallback.
-   * Never set in a test run: `MONGODB_TEST_DB` always wins.
-   */
-  MONGODB_DB: z.string().min(1).optional(),
+    /**
+     * Explicit production/development database name (Phase 5 §5).
+     *
+     * Without it the application database is whatever `MONGODB_URI` says after
+     * the authority section — and the Atlas "Connect" URI generated by the console
+     * has an *empty* path there, which makes the driver fall back to a database
+     * literally named `test`. Setting this variable removes that ambiguity; it is
+     * optional only because the deployed URI currently relies on the fallback.
+     * Never set in a test run: `MONGODB_TEST_DB` always wins.
+     */
+    MONGODB_DB: z.string().min(1).optional(),
 
-  /**
-   * Phase 9 Web Push (VAPID). All OPTIONAL: when any is missing, `deliverPush`
-   * is a silent no-op and the app falls back to in-app + browser notifications
-   * while open (design §10). The private key and subject are server-only; the
-   * public key is exposed to the client through a dedicated `/api/push/vapid-public-key`
-   * route, never via `NEXT_PUBLIC_*` (so a dev leak cannot expose secrets).
-   */
-  VAPID_PRIVATE_KEY: z.string().min(1).optional(),
-  VAPID_SUBJECT: z.string().min(1).optional(),
-})
+    /**
+     * Phase 9 Web Push (VAPID). All OPTIONAL: when any is missing, `deliverPush`
+     * is a silent no-op and the app falls back to in-app + browser notifications
+     * while open (design §10). The private key and subject are server-only; the
+     * public key is exposed to the client through a dedicated `/api/push/vapid-public-key`
+     * route, never via `NEXT_PUBLIC_*` (so a dev leak cannot expose secrets).
+     */
+    VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+    VAPID_SUBJECT: z.string().min(1).optional(),
+  })
   // The absolute lifetime is the outer bound on a sliding window, so it can
   // never be shorter than the window it caps.
   .refine((env) => env.SESSION_MAX_LIFETIME_MINUTES >= env.SESSION_TTL_MINUTES, {
-    message:
-      'SESSION_MAX_LIFETIME_MINUTES must be greater than or equal to SESSION_TTL_MINUTES',
+    message: 'SESSION_MAX_LIFETIME_MINUTES must be greater than or equal to SESSION_TTL_MINUTES',
     path: ['SESSION_MAX_LIFETIME_MINUTES'],
   })
 

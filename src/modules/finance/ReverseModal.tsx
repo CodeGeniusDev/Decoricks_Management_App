@@ -1,19 +1,19 @@
-'use client';
+'use client'
 
-import React, { useEffect, useRef, useState } from 'react';
-import { Modal } from '@/components/ui/Modal';
-import { Button } from '@/components/ui/Button';
-import { Textarea } from '@/components/ui/Textarea';
-import { Badge } from '@/components/ui/Badge';
-import { ApiError, apiJson } from '@/lib/api-client';
-import { ENTRY_TYPE_LABELS } from '@/lib/finance';
-import { formatKarachiDate } from '@/lib/date';
-import { fieldIssues, newIdempotencyKey, type EntryView } from './finance-ui';
+import React, { useEffect, useRef, useState } from 'react'
+import { Modal } from '@/components/ui/Modal'
+import { Button } from '@/components/ui/Button'
+import { Textarea } from '@/components/ui/Textarea'
+import { Badge } from '@/components/ui/Badge'
+import { ApiError, apiJson } from '@/lib/api-client'
+import { ENTRY_TYPE_LABELS } from '@/lib/finance'
+import { formatKarachiDate } from '@/lib/date'
+import { fieldIssues, newIdempotencyKey, type EntryView } from './finance-ui'
 
 interface ReverseModalProps {
-  entry: EntryView | null;
-  onClose: () => void;
-  onReversed: (reversal: EntryView) => void;
+  entry: EntryView | null
+  onClose: () => void
+  onReversed: (reversal: EntryView) => void
 }
 
 /**
@@ -25,28 +25,28 @@ interface ReverseModalProps {
  * failed attempts for the same entry so a retry cannot double-post.
  */
 export const ReverseModal = ({ entry, onClose, onReversed }: ReverseModalProps) => {
-  const [reason, setReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [reason, setReason] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
-  const submittingRef = useRef(false);
-  const idempotencyKeyRef = useRef<string>('');
+  const submittingRef = useRef(false)
+  const idempotencyKeyRef = useRef<string>('')
 
   useEffect(() => {
     if (entry) {
-      setReason('');
-      setError(null);
-      idempotencyKeyRef.current = `rev-${entry._id}-${newIdempotencyKey()}`;
+      setReason('')
+      setError(null)
+      idempotencyKeyRef.current = `rev-${entry._id}-${newIdempotencyKey()}`
     }
-  }, [entry]);
+  }, [entry])
 
-  if (!entry) return null;
+  if (!entry) return null
 
   const handleConfirm = async () => {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
-    setSubmitting(true);
-    setError(null);
+    if (submittingRef.current) return
+    submittingRef.current = true
+    setSubmitting(true)
+    setError(null)
 
     try {
       const reversal = await apiJson<EntryView>(`/api/finance/transactions/${entry._id}/reverse`, {
@@ -55,12 +55,12 @@ export const ReverseModal = ({ entry, onClose, onReversed }: ReverseModalProps) 
           reason: reason.trim() || undefined,
           idempotencyKey: idempotencyKeyRef.current,
         }),
-      });
-      onReversed(reversal);
-      onClose();
+      })
+      onReversed(reversal)
+      onClose()
     } catch (err) {
       if (err instanceof ApiError) {
-        const issues = fieldIssues(err.details);
+        const issues = fieldIssues(err.details)
         setError(
           Object.values(issues)[0] ??
             (err.code === 'ALREADY_REVERSED'
@@ -68,15 +68,15 @@ export const ReverseModal = ({ entry, onClose, onReversed }: ReverseModalProps) 
               : err.isForbidden
                 ? 'Only an approver can reverse transactions.'
                 : err.message || 'Could not reverse the transaction.')
-        );
+        )
       } else {
-        setError('Could not reach the server. Press Confirm again to retry.');
+        setError('Could not reach the server. Press Confirm again to retry.')
       }
     } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
+      submittingRef.current = false
+      setSubmitting(false)
     }
-  };
+  }
 
   return (
     <Modal
@@ -137,5 +137,5 @@ export const ReverseModal = ({ entry, onClose, onReversed }: ReverseModalProps) 
         />
       </div>
     </Modal>
-  );
-};
+  )
+}

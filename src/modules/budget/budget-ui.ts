@@ -104,11 +104,12 @@ export const WARNING_LEVEL_LABEL: Record<BudgetWarningLevelView, string> = {
   critical: 'Over limit',
 }
 
-export const WARNING_LEVEL_BADGE: Record<BudgetWarningLevelView, 'default' | 'warning' | 'error'> = {
-  ok: 'default',
-  warning: 'warning',
-  critical: 'error',
-}
+export const WARNING_LEVEL_BADGE: Record<BudgetWarningLevelView, 'default' | 'warning' | 'error'> =
+  {
+    ok: 'default',
+    warning: 'warning',
+    critical: 'error',
+  }
 
 /**
  * Idempotency key for one form session: a retry of the same submission

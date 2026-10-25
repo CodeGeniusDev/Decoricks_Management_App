@@ -29,7 +29,11 @@ const MONTHS: Record<string, { budget: string; distribution: string; probe: stri
 const monthBounds = (month: string) => {
   const [year, m] = month.split('-').map(Number)
   const last = new Date(Date.UTC(year, m, 0)).getUTCDate()
-  return { start: `${month}-01`, end: `${month}-${String(last).padStart(2, '0')}`, mid: `${month}-15` }
+  return {
+    start: `${month}-01`,
+    end: `${month}-${String(last).padStart(2, '0')}`,
+    mid: `${month}-15`,
+  }
 }
 
 /**
@@ -50,9 +54,7 @@ const setNativeValue = async (locator: Locator, value: string) => {
 
 /** Reads a Metric's value paragraph — the sibling <p> under the label <p>. */
 const readMetric = async (page: Page, label: string): Promise<string> => {
-  const value = page
-    .locator(`p:text-is("${label}")`)
-    .locator('xpath=following-sibling::p[1]')
+  const value = page.locator(`p:text-is("${label}")`).locator('xpath=following-sibling::p[1]')
   return (await value.textContent()) ?? ''
 }
 
@@ -69,7 +71,7 @@ const mainHeading = (page: Page): Locator =>
 
 const postTransaction = async (
   page: Page,
-  opts: { type: 'income' | 'expense'; amount: string; date: string; category: string; note: string },
+  opts: { type: 'income' | 'expense'; amount: string; date: string; category: string; note: string }
 ) => {
   await page.goto('/finance/transactions')
   await expect(mainHeading(page)).toBeVisible()
@@ -168,7 +170,9 @@ test.describe('phase 4 — budgeting and profit tracking', () => {
 
     await page.goto(detailUrl)
     await expect
-      .poll(async () => parsePkr(await readMetric(page, 'Spent (from ledger)')), { timeout: 15_000 })
+      .poll(async () => parsePkr(await readMetric(page, 'Spent (from ledger)')), {
+        timeout: 15_000,
+      })
       .toBeCloseTo(spentBefore + 1234.5, 2)
     const remaining = parsePkr(await readMetric(page, 'Remaining'))
     expect(remaining).toBeCloseTo(5000 - (spentBefore + 1234.5), 2)
@@ -246,13 +250,17 @@ test.describe('phase 4 — budgeting and profit tracking', () => {
       await adjustDialog.getByLabel('Reason (required, audit-logged)').fill('E2E: test deduction')
       await adjustDialog.getByRole('button', { name: 'Apply adjustment' }).click()
       await expect(adjustDialog).toHaveCount(0)
-      await expect(page.getByText('Adjustments were applied after the first calculation.')).toBeVisible()
+      await expect(
+        page.getByText('Adjustments were applied after the first calculation.')
+      ).toBeVisible()
       // No stale numbers: the proof still closes after the re-split.
       await expect(proof).toBeVisible()
 
       // Approve & lock — confirmed through the dialog, never one-click.
       await page.getByRole('button', { name: 'Approve & lock' }).click()
-      const approveDialog = page.getByRole('dialog', { name: 'Approve and lock this distribution?' })
+      const approveDialog = page.getByRole('dialog', {
+        name: 'Approve and lock this distribution?',
+      })
       await expect(approveDialog).toBeVisible()
       await approveDialog.getByRole('button', { name: 'Approve & lock' }).click()
       await expect(approveDialog).toHaveCount(0)
@@ -286,7 +294,10 @@ test.describe('phase 4 — budgeting and profit tracking', () => {
   // (this is what intermittently failed the toggle on the slower Mobile render).
   // The refresh is now silent, so the open disclosure must survive a cross-device
   // finance write.
-  test('a background finance change keeps an open calculation panel from closing', async ({ page, browser }, testInfo) => {
+  test('a background finance change keeps an open calculation panel from closing', async ({
+    page,
+    browser,
+  }, testInfo) => {
     guard(page)
     const month = (MONTHS[testInfo.project.name] ?? MONTHS.chromium).probe
     const bounds = monthBounds(month)
@@ -339,7 +350,9 @@ test.describe('phase 4 — budgeting and profit tracking', () => {
     await page.waitForTimeout(1500)
     await expect(page.getByRole('button', { name: /Hide calculation · Net profit/ })).toBeVisible()
     await expect(formula).toBeVisible()
-    await expect(page.getByText('Adds up exactly — no paisa lost or invented by rounding.')).toBeVisible()
+    await expect(
+      page.getByText('Adds up exactly — no paisa lost or invented by rounding.')
+    ).toBeVisible()
     await expect(mainHeading(page)).toBeVisible()
     expect(page.url()).toBe(detailUrl)
   })
@@ -355,7 +368,9 @@ test.describe('phase 4 — budgeting and profit tracking', () => {
       const scrolls = await page.evaluate(
         () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
       )
-      expect(scrolls, `${route} scrolls horizontally at ${page.viewportSize()?.width}px`).toBe(false)
+      expect(scrolls, `${route} scrolls horizontally at ${page.viewportSize()?.width}px`).toBe(
+        false
+      )
     }
   })
 })

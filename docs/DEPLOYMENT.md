@@ -345,7 +345,7 @@ plan of record for when the operator gives the go-ahead.
 **Why a monitor is needed.** Quoted from Render's own docs, `render.com/docs/free`
 (VERIFIED this turn):
 
-> "Render *spins down* a Free web service that goes 15 minutes without receiving
+> "Render _spins down_ a Free web service that goes 15 minutes without receiving
 > any inbound traffic. This includes both HTTP requests and WebSocket messages
 > from existing connections."
 >
@@ -375,7 +375,7 @@ and therefore its Mongo pool and change-stream watcher — warm.
   clause is about **outbound** volume and is qualitative; a 4-user internal tool's
   Atlas traffic is ordinary, but it is the honest reason Free is staging-only.
 - **COULD NOT VERIFY:** an explicit Render sentence granting that third-party
-  keep-alive pinging is *permitted*, and any numeric egress threshold. The
+  keep-alive pinging is _permitted_, and any numeric egress threshold. The
   terms-of-service page surfaced no keep-alive/abuse clause in this pass. So the
   correct statement is **allowed-by-omission + community-standard practice**, not
   "allowed" as a quoted permission.
@@ -383,13 +383,13 @@ and therefore its Mongo pool and change-stream watcher — warm.
 **What 750 free instance hours mean for one always-on service.** VERIFIED
 (`render.com/docs/free`):
 
-> "Render grants *750 Free instance hours* to each workspace per calendar month …
+> "Render grants _750 Free instance hours_ to each workspace per calendar month …
 > A Free web service consumes these hours **as long as it's running** (spun-down
 > services don't consume Free instance hours) … [consuming them all] **suspends**
 > all of your Free web services until the start of the next month … reset to 750
 > [monthly, no rollover]."
 
-- Keeping the service awake means it is *always running*, so it burns hours
+- Keeping the service awake means it is _always running_, so it burns hours
   continuously. For **one** service, 24/7: a 30-day month = **720 h**, a 31-day
   month = **744 h**, February = **672 h** — **all ≤ 750.** So a **single**
   always-on free web service **fits inside the monthly 750 and is not suspended on
@@ -425,7 +425,7 @@ deploy/restart is cold again**: boot `ensureAuthIndexes` + a fresh handshake
 watcher reconnects, the in-memory rate-limit buckets and 2 s role cache refill, and
 every tab's `EventSource` reconnects. So: expect **one** brief slow first load per
 deploy/restart regardless of the monitor, and a momentary gap in instant realtime
-that closes on reconnect — while the monitor removes the *idle*-overnight cold
+that closes on reconnect — while the monitor removes the _idle_-overnight cold
 starts entirely.
 
 ---
@@ -571,7 +571,7 @@ clean clone of the same tip installs **509** on a dev machine.
   Next.js prints `ESLint must be installed in order to run during builds` and
   continues (lint is a separate `npm run lint` gate). `prettier` and `tsx` are
   script-only. `tailwindcss`/`postcss`/`autoprefixer` were not fatal to `next
-  build` on 15.5.27 in isolation, but they compile `globals.css` and must be
+build` on 15.5.27 in isolation, but they compile `globals.css` and must be
   present for correct styling.
 - **Pre-push guard.** Before pushing a deploy-bound commit, build the **exact tip
   in a clean out-of-tree clone** under production conditions and confirm it
@@ -743,9 +743,9 @@ records, and that `test` is being kept read-only as the 30-day rollback.
   npm omits every `devDependency`, and `next build` then fails in ~30s with
   `Module not found: Can't resolve '@/...'` (it needs `typescript` for the `@/*`
   alias plus the type-check toolchain). `--include=dev` is required. See §6d.
-- **Start command:** `npm run start`  (which runs `next start`; it reads `PORT`
+- **Start command:** `npm run start` (which runs `next start`; it reads `PORT`
   and binds all interfaces — verified locally above).
-- **Health check path:** `/api/health`  (liveness, no DB — see §2). Do **not**
+- **Health check path:** `/api/health` (liveness, no DB — see §2). Do **not**
   use `/api/health/database` for the platform probe.
 - **Instance type:** **Free** (0.1 CPU / 512 MB). Know the tradeoffs (§6a, §8):
   spins down after ~15 min idle, ~1-minute cold start, 750 free instance
@@ -762,15 +762,15 @@ commit any value. `SESSION_SECRET` must be **fresh and production-only — never
 the local one** (a shared secret means sessions/CSRF tokens are forgeable across
 environments).
 
-| Name | Value / how to generate |
-| --- | --- |
-| `MONGODB_URI` | Atlas SRV connection string using the **dedicated `decoricks_app` database user** (least-privilege, see Step 5). **SECRET.** |
-| `MONGODB_DB` | Exactly `decoricks_prod`. The startup gate (see §0) refuses to boot if it is unset or test-shaped. |
-| `SESSION_SECRET` | A fresh random secret, ≥16 chars: `openssl rand -base64 32`. **SECRET**, production-only. |
-| `TZ` | Exactly `Asia/Karachi` (Render defaults containers to UTC otherwise). |
-| `NODE_ENV` | `production`. (`next build`/`next start` set it themselves; setting it explicitly documents intent. Do **not** add `NODE_ENV` to any `.env.local` — it breaks local `next build`.) |
-| `MONGODB_TEST_DB` | **MUST BE ABSENT.** Test-runner only; setting it on the host crashes the app and would also disarm the startup gate. |
-| `E2E_TEST_MODE` | **MUST BE ABSENT.** Same reasoning — it marks the process as a test runner and exempts it from the production DB guard. |
+| Name                                                                   | Value / how to generate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MONGODB_URI`                                                          | Atlas SRV connection string using the **dedicated `decoricks_app` database user** (least-privilege, see Step 5). **SECRET.**                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `MONGODB_DB`                                                           | Exactly `decoricks_prod`. The startup gate (see §0) refuses to boot if it is unset or test-shaped.                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `SESSION_SECRET`                                                       | A fresh random secret, ≥16 chars: `openssl rand -base64 32`. **SECRET**, production-only.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `TZ`                                                                   | Exactly `Asia/Karachi` (Render defaults containers to UTC otherwise).                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `NODE_ENV`                                                             | `production`. (`next build`/`next start` set it themselves; setting it explicitly documents intent. Do **not** add `NODE_ENV` to any `.env.local` — it breaks local `next build`.)                                                                                                                                                                                                                                                                                                                                                |
+| `MONGODB_TEST_DB`                                                      | **MUST BE ABSENT.** Test-runner only; setting it on the host crashes the app and would also disarm the startup gate.                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `E2E_TEST_MODE`                                                        | **MUST BE ABSENT.** Same reasoning — it marks the process as a test runner and exempts it from the production DB guard.                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` / `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | **Optional — only if Web Push is wanted.** Leave all three unset to disable push (the app then falls back to in-app + browser notifications). If enabling: generate once with `npx web-push generate-vapid-keys`, paste the public key into `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (must be set in the **build** environment — it is inlined into the client bundle, so changing it needs a rebuild, not just a redeploy), the private key into `VAPID_PRIVATE_KEY` (**SECRET**), and `VAPID_SUBJECT` as a `mailto:` or `https:` contact. |
 
 `FOUNDER_EMAIL` / `FOUNDER_NAME` / `FOUNDER_PASSWORD` are **seed-only** and must
@@ -797,7 +797,7 @@ environments).
    - **Otherwise (typical on Free):** allow `0.0.0.0/0` — the whole network —
      **but only because** the connection is gated by the strong-credential,
      least-privilege `decoricks_app` user with its **long random password** — i.e.
-     the network is open, the *account* is not. This is the documented fallback.
+     the network is open, the _account_ is not. This is the documented fallback.
      Rotate the `decoricks_app` password periodically and keep its role minimal so
      an open allowlist stays bounded by credentials, not by network position.
 
@@ -807,7 +807,7 @@ environments).
 2. In the **runtime logs** confirm the startup line
    `[mongodb] using database "decoricks_prod" (MONGODB_DB)`. If the process
    instead **exits non-zero** with `[startup] refusing to run production against
-   database "test"…` (or "no explicit database is configured"), the deploy is
+database "test"…` (or "no explicit database is configured"), the deploy is
    **correctly failing** — fix `MONGODB_DB` / the URI path, redeploy.
 3. `GET https://<host>/api/health` → expect `200 {"status":"ok"}` (public, no DB).
    `GET https://<host>/api/health/database` is **Founder-only** now: open it in the

@@ -20,7 +20,9 @@ import {
  * implementation.
  */
 
-const m = (partial: Partial<MovementLike> & Pick<MovementLike, 'movementType' | 'quantity'>): MovementLike => ({
+const m = (
+  partial: Partial<MovementLike> & Pick<MovementLike, 'movementType' | 'quantity'>
+): MovementLike => ({
   productId: partial.productId ?? 'p1',
   fromLocation: partial.fromLocation ?? null,
   toLocation: partial.toLocation ?? null,
@@ -60,56 +62,65 @@ describe('weightedAverageCost (SPEC §5.3)', () => {
 
 describe('movementEffects', () => {
   it('maps each type to the pool delta it owns', () => {
-    expect(movementEffects(m({ movementType: 'purchase_in', quantity: 4, toLocation: 'lahore' }))).toEqual([
-      { location: 'lahore', available: 4, damaged: 0, returned: 0 },
-    ])
-    expect(movementEffects(m({ movementType: 'sale_out', quantity: 4, fromLocation: 'lahore' }))).toEqual([
-      { location: 'lahore', available: -4, damaged: 0, returned: 0 },
-    ])
+    expect(
+      movementEffects(m({ movementType: 'purchase_in', quantity: 4, toLocation: 'lahore' }))
+    ).toEqual([{ location: 'lahore', available: 4, damaged: 0, returned: 0 }])
+    expect(
+      movementEffects(m({ movementType: 'sale_out', quantity: 4, fromLocation: 'lahore' }))
+    ).toEqual([{ location: 'lahore', available: -4, damaged: 0, returned: 0 }])
     // A restocked return is available again AND counted as returned.
-    expect(movementEffects(m({ movementType: 'return_restock', quantity: 4, toLocation: 'lahore' }))).toEqual([
-      { location: 'lahore', available: 4, damaged: 0, returned: 4 },
-    ])
+    expect(
+      movementEffects(m({ movementType: 'return_restock', quantity: 4, toLocation: 'lahore' }))
+    ).toEqual([{ location: 'lahore', available: 4, damaged: 0, returned: 4 }])
     // A damaged return never re-enters available stock.
-    expect(movementEffects(m({ movementType: 'return_damaged', quantity: 4, toLocation: 'lahore' }))).toEqual([
-      { location: 'lahore', available: 0, damaged: 4, returned: 4 },
-    ])
+    expect(
+      movementEffects(m({ movementType: 'return_damaged', quantity: 4, toLocation: 'lahore' }))
+    ).toEqual([{ location: 'lahore', available: 0, damaged: 4, returned: 4 }])
     // A written-off return is recorded as returned but joins no physical pool.
-    expect(movementEffects(m({ movementType: 'return_writeoff', quantity: 4, toLocation: 'lahore' }))).toEqual([
-      { location: 'lahore', available: 0, damaged: 0, returned: 4 },
-    ])
+    expect(
+      movementEffects(m({ movementType: 'return_writeoff', quantity: 4, toLocation: 'lahore' }))
+    ).toEqual([{ location: 'lahore', available: 0, damaged: 0, returned: 4 }])
     // Warehouse damage leaves available and joins the damaged pool.
-    expect(movementEffects(m({ movementType: 'damage', quantity: 4, fromLocation: 'sheikhupura' }))).toEqual([
-      { location: 'sheikhupura', available: -4, damaged: 4, returned: 0 },
-    ])
-    expect(movementEffects(m({ movementType: 'writeoff', quantity: 4, fromLocation: 'sheikhupura' }))).toEqual([
-      { location: 'sheikhupura', available: -4, damaged: 0, returned: 0 },
-    ])
+    expect(
+      movementEffects(m({ movementType: 'damage', quantity: 4, fromLocation: 'sheikhupura' }))
+    ).toEqual([{ location: 'sheikhupura', available: -4, damaged: 4, returned: 0 }])
+    expect(
+      movementEffects(m({ movementType: 'writeoff', quantity: 4, fromLocation: 'sheikhupura' }))
+    ).toEqual([{ location: 'sheikhupura', available: -4, damaged: 0, returned: 0 }])
     // A counted adjustment carries an explicit direction.
     expect(
-      movementEffects(m({ movementType: 'adjustment', quantity: 4, toLocation: 'lahore', direction: 'out' }))
+      movementEffects(
+        m({ movementType: 'adjustment', quantity: 4, toLocation: 'lahore', direction: 'out' })
+      )
     ).toEqual([{ location: 'lahore', available: -4, damaged: 0, returned: 0 }])
     expect(
-      movementEffects(m({ movementType: 'adjustment', quantity: 4, toLocation: 'lahore', direction: 'in' }))
+      movementEffects(
+        m({ movementType: 'adjustment', quantity: 4, toLocation: 'lahore', direction: 'in' })
+      )
     ).toEqual([{ location: 'lahore', available: 4, damaged: 0, returned: 0 }])
   })
 
   it('a transfer touches both locations and conserves units', () => {
     const effects = movementEffects(
-      m({ movementType: 'transfer', quantity: 6, fromLocation: 'sheikhupura', toLocation: 'lahore' })
+      m({
+        movementType: 'transfer',
+        quantity: 6,
+        fromLocation: 'sheikhupura',
+        toLocation: 'lahore',
+      })
     )
     expect(effects).toHaveLength(2)
     expect(effects.reduce((sum, e) => sum + e.available, 0)).toBe(0)
   })
 
   it('a reversal negates every effect of its type', () => {
-    const original = movementEffects(m({ movementType: 'sale_out', quantity: 3, fromLocation: 'lahore' }))
+    const original = movementEffects(
+      m({ movementType: 'sale_out', quantity: 3, fromLocation: 'lahore' })
+    )
     const reversal = movementEffects(
       m({ movementType: 'sale_out', quantity: 3, fromLocation: 'lahore', isReversal: true })
     )
-    expect(reversal).toEqual([
-      { location: 'lahore', available: 3, damaged: 0, returned: 0 },
-    ])
+    expect(reversal).toEqual([{ location: 'lahore', available: 3, damaged: 0, returned: 0 }])
     expect(original[0].available + reversal[0].available).toBe(0)
   })
 
@@ -220,7 +231,13 @@ describe('cogsFromMovements (SPEC §5.3)', () => {
     expect(
       cogsFromMovements([
         m({ movementType: 'sale_out', quantity: 2, fromLocation: 'lahore', unitCost: 50_000 }),
-        m({ movementType: 'sale_out', quantity: 2, fromLocation: 'lahore', unitCost: 50_000, isReversal: true }),
+        m({
+          movementType: 'sale_out',
+          quantity: 2,
+          fromLocation: 'lahore',
+          unitCost: 50_000,
+          isReversal: true,
+        }),
       ])
     ).toBe(0)
   })
@@ -233,11 +250,7 @@ describe('cogsFromMovements (SPEC §5.3)', () => {
 describe('inventory valuation (SPEC §5.7)', () => {
   it('adds up per product at its own weighted average cost', () => {
     // A: 7 × PKR 533.33, B: 5 × PKR 800, C: 3 × PKR 1,200.
-    const lines = [
-      valuationLine(7, 53_333),
-      valuationLine(5, 80_000),
-      valuationLine(3, 120_000),
-    ]
+    const lines = [valuationLine(7, 53_333), valuationLine(5, 80_000), valuationLine(3, 120_000)]
     expect(lines).toEqual([373_331, 400_000, 360_000])
     expect(lines.reduce((sum, line) => sum + line, 0)).toBe(1_133_331) // PKR 11,333.31
   })

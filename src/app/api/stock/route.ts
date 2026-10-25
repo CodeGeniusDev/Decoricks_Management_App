@@ -96,7 +96,9 @@ async function __POST(request: NextRequest) {
     const auth = await requireAuth()
 
     const db = await getDatabase()
-    const product = await getProductCollection(db).findOne({ _id: new ObjectId(productId) } as never)
+    const product = await getProductCollection(db).findOne({
+      _id: new ObjectId(productId),
+    } as never)
     if (!product) return notFoundError('Product not found')
 
     const allowNegative = await getAllowNegativeStock(db)
@@ -104,7 +106,9 @@ async function __POST(request: NextRequest) {
 
     const result = await runInTransaction(async (session) => {
       const oid = new ObjectId(productId)
-      const row = await getStockCollection(db).findOne({ productId: oid, location } as never, { session })
+      const row = await getStockCollection(db).findOne({ productId: oid, location } as never, {
+        session,
+      })
       const current = row?.quantity ?? 0
       const delta = countedQuantity - current
       if (delta === 0) {
@@ -130,7 +134,9 @@ async function __POST(request: NextRequest) {
         session
       )
 
-      const after = await getStockCollection(db).findOne({ productId: oid, location } as never, { session })
+      const after = await getStockCollection(db).findOne({ productId: oid, location } as never, {
+        session,
+      })
       return {
         kind: 'posted' as const,
         movement: posted.movement,
@@ -143,7 +149,10 @@ async function __POST(request: NextRequest) {
 
     if (result.kind === 'noop') {
       return validationError('No adjustment needed', [
-        { path: 'countedQuantity', message: 'Counted quantity matches the system quantity; no adjustment needed.' },
+        {
+          path: 'countedQuantity',
+          message: 'Counted quantity matches the system quantity; no adjustment needed.',
+        },
       ])
     }
 

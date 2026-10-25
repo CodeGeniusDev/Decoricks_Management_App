@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  buildReportRows,
-  reportToCsv,
-  reportToPdf,
-} from '@/lib/reports/render'
+import { buildReportRows, reportToCsv, reportToPdf } from '@/lib/reports/render'
 import type { PeriodReport } from '@/lib/reports/period-report'
 
 /**
@@ -90,9 +86,13 @@ describe('reports/render', () => {
 
   it('flattens per-category and per-order lines', () => {
     const rows = buildReportRows(base, meta)
-    expect(rows.some((r) => r.section === 'Expenses by category' && r.item === 'meta_ads')).toBe(true)
+    expect(rows.some((r) => r.section === 'Expenses by category' && r.item === 'meta_ads')).toBe(
+      true
+    )
     expect(rows.some((r) => r.section === 'Low stock' && r.value === '2 units')).toBe(true)
-    expect(rows.some((r) => r.section === 'Recent orders' && r.item.includes('ORD-1001'))).toBe(true)
+    expect(rows.some((r) => r.section === 'Recent orders' && r.item.includes('ORD-1001'))).toBe(
+      true
+    )
   })
 
   it('escapes a comma-bearing value in the CSV', () => {

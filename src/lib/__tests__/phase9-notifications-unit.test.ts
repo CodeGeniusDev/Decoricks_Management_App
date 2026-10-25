@@ -71,11 +71,7 @@ const FOUNDER_ID = new ObjectId('507f1f77bcf86cd799439001')
 const PARTNER_ID = new ObjectId('507f1f77bcf86cd799439002')
 const OPACITY_ID = new ObjectId('507f1f77bcf86cd799439003') // no module grants
 
-const seed = (rows: {
-  users?: Doc[]
-  roles?: Doc[]
-  businessSettings?: Doc[]
-}): void => {
+const seed = (rows: { users?: Doc[]; roles?: Doc[]; businessSettings?: Doc[] }): void => {
   if (rows.users) mem.db.users.push(...rows.users)
   if (rows.roles) mem.db.roles.push(...rows.roles)
   if (rows.businessSettings) mem.db.businessSettings.push(...rows.businessSettings)
@@ -365,7 +361,11 @@ describe('maybeNotifyLargeExpense threshold event', () => {
 
   it('stays silent below the configured threshold', async () => {
     seedStandardUsers()
-    mem.db.businessSettings.push({ _id: new ObjectId(), key: 'business', largeExpenseThresholdPkr: 50_000 })
+    mem.db.businessSettings.push({
+      _id: new ObjectId(),
+      key: 'business',
+      largeExpenseThresholdPkr: 50_000,
+    })
     invalidateRoleCache()
     // 49,999 PKR in paisa is below a 50,000 PKR threshold.
     expect(await run(4_999_900)).toBe(0)
@@ -374,7 +374,11 @@ describe('maybeNotifyLargeExpense threshold event', () => {
 
   it('alerts the Founder once at or above the threshold', async () => {
     seedStandardUsers()
-    mem.db.businessSettings.push({ _id: new ObjectId(), key: 'business', largeExpenseThresholdPkr: 50_000 })
+    mem.db.businessSettings.push({
+      _id: new ObjectId(),
+      key: 'business',
+      largeExpenseThresholdPkr: 50_000,
+    })
     invalidateRoleCache()
     // 50,000 PKR = 5,000,000 paisa → meets the threshold.
     expect(await run(5_000_000)).toBe(1)
@@ -387,7 +391,11 @@ describe('maybeNotifyLargeExpense threshold event', () => {
 
   it('ignores non-expense entry types', async () => {
     seedStandardUsers()
-    mem.db.businessSettings.push({ _id: new ObjectId(), key: 'business', largeExpenseThresholdPkr: 1 })
+    mem.db.businessSettings.push({
+      _id: new ObjectId(),
+      key: 'business',
+      largeExpenseThresholdPkr: 1,
+    })
     invalidateRoleCache()
     expect(await run(99_999_900, 'income')).toBe(0)
     expect(notifRows()).toHaveLength(0)
@@ -395,7 +403,11 @@ describe('maybeNotifyLargeExpense threshold event', () => {
 
   it('dedupes when the same transaction is evaluated twice', async () => {
     seedStandardUsers()
-    mem.db.businessSettings.push({ _id: new ObjectId(), key: 'business', largeExpenseThresholdPkr: 10 })
+    mem.db.businessSettings.push({
+      _id: new ObjectId(),
+      key: 'business',
+      largeExpenseThresholdPkr: 10,
+    })
     invalidateRoleCache()
     expect(await run(5_000_000)).toBe(1)
     expect(await run(5_000_000)).toBe(0)

@@ -29,7 +29,10 @@ export const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
           {...props}
         />
         {label && (
-          <label htmlFor={checkboxId} className="text-sm font-medium text-decoricks-dark cursor-pointer">
+          <label
+            htmlFor={checkboxId}
+            className="text-sm font-medium text-decoricks-dark cursor-pointer"
+          >
             {label}
           </label>
         )}

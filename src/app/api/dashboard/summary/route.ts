@@ -47,104 +47,106 @@ async function __GET() {
     ] = await withMongoRetry(async () => {
       const db = await getDatabase()
       return Promise.all([
-      db
-        .collection('income')
-        .aggregate([
-          { $match: { date: { $gte: sevenDaysAgo, $lte: now } } },
-          {
-            $group: {
-              _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-              total: { $sum: '$amount' },
+        db
+          .collection('income')
+          .aggregate([
+            { $match: { date: { $gte: sevenDaysAgo, $lte: now } } },
+            {
+              $group: {
+                _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+                total: { $sum: '$amount' },
+              },
             },
-          },
-          { $sort: { _id: 1 } },
-        ])
-        .toArray(),
-      db
-        .collection('expenses')
-        .aggregate([
-          { $match: { date: { $gte: sevenDaysAgo, $lte: now } } },
-          {
-            $group: {
-              _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
-              total: { $sum: '$amount' },
+            { $sort: { _id: 1 } },
+          ])
+          .toArray(),
+        db
+          .collection('expenses')
+          .aggregate([
+            { $match: { date: { $gte: sevenDaysAgo, $lte: now } } },
+            {
+              $group: {
+                _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+                total: { $sum: '$amount' },
+              },
             },
-          },
-          { $sort: { _id: 1 } },
-        ])
-        .toArray(),
-      db
-        .collection('stock')
-        .aggregate([
-          {
-            $lookup: {
-              from: 'products',
-              localField: 'productId',
-              foreignField: '_id',
-              as: 'product',
+            { $sort: { _id: 1 } },
+          ])
+          .toArray(),
+        db
+          .collection('stock')
+          .aggregate([
+            {
+              $lookup: {
+                from: 'products',
+                localField: 'productId',
+                foreignField: '_id',
+                as: 'product',
+              },
             },
-          },
-          { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
-          {
-            $group: {
-              _id: '$location',
-              units: { $sum: '$quantity' },
-              // cost is stored in paisa
-              value: { $sum: { $multiply: ['$quantity', { $ifNull: ['$product.cost', 0] }] } },
+            { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
+            {
+              $group: {
+                _id: '$location',
+                units: { $sum: '$quantity' },
+                // cost is stored in paisa
+                value: { $sum: { $multiply: ['$quantity', { $ifNull: ['$product.cost', 0] }] } },
+              },
             },
-          },
-        ])
-        .toArray(),
-      db
-        .collection('orders')
-        .aggregate([
-          // Cancelled orders are not revenue, so they are excluded here just
-          // as they are from the lifetime totals.
-          {
-            $match: {
-              createdAt: { $gte: thirtyDaysAgo, $lte: now },
-              orderStatus: { $ne: 'cancelled' },
+          ])
+          .toArray(),
+        db
+          .collection('orders')
+          .aggregate([
+            // Cancelled orders are not revenue, so they are excluded here just
+            // as they are from the lifetime totals.
+            {
+              $match: {
+                createdAt: { $gte: thirtyDaysAgo, $lte: now },
+                orderStatus: { $ne: 'cancelled' },
+              },
             },
-          },
-          {
-            $group: {
-              _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-              // total is stored in paisa
-              revenue: { $sum: '$total' },
-              orders: { $sum: 1 },
+            {
+              $group: {
+                _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+                // total is stored in paisa
+                revenue: { $sum: '$total' },
+                orders: { $sum: 1 },
+              },
             },
-          },
-          { $sort: { _id: 1 } },
-        ])
-        .toArray(),
-      db.collection('tasks').countDocuments({ status: { $in: ['todo', 'in_progress', 'review'] } }),
-      db
-        .collection('orders')
-        .aggregate([
-          { $match: { orderStatus: { $ne: 'cancelled' } } },
-          { $group: { _id: null, revenue: { $sum: '$total' }, count: { $sum: 1 } } },
-        ])
-        .toArray(),
-      db
-        .collection('stock')
-        .aggregate([
-          {
-            $lookup: {
-              from: 'products',
-              localField: 'productId',
-              foreignField: '_id',
-              as: 'product',
+            { $sort: { _id: 1 } },
+          ])
+          .toArray(),
+        db
+          .collection('tasks')
+          .countDocuments({ status: { $in: ['todo', 'in_progress', 'review'] } }),
+        db
+          .collection('orders')
+          .aggregate([
+            { $match: { orderStatus: { $ne: 'cancelled' } } },
+            { $group: { _id: null, revenue: { $sum: '$total' }, count: { $sum: 1 } } },
+          ])
+          .toArray(),
+        db
+          .collection('stock')
+          .aggregate([
+            {
+              $lookup: {
+                from: 'products',
+                localField: 'productId',
+                foreignField: '_id',
+                as: 'product',
+              },
             },
-          },
-          { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
-          {
-            $group: {
-              _id: null,
-              value: { $sum: { $multiply: ['$quantity', { $ifNull: ['$product.cost', 0] }] } },
+            { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
+            {
+              $group: {
+                _id: null,
+                value: { $sum: { $multiply: ['$quantity', { $ifNull: ['$product.cost', 0] }] } },
+              },
             },
-          },
-        ])
-        .toArray(),
+          ])
+          .toArray(),
       ])
     })
 

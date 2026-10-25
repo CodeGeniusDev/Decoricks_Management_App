@@ -97,7 +97,10 @@ export async function insertIdempotent<T extends { _id?: ObjectId; idempotencyKe
     return { doc, created: true }
   } catch (error) {
     if (isDuplicateKeyError(error) && doc.idempotencyKey) {
-      const existing = await collection.findOne({ idempotencyKey: doc.idempotencyKey } as never, opts)
+      const existing = await collection.findOne(
+        { idempotencyKey: doc.idempotencyKey } as never,
+        opts
+      )
       if (existing) return { doc: existing as unknown as T, created: false }
     }
     throw error
@@ -124,9 +127,18 @@ export function ensureInventoryIndexes(db: Db): Promise<void> {
             { referenceId: 1, referenceType: 1 },
             { name: 'movements_reference' }
           ),
-          getStockMovementCollection(db).createIndex({ movementType: 1 }, { name: 'movements_type' }),
-          getStockMovementCollection(db).createIndex({ date: -1, createdAt: -1 }, { name: 'movements_date' }),
-          getStockMovementCollection(db).createIndex({ reversesId: 1 }, { name: 'movements_reverses' }),
+          getStockMovementCollection(db).createIndex(
+            { movementType: 1 },
+            { name: 'movements_type' }
+          ),
+          getStockMovementCollection(db).createIndex(
+            { date: -1, createdAt: -1 },
+            { name: 'movements_date' }
+          ),
+          getStockMovementCollection(db).createIndex(
+            { reversesId: 1 },
+            { name: 'movements_reverses' }
+          ),
 
           getPurchaseCollection(db).createIndex(
             { purchaseNumber: 1 },
@@ -141,10 +153,12 @@ export function ensureInventoryIndexes(db: Db): Promise<void> {
 
           // The stock projection is upserted by several transactional writers;
           // the unique compound index is what makes a guarded $inc race-safe.
-          db.collection('stock').createIndex(
-            { productId: 1, location: 1 },
-            { unique: true, name: 'stock_product_location_unique' }
-          ),
+          db
+            .collection('stock')
+            .createIndex(
+              { productId: 1, location: 1 },
+              { unique: true, name: 'stock_product_location_unique' }
+            ),
         ])
       } catch (error) {
         inventoryIndexesPromise = null

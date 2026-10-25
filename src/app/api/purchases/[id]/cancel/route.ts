@@ -3,7 +3,11 @@ import { ObjectId } from 'mongodb'
 import { handleRouteError, withAuth, getRequestMeta, logRouteFailure } from '@/lib/http'
 import { authorizeStockWrite, requireAuth } from '@/lib/authorization'
 import { getDatabase } from '@/lib/mongodb'
-import { ensureInventoryIndexes, getPurchaseCollection, purchaseToJSON } from '@/lib/models/Inventory'
+import {
+  ensureInventoryIndexes,
+  getPurchaseCollection,
+  purchaseToJSON,
+} from '@/lib/models/Inventory'
 import { notFoundError, successResponse, validationError } from '@/lib/api-response'
 import { recordAuditEntry } from '@/lib/audit'
 import { reverseLedgerEntry, type ActorContext } from '@/lib/finance-ledger'
@@ -50,7 +54,10 @@ async function __POST(request: NextRequest, context: RouteContext) {
     if (!purchase) return notFoundError('Purchase not found')
     if (!purchase.movementId) {
       return validationError('Purchase has no stock movement to reverse', [
-        { path: 'id', message: 'This purchase is missing its linked movement and cannot be cancelled here' },
+        {
+          path: 'id',
+          message: 'This purchase is missing its linked movement and cannot be cancelled here',
+        },
       ])
     }
 
@@ -73,7 +80,9 @@ async function __POST(request: NextRequest, context: RouteContext) {
         {
           createdBy: actor.id,
           reason: `Purchase ${purchase.purchaseNumber} cancelled: ${reason}`,
-          idempotencyKey: idempotencyKey ? `${idempotencyKey}:movement` : `purchase:${purchaseId}:cancel-movement`,
+          idempotencyKey: idempotencyKey
+            ? `${idempotencyKey}:movement`
+            : `purchase:${purchaseId}:cancel-movement`,
           allowNegative,
         },
         session

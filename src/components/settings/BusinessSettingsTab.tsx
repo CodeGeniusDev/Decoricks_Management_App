@@ -523,7 +523,8 @@ export function BusinessSettingsTab() {
           <div className="pb-2">
             {view.financialAlerts?.largeExpenseThresholdPkr ? (
               <Badge variant="success">
-                Alert on at PKR {view.financialAlerts.largeExpenseThresholdPkr.toLocaleString('en-US')}
+                Alert on at PKR{' '}
+                {view.financialAlerts.largeExpenseThresholdPkr.toLocaleString('en-US')}
               </Badge>
             ) : (
               <Badge variant="warning">Large-expense alert off</Badge>

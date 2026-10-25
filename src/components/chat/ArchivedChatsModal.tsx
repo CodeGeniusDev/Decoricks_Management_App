@@ -27,8 +27,7 @@ interface Envelope<T> {
   error?: { message?: string }
 }
 
-const pluralize = (n: number, one: string, many: string) =>
-  `${n} ${n === 1 ? one : many}`
+const pluralize = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
 const formatDay = (iso?: string | null): string | null => {
   if (!iso) return null

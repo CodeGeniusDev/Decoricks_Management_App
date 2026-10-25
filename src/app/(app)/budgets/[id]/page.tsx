@@ -1,29 +1,29 @@
-'use client';
+'use client'
 
 import { useRealtimeSync } from '@/lib/sync/useRealtime'
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { PageTransition } from '@/components/PageTransition';
-import { PageHeader, Metric, MetricGrid } from '@/components/layout/Page';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
-import { Modal } from '@/components/ui/Modal';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { ErrorState } from '@/components/ui/ErrorState';
-import { Table } from '@/components/ui/Table';
-import { Toast } from '@/components/ui/Toast';
-import { CalcPanel } from '@/components/ui/CalcPanel';
-import { BudgetBars } from '@/components/charts/BudgetBars';
-import { IconChevronLeft } from '@/components/ui/icons';
-import { apiJson, ApiError } from '@/lib/api-client';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { can } from '@/lib/permissions-client';
-import { formatPaisa } from '@/lib/money';
-import { formatKarachiDate } from '@/lib/date';
-import { toKarachiInputDate, type CategoryView } from '@/modules/finance/finance-ui';
-import { BudgetFormModal, type BudgetFormValues } from '@/modules/budget/BudgetFormModal';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { useParams, useRouter } from 'next/navigation'
+import { PageTransition } from '@/components/PageTransition'
+import { PageHeader, Metric, MetricGrid } from '@/components/layout/Page'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Modal } from '@/components/ui/Modal'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { Table } from '@/components/ui/Table'
+import { Toast } from '@/components/ui/Toast'
+import { CalcPanel } from '@/components/ui/CalcPanel'
+import { BudgetBars } from '@/components/charts/BudgetBars'
+import { IconChevronLeft } from '@/components/ui/icons'
+import { apiJson, ApiError } from '@/lib/api-client'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { can } from '@/lib/permissions-client'
+import { formatPaisa } from '@/lib/money'
+import { formatKarachiDate } from '@/lib/date'
+import { toKarachiInputDate, type CategoryView } from '@/modules/finance/finance-ui'
+import { BudgetFormModal, type BudgetFormValues } from '@/modules/budget/BudgetFormModal'
 import {
   BUDGET_STATUS_LABEL,
   PERIOD_KIND_LABEL,
@@ -31,7 +31,7 @@ import {
   WARNING_LEVEL_LABEL,
   categoryLabel,
   type BudgetDetailView,
-} from '@/modules/budget/budget-ui';
+} from '@/modules/budget/budget-ui'
 
 /**
  * Budget detail — actual vs budget, history and lifecycle (Phase 4 brief
@@ -44,67 +44,67 @@ import {
  * trail.
  */
 
-type BudgetAction = 'approve' | 'archive' | 'reopen';
+type BudgetAction = 'approve' | 'archive' | 'reopen'
 
 export default function BudgetDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const router = useRouter();
-  const { user } = useAuth();
+  const { id } = useParams<{ id: string }>()
+  const router = useRouter()
+  const { user } = useAuth()
 
-  const canEdit = user ? can({ role: user.role }, 'budget', 'edit') : false;
-  const canApprove = user ? can({ role: user.role }, 'budget', 'approve') : false;
+  const canEdit = user ? can({ role: user.role }, 'budget', 'edit') : false
+  const canApprove = user ? can({ role: user.role }, 'budget', 'approve') : false
 
-  const [budget, setBudget] = useState<BudgetDetailView | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [categories, setCategories] = useState<CategoryView[]>([]);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [budget, setBudget] = useState<BudgetDetailView | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [categories, setCategories] = useState<CategoryView[]>([])
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
-  const [editOpen, setEditOpen] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<BudgetAction | null>(null);
-  const [actionBusy, setActionBusy] = useState(false);
-  const actionRef = useRef(false);
+  const [editOpen, setEditOpen] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<BudgetAction | null>(null)
+  const [actionBusy, setActionBusy] = useState(false)
+  const actionRef = useRef(false)
 
   useRealtimeSync('finance', () => {
     void load()
   })
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
-      setBudget(await apiJson<BudgetDetailView>(`/api/budgets/${id}`));
+      setBudget(await apiJson<BudgetDetailView>(`/api/budgets/${id}`))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load budget');
+      setError(err instanceof Error ? err.message : 'Failed to load budget')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, [id]);
+  }, [id])
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load()
+  }, [load])
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
+    let cancelled = false
+    ;(async () => {
       try {
-        const list = await apiJson<CategoryView[]>('/api/finance/categories');
-        if (!cancelled) setCategories(list);
+        const list = await apiJson<CategoryView[]>('/api/finance/categories')
+        if (!cancelled) setCategories(list)
       } catch {
-        if (!cancelled) setCategories([]);
+        if (!cancelled) setCategories([])
       }
-    })();
+    })()
     return () => {
-      cancelled = true;
-    };
-  }, []);
+      cancelled = true
+    }
+  }, [])
 
   const labels = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const category of categories) map[category.name] = category.label;
-    return map;
-  }, [categories]);
+    const map: Record<string, string> = {}
+    for (const category of categories) map[category.name] = category.label
+    return map
+  }, [categories])
 
   const categoryOptions = useMemo(
     () =>
@@ -112,30 +112,30 @@ export default function BudgetDetailPage() {
         .filter((c) => c.type === 'expense' && c.isActive)
         .map((c) => ({ value: c.name, label: c.label })),
     [categories]
-  );
+  )
 
   const runAction = async (action: BudgetAction) => {
-    if (actionRef.current) return;
-    actionRef.current = true;
-    setActionBusy(true);
+    if (actionRef.current) return
+    actionRef.current = true
+    setActionBusy(true)
     try {
       await apiJson(`/api/budgets/${id}/action`, {
         method: 'POST',
         body: JSON.stringify({ action }),
-      });
-      setConfirmAction(null);
-      setToast({ type: 'success', message: 'Budget status updated and recorded in the audit log.' });
-      await load();
+      })
+      setConfirmAction(null)
+      setToast({ type: 'success', message: 'Budget status updated and recorded in the audit log.' })
+      await load()
     } catch (err) {
       setToast({
         type: 'error',
         message: err instanceof ApiError ? err.message : `Could not ${action} the budget`,
-      });
+      })
     } finally {
-      actionRef.current = false;
-      setActionBusy(false);
+      actionRef.current = false
+      setActionBusy(false)
     }
-  };
+  }
 
   const saveEdit = async (values: BudgetFormValues) => {
     const body: Record<string, unknown> = {
@@ -143,30 +143,33 @@ export default function BudgetDetailPage() {
       periodStart: values.periodStart,
       periodEnd: values.periodEnd,
       categories: values.categories,
-    };
-    if (values.periodKind !== 'auto') body.periodKind = values.periodKind;
+    }
+    if (values.periodKind !== 'auto') body.periodKind = values.periodKind
 
     // The API answers a PUT with the full fresh detail payload — using it
     // directly means zero chance of stale figures after saving.
     const updated = await apiJson<BudgetDetailView>(`/api/budgets/${id}`, {
       method: 'PUT',
       body: JSON.stringify(body),
-    });
-    setBudget(updated);
-    setEditOpen(false);
-    setToast({ type: 'success', message: 'Budget updated. The change is in the history below.' });
-  };
+    })
+    setBudget(updated)
+    setEditOpen(false)
+    setToast({ type: 'success', message: 'Budget updated. The change is in the history below.' })
+  }
 
   if (loading) {
     return (
       <PageTransition>
-        <PageHeader title="Budget" description="Actual versus budget, calculated from the ledger." />
+        <PageHeader
+          title="Budget"
+          description="Actual versus budget, calculated from the ledger."
+        />
         <div className="space-y-4">
           <Skeleton variant="rect" className="h-24" />
           <Skeleton variant="rect" className="h-64" />
         </div>
       </PageTransition>
-    );
+    )
   }
 
   if (error || !budget) {
@@ -181,24 +184,24 @@ export default function BudgetDetailPage() {
           />
         </Card>
       </PageTransition>
-    );
+    )
   }
 
   // Karachi day boundaries the actuals were computed over — the same range
   // the transactions screen is deep-linked with.
-  const rangeStart = toKarachiInputDate(budget.periodStart);
-  const rangeEnd = toKarachiInputDate(budget.periodEnd);
+  const rangeStart = toKarachiInputDate(budget.periodStart)
+  const rangeEnd = toKarachiInputDate(budget.periodEnd)
   const ledgerHref = `/finance/transactions?${new URLSearchParams({
     type: 'expense',
     startDate: rangeStart,
     endDate: rangeEnd,
-  }).toString()}`;
+  }).toString()}`
 
   const actions: { action: BudgetAction; label: string; show: boolean }[] = [
     { action: 'approve', label: 'Approve', show: canApprove && budget.status === 'draft' },
     { action: 'archive', label: 'Archive', show: canEdit && budget.status !== 'archived' },
     { action: 'reopen', label: 'Reopen as draft', show: canEdit && budget.status === 'archived' },
-  ];
+  ]
 
   const CONFIRM_COPY: Record<BudgetAction, { title: string; body: string }> = {
     approve: {
@@ -213,7 +216,7 @@ export default function BudgetDetailPage() {
       title: 'Reopen this budget?',
       body: 'The budget returns to draft for editing and must be approved again.',
     },
-  };
+  }
 
   return (
     <PageTransition>
@@ -258,7 +261,15 @@ export default function BudgetDetailPage() {
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Badge variant={budget.status === 'active' ? 'success' : budget.status === 'draft' ? 'default' : 'warning'}>
+        <Badge
+          variant={
+            budget.status === 'active'
+              ? 'success'
+              : budget.status === 'draft'
+                ? 'default'
+                : 'warning'
+          }
+        >
           {BUDGET_STATUS_LABEL[budget.status]}
         </Badge>
         {budget.level !== 'ok' && (
@@ -275,7 +286,11 @@ export default function BudgetDetailPage() {
       </div>
 
       <MetricGrid>
-        <Metric label="Allocated" value={formatPaisa(budget.totalBudgeted)} hint={`${budget.categories.length} categories`} />
+        <Metric
+          label="Allocated"
+          value={formatPaisa(budget.totalBudgeted)}
+          hint={`${budget.categories.length} categories`}
+        />
         <Metric
           label="Spent (from ledger)"
           value={formatPaisa(budget.totalActual)}
@@ -320,13 +335,21 @@ export default function BudgetDetailPage() {
         </Card>
 
         <Card className="p-4">
-          <h2 className="mb-3 text-sm font-semibold text-decoricks-dark">How these figures were derived</h2>
+          <h2 className="mb-3 text-sm font-semibold text-decoricks-dark">
+            How these figures were derived
+          </h2>
           <CalcPanel
             label="Total spent"
             formula="Spent = Σ ledger expense entries dated inside the period (reversals count as negatives; transfers and equity entries are ignored)"
             inputs={[
-              { label: 'Period start (Karachi)', value: formatKarachiDate(new Date(budget.periodStart), 'date') },
-              { label: 'Period end (Karachi)', value: formatKarachiDate(new Date(budget.periodEnd), 'date') },
+              {
+                label: 'Period start (Karachi)',
+                value: formatKarachiDate(new Date(budget.periodStart), 'date'),
+              },
+              {
+                label: 'Period end (Karachi)',
+                value: formatKarachiDate(new Date(budget.periodEnd), 'date'),
+              },
               { label: 'Expense entries counted', value: String(budget.sourceEntries.length) },
               { label: 'Allocated total', value: formatPaisa(budget.totalBudgeted) },
               { label: 'Spent total', value: formatPaisa(budget.totalActual) },
@@ -336,9 +359,13 @@ export default function BudgetDetailPage() {
             note="Warning levels come from the configurable budget thresholds in Business Settings, not fixed numbers."
           />
           <div className="mt-3">
-            <h3 className="text-xs font-semibold text-decoricks-dark">Ledger records behind the figures</h3>
+            <h3 className="text-xs font-semibold text-decoricks-dark">
+              Ledger records behind the figures
+            </h3>
             {budget.sourceEntries.length === 0 ? (
-              <p className="mt-1 text-xs text-ink-muted">No ledger expenses fall inside this period yet.</p>
+              <p className="mt-1 text-xs text-ink-muted">
+                No ledger expenses fall inside this period yet.
+              </p>
             ) : (
               <ul className="mt-1 max-h-48 divide-y divide-line-subtle overflow-y-auto text-xs">
                 {budget.sourceEntries.map((entry) => (
@@ -388,7 +415,11 @@ export default function BudgetDetailPage() {
                 </span>
               ),
               used: <span className="tabular-nums">{row.percentUsed}%</span>,
-              level: <Badge size="sm" variant={WARNING_LEVEL_BADGE[row.level]}>{WARNING_LEVEL_LABEL[row.level]}</Badge>,
+              level: (
+                <Badge size="sm" variant={WARNING_LEVEL_BADGE[row.level]}>
+                  {WARNING_LEVEL_LABEL[row.level]}
+                </Badge>
+              ),
               records: (
                 <Link
                   href={`/finance/transactions?${new URLSearchParams({
@@ -430,7 +461,9 @@ export default function BudgetDetailPage() {
                 </div>
                 <div>
                   <dt className="text-ink-muted">Remaining</dt>
-                  <dd className={`font-semibold tabular-nums ${row.remaining < 0 ? 'text-status-danger' : ''}`}>
+                  <dd
+                    className={`font-semibold tabular-nums ${row.remaining < 0 ? 'text-status-danger' : ''}`}
+                  >
                     {formatPaisa(row.remaining)}
                   </dd>
                 </div>
@@ -462,7 +495,10 @@ export default function BudgetDetailPage() {
         ) : (
           <ol className="space-y-3">
             {[...budget.revisions].reverse().map((revision, index) => (
-              <li key={`${revision.revisedAt}-${index}`} className="rounded-lg border border-line-subtle bg-surface-sunken px-3 py-2.5">
+              <li
+                key={`${revision.revisedAt}-${index}`}
+                className="rounded-lg border border-line-subtle bg-surface-sunken px-3 py-2.5"
+              >
                 <p className="text-xs font-medium text-decoricks-dark">
                   {revision.revisedByName ?? 'Unknown'} ·{' '}
                   {formatKarachiDate(new Date(revision.revisedAt), 'date')}
@@ -521,5 +557,5 @@ export default function BudgetDetailPage() {
         </p>
       </Modal>
     </PageTransition>
-  );
+  )
 }

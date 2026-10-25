@@ -26,10 +26,7 @@ import { requireAuth, AuthenticationError } from '@/lib/authorization'
 import { GET as listNotifications } from '@/app/api/notifications/route'
 import { PATCH as markRead } from '@/app/api/notifications/[id]/route'
 import { POST as markAllRead } from '@/app/api/notifications/read-all/route'
-import {
-  GET as getPrefs,
-  PATCH as patchPrefs,
-} from '@/app/api/notifications/preferences/route'
+import { GET as getPrefs, PATCH as patchPrefs } from '@/app/api/notifications/preferences/route'
 
 import { createMemDb, type MemDb, type Doc } from './helpers/mem-mongo'
 
@@ -113,9 +110,7 @@ const findNotif = (id: ObjectId): Doc | undefined =>
 const findUser = (id: ObjectId): Doc | undefined =>
   mem.db.users.docs.find((d) => String(d._id) === id.toString())
 const unreadMine = (): Doc[] =>
-  mem.db.notifications.docs.filter(
-    (d) => String(d.userId) === ME.toString() && d.isRead === false
-  )
+  mem.db.notifications.docs.filter((d) => String(d.userId) === ME.toString() && d.isRead === false)
 
 /* ----------------------------- 401 on every route -------------------------- */
 
@@ -160,7 +155,7 @@ describe('401 when there is no session', () => {
 /* ------------------------------- list (bell) ------------------------------- */
 
 describe('GET /api/notifications', () => {
-  it('returns ONLY the caller\'s rows and never another user\'s (IDOR)', async () => {
+  it("returns ONLY the caller's rows and never another user's (IDOR)", async () => {
     const res = await listNotifications(req('http://localhost/api/notifications'))
     expect(res.status).toBe(200)
     const body = await readJson(res)
@@ -199,7 +194,7 @@ describe('GET /api/notifications', () => {
 /* ------------------------------ mark one read ------------------------------ */
 
 describe('PATCH /api/notifications/[id]', () => {
-  it('marks the caller\'s own notification read and stamps readAt', async () => {
+  it("marks the caller's own notification read and stamps readAt", async () => {
     const res = await markRead(
       req(`http://localhost/api/notifications/${n1}`, {
         method: 'PATCH',
@@ -250,7 +245,7 @@ describe('PATCH /api/notifications/[id]', () => {
 /* ------------------------------ mark all read ------------------------------ */
 
 describe('POST /api/notifications/read-all', () => {
-  it('clears only the caller\'s unread rows, leaving another user\'s intact', async () => {
+  it("clears only the caller's unread rows, leaving another user's intact", async () => {
     const res = await markAllRead()
     expect(res.status).toBe(200)
     const body = await readJson(res)

@@ -51,15 +51,10 @@ export function formatKarachiDate(
  */
 export function getStartOfDay(date?: Date): Date {
   const targetDate = date || getKarachiDate()
-  const year = parseInt(
-    targetDate.toLocaleString('en-US', { timeZone: TIMEZONE, year: 'numeric' })
-  )
-  const month = parseInt(
-    targetDate.toLocaleString('en-US', { timeZone: TIMEZONE, month: 'numeric' })
-  ) - 1
-  const day = parseInt(
-    targetDate.toLocaleString('en-US', { timeZone: TIMEZONE, day: 'numeric' })
-  )
+  const year = parseInt(targetDate.toLocaleString('en-US', { timeZone: TIMEZONE, year: 'numeric' }))
+  const month =
+    parseInt(targetDate.toLocaleString('en-US', { timeZone: TIMEZONE, month: 'numeric' })) - 1
+  const day = parseInt(targetDate.toLocaleString('en-US', { timeZone: TIMEZONE, day: 'numeric' }))
 
   return new Date(year, month, day, 0, 0, 0)
 }
@@ -104,12 +99,9 @@ export function getEndOfWeek(date?: Date): Date {
  */
 export function getStartOfMonth(date?: Date): Date {
   const targetDate = date || getKarachiDate()
-  const year = parseInt(
-    targetDate.toLocaleString('en-US', { timeZone: TIMEZONE, year: 'numeric' })
-  )
-  const month = parseInt(
-    targetDate.toLocaleString('en-US', { timeZone: TIMEZONE, month: 'numeric' })
-  ) - 1
+  const year = parseInt(targetDate.toLocaleString('en-US', { timeZone: TIMEZONE, year: 'numeric' }))
+  const month =
+    parseInt(targetDate.toLocaleString('en-US', { timeZone: TIMEZONE, month: 'numeric' })) - 1
 
   return new Date(year, month, 1, 0, 0, 0)
 }

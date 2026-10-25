@@ -63,7 +63,10 @@ async function __POST(_request: NextRequest, context: RouteContext) {
     try {
       await notifyDistributionLocked(db, id, doc.month)
     } catch (notifyError) {
-      console.error('POST /api/finance/distributions/[id]/approve notification failed:', notifyError)
+      console.error(
+        'POST /api/finance/distributions/[id]/approve notification failed:',
+        notifyError
+      )
     }
 
     const meta = await getRequestMeta()

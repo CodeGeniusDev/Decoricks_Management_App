@@ -8,10 +8,7 @@ import { toCsv } from '@/lib/finance'
 import { paisaToPkr } from '@/lib/money'
 import { buildStockSummary, type StockSummaryItem } from '@/lib/stock-summary'
 import { getProductCollection } from '@/lib/models/Product'
-import {
-  buildProductFilter,
-  productParamsFromUrl,
-} from '@/lib/inventory-sales-filters'
+import { buildProductFilter, productParamsFromUrl } from '@/lib/inventory-sales-filters'
 
 /**
  * GET /api/products/export — the product list as CSV.

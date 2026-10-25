@@ -1,7 +1,9 @@
 import { z } from 'zod'
 
 /** 'YYYY-MM' Karachi month key, e.g. 2026-09. */
-export const distributionMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Month must be YYYY-MM')
+export const distributionMonthSchema = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Month must be YYYY-MM')
 
 export const distributionCreateSchema = z.object({
   month: distributionMonthSchema,

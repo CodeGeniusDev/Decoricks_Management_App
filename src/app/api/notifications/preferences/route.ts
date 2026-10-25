@@ -44,9 +44,9 @@ async function __GET() {
 
 async function __PATCH(request: NextRequest) {
   const auth = await requireAuth()
-  const body = (await request.json().catch(() => null)) as
-    | { preferences?: Record<string, { enabled?: unknown }> }
-    | null
+  const body = (await request.json().catch(() => null)) as {
+    preferences?: Record<string, { enabled?: unknown }>
+  } | null
 
   const incoming = body?.preferences
   if (!incoming || typeof incoming !== 'object') {

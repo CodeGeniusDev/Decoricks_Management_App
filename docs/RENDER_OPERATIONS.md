@@ -10,10 +10,10 @@ Live service: **https://decoricks-management-app.onrender.com**
 
 ## 0. The two settings that must stay exactly right
 
-| Setting | Required value | Where |
-| --- | --- | --- |
-| **Build Command** | `npm ci --include=dev && npm run build` | Render dashboard → your service → **Settings** → Build & Deploy → Build Command |
-| **`NODE_VERSION`** | `22` | Settings → **Environment** (as an environment variable). This pins the build/runtime image; without it Render may pick a different Node than the one the app was verified on. |
+| Setting            | Required value                          | Where                                                                                                                                                                         |
+| ------------------ | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Build Command**  | `npm ci --include=dev && npm run build` | Render dashboard → your service → **Settings** → Build & Deploy → Build Command                                                                                               |
+| **`NODE_VERSION`** | `22`                                    | Settings → **Environment** (as an environment variable). This pins the build/runtime image; without it Render may pick a different Node than the one the app was verified on. |
 
 Why the build command has `--include=dev`: `next build` needs the dev
 dependencies (TypeScript, etc.). Without them the build fails with a missing
@@ -50,7 +50,7 @@ Dashboard → your service → **More → Restart Service** (top-right menu).
 Takes ~1–2 minutes; the free instance then cold-starts on the next request
 (see §6 about cold starts and monitors).
 
-If the problem is the *build itself*, use **Manual Deploy → Deploy latest
+If the problem is the _build itself_, use **Manual Deploy → Deploy latest
 commit** instead — that rebuilds and replaces.
 
 ## 3. Rolling back to the previous deploy
@@ -142,7 +142,7 @@ Where to see it in the dashboard:
    so check it weekly, not when the site goes down.
 2. Render emails the organization owner at the usage thresholds; confirm owner
    email is current under **Account → Notifications**.
-3. Per-service CPU/RAM under the service's **Metrics** tab tells you *why* hours
+3. Per-service CPU/RAM under the service's **Metrics** tab tells you _why_ hours
    burn (constant traffic vs restart loops). A crash-looping deploy can eat
    hours fast — check deploy logs if usage spikes.
 

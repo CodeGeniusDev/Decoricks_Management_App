@@ -178,8 +178,14 @@ export const taskListQuerySchema = z.object({
   priority: taskPriorityEnum.optional(),
   labelId: objectId.optional(),
   /** YYYY-MM-DD (Karachi day boundaries). */
-  dueFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  dueTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  dueFrom: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  dueTo: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   search: z.string().trim().max(120).optional(),
   /** When true, only overdue (past due, not in done column, Karachi today). */
   overdue: z.enum(['true', 'false']).optional(),
@@ -187,4 +193,3 @@ export const taskListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 })
-

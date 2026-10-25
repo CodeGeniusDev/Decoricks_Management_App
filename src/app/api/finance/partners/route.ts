@@ -1,9 +1,9 @@
-import { authorize } from '@/lib/authorization';
-import { getDatabase } from '@/lib/mongodb';
-import { handleRouteError, withAuth } from '@/lib/http';
-import { successResponse } from '@/lib/api-response';
-import { ROLE_ALI, ROLE_AFNAN, ROLE_FOUNDER, ROLE_HASNAT } from '@/lib/roles';
-import { getUserCollection } from '@/lib/models/User';
+import { authorize } from '@/lib/authorization'
+import { getDatabase } from '@/lib/mongodb'
+import { handleRouteError, withAuth } from '@/lib/http'
+import { successResponse } from '@/lib/api-response'
+import { ROLE_ALI, ROLE_AFNAN, ROLE_FOUNDER, ROLE_HASNAT } from '@/lib/roles'
+import { getUserCollection } from '@/lib/models/User'
 
 /**
  * GET /api/finance/partners
@@ -14,8 +14,8 @@ import { getUserCollection } from '@/lib/models/User';
  */
 async function __GET() {
   try {
-    await authorize('finance', 'view');
-    const db = await getDatabase();
+    await authorize('finance', 'view')
+    const db = await getDatabase()
 
     const users = await getUserCollection(db)
       .find(
@@ -23,7 +23,7 @@ async function __GET() {
         { projection: { name: 1, role: 1 } }
       )
       .sort({ createdAt: 1 })
-      .toArray();
+      .toArray()
 
     return successResponse(
       users.map((user) => ({
@@ -31,10 +31,10 @@ async function __GET() {
         name: user.name,
         role: user.role,
       }))
-    );
+    )
   } catch (error) {
-    return handleRouteError(error);
+    return handleRouteError(error)
   }
 }
 
-export const GET = withAuth(__GET);
+export const GET = withAuth(__GET)

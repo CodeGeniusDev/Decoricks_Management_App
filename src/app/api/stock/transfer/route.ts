@@ -61,7 +61,9 @@ async function __POST(request: NextRequest) {
         },
         session
       )
-      const rows = await getStockCollection(db).find({ productId: oid } as never, { session }).toArray()
+      const rows = await getStockCollection(db)
+        .find({ productId: oid } as never, { session })
+        .toArray()
       return { movement: posted.movement, created: posted.created, rows }
     })
 

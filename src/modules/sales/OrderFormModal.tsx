@@ -286,7 +286,9 @@ export const OrderFormModal = ({
           )
         }
       } else {
-        setFormError('Could not reach the server. Press Save again — the retry will not create a second order.')
+        setFormError(
+          'Could not reach the server. Press Save again — the retry will not create a second order.'
+        )
       }
     } finally {
       savingRef.current = false
@@ -326,7 +328,10 @@ export const OrderFormModal = ({
     >
       <div className="flex flex-col gap-4">
         {formError && (
-          <p role="alert" className="rounded-md bg-status-danger-bg px-3 py-2 text-sm text-status-danger">
+          <p
+            role="alert"
+            className="rounded-md bg-status-danger-bg px-3 py-2 text-sm text-status-danger"
+          >
             {formError}
           </p>
         )}
@@ -479,9 +484,7 @@ export const OrderFormModal = ({
                       )}
                     </div>
                   </div>
-                  {short && (
-                    <p className="mt-1 text-xs text-status-warning">Only {short}</p>
-                  )}
+                  {short && <p className="mt-1 text-xs text-status-warning">Only {short}</p>}
                 </li>
               )
             })}

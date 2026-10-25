@@ -35,9 +35,7 @@ export interface SplitPart {
  * sum to `totalPaisa`, so nothing leaks into retained earnings.
  */
 export function allocateExactly(totalPaisa: number, weights: number[]): number[] {
-  const clean = weights.map((weight) =>
-    Number.isFinite(weight) && weight > 0 ? weight : 0
-  )
+  const clean = weights.map((weight) => (Number.isFinite(weight) && weight > 0 ? weight : 0))
   const weightSum = clean.reduce((sum, weight) => sum + weight, 0)
   if (weightSum <= 0) return clean.map(() => 0)
 
@@ -63,7 +61,11 @@ export function largestRemainderSplit(totalPaisa: number, parts: SplitPart[]): n
   // intentionally leave the remainder with the caller (retained earnings).
   const pool = Math.round((totalPaisa * Math.min(weightSum, 100)) / 100)
 
-  return distributePool(pool, clean.map((part) => part.weight), weightSum)
+  return distributePool(
+    pool,
+    clean.map((part) => part.weight),
+    weightSum
+  )
 }
 
 /** Shared largest-remainder core: split `pool` across relative weights exactly. */
@@ -147,8 +149,8 @@ export function computeDistribution(input: {
 
   // 2. Reinvestment per partner: floor(share × reinvest%) (§5.8). The paisa
   //    below the floor stay on the partner's withdrawable side — nothing lost.
-  const reinvestedAmounts = shareAmounts.map(
-    (share, index) => Math.floor((share * partners[index].reinvestPercentage) / 100)
+  const reinvestedAmounts = shareAmounts.map((share, index) =>
+    Math.floor((share * partners[index].reinvestPercentage) / 100)
   )
 
   // 3. Base finals, then adjustments with pro-rata redistribution.
@@ -156,7 +158,9 @@ export function computeDistribution(input: {
   const adjustmentsTotal = partners.map(() => 0)
 
   for (const adjustment of input.adjustments ?? []) {
-    const index = partners.findIndex((partner, i) => partnerKey(partner, i) === adjustment.partnerKey)
+    const index = partners.findIndex(
+      (partner, i) => partnerKey(partner, i) === adjustment.partnerKey
+    )
     if (index === -1 || adjustment.amount === 0) continue
 
     finals[index] += adjustment.amount
@@ -169,7 +173,11 @@ export function computeDistribution(input: {
       // paisa into retained earnings).
       const deducted = -adjustment.amount
       const others = partners
-        .map((partner, i) => ({ key: partnerKey(partner, i), weight: partner.percentage, index: i }))
+        .map((partner, i) => ({
+          key: partnerKey(partner, i),
+          weight: partner.percentage,
+          index: i,
+        }))
         .filter((part) => part.index !== index)
       const shares = allocateExactly(
         deducted,

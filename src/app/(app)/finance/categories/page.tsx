@@ -1,32 +1,32 @@
-'use client';
+'use client'
 
 import { useRealtimeSync } from '@/lib/sync/useRealtime'
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
-import { PageTransition } from '@/components/PageTransition';
-import { PageHeader } from '@/components/layout/Page';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Select } from '@/components/ui/Select';
-import { Badge } from '@/components/ui/Badge';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { ErrorState } from '@/components/ui/ErrorState';
-import { Toast } from '@/components/ui/Toast';
-import { Modal } from '@/components/ui/Modal';
-import { Checkbox } from '@/components/ui/Checkbox';
-import { apiJson, ApiError } from '@/lib/api-client';
-import { useAuth } from '@/components/auth/AuthProvider';
-import { can } from '@/lib/permissions-client';
-import { fieldIssues, type CategoryView } from '@/modules/finance/finance-ui';
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import { PageTransition } from '@/components/PageTransition'
+import { PageHeader } from '@/components/layout/Page'
+import { Card } from '@/components/ui/Card'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
+import { Badge } from '@/components/ui/Badge'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { Toast } from '@/components/ui/Toast'
+import { Modal } from '@/components/ui/Modal'
+import { Checkbox } from '@/components/ui/Checkbox'
+import { apiJson, ApiError } from '@/lib/api-client'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { can } from '@/lib/permissions-client'
+import { fieldIssues, type CategoryView } from '@/modules/finance/finance-ui'
 
 interface CategoryFormState {
-  _id?: string;
-  name: string;
-  label: string;
-  type: 'expense' | 'income';
-  isActive: boolean;
+  _id?: string
+  name: string
+  label: string
+  type: 'expense' | 'income'
+  isActive: boolean
 }
 
 const EMPTY_FORM: CategoryFormState = {
@@ -34,7 +34,7 @@ const EMPTY_FORM: CategoryFormState = {
   label: '',
   type: 'expense',
   isActive: true,
-};
+}
 
 /** Derive the stable slug from the label; the API enforces `^[a-z0-9_]+$`. */
 const slugify = (value: string): string =>
@@ -42,50 +42,50 @@ const slugify = (value: string): string =>
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
+    .replace(/^_+|_+$/g, '')
 
 export default function FinanceCategoriesPage() {
-  const { user } = useAuth();
-  const canManage = user ? can({ role: user.role }, 'finance', 'approve') : false;
+  const { user } = useAuth()
+  const canManage = user ? can({ role: user.role }, 'finance', 'approve') : false
 
-  const [categories, setCategories] = useState<CategoryView[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [categories, setCategories] = useState<CategoryView[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
-  const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState<CategoryFormState>(EMPTY_FORM);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [formError, setFormError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const savingRef = useRef(false);
+  const [formOpen, setFormOpen] = useState(false)
+  const [form, setForm] = useState<CategoryFormState>(EMPTY_FORM)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [formError, setFormError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
 
   useRealtimeSync('finance', () => {
     void load()
   })
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
-      setCategories(await apiJson<CategoryView[]>('/api/finance/categories'));
+      setCategories(await apiJson<CategoryView[]>('/api/finance/categories'))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load categories');
+      setError(err instanceof Error ? err.message : 'Failed to load categories')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, []);
+  }, [])
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load()
+  }, [load])
 
   const openCreate = (type: 'expense' | 'income') => {
-    setForm({ ...EMPTY_FORM, type });
-    setErrors({});
-    setFormError(null);
-    setFormOpen(true);
-  };
+    setForm({ ...EMPTY_FORM, type })
+    setErrors({})
+    setFormError(null)
+    setFormOpen(true)
+  }
 
   const openEdit = (category: CategoryView) => {
     setForm({
@@ -94,34 +94,34 @@ export default function FinanceCategoriesPage() {
       label: category.label,
       type: category.type,
       isActive: category.isActive,
-    });
-    setErrors({});
-    setFormError(null);
-    setFormOpen(true);
-  };
+    })
+    setErrors({})
+    setFormError(null)
+    setFormOpen(true)
+  }
 
   const handleSubmit = async () => {
-    if (savingRef.current) return;
+    if (savingRef.current) return
 
-    const local: Record<string, string> = {};
-    if (!form.label.trim()) local.label = 'Label is required';
+    const local: Record<string, string> = {}
+    if (!form.label.trim()) local.label = 'Label is required'
     if (!form._id && !slugify(form.label)) {
-      local.name = 'Label must contain letters or numbers to form a slug';
+      local.name = 'Label must contain letters or numbers to form a slug'
     }
-    setErrors(local);
-    if (Object.keys(local).length > 0) return;
+    setErrors(local)
+    if (Object.keys(local).length > 0) return
 
-    savingRef.current = true;
-    setSaving(true);
-    setFormError(null);
+    savingRef.current = true
+    setSaving(true)
+    setFormError(null)
 
     try {
       if (form._id) {
         await apiJson(`/api/finance/categories/${form._id}`, {
           method: 'PATCH',
           body: JSON.stringify({ label: form.label.trim(), isActive: form.isActive }),
-        });
-        setToast({ type: 'success', message: `Category "${form.label.trim()}" updated` });
+        })
+        setToast({ type: 'success', message: `Category "${form.label.trim()}" updated` })
       } else {
         await apiJson('/api/finance/categories', {
           method: 'POST',
@@ -130,33 +130,33 @@ export default function FinanceCategoriesPage() {
             label: form.label.trim(),
             type: form.type,
           }),
-        });
-        setToast({ type: 'success', message: `Category "${form.label.trim()}" created` });
+        })
+        setToast({ type: 'success', message: `Category "${form.label.trim()}" created` })
       }
-      setFormOpen(false);
-      await load();
+      setFormOpen(false)
+      await load()
     } catch (err) {
       if (err instanceof ApiError) {
-        const issues = fieldIssues(err.details);
-        if (Object.keys(issues).length > 0) setErrors(issues);
+        const issues = fieldIssues(err.details)
+        if (Object.keys(issues).length > 0) setErrors(issues)
         setFormError(
           err.code === 'DUPLICATE'
             ? 'A category with that slug already exists.'
             : err.isForbidden
               ? 'Only the Founder can manage categories.'
               : err.message || 'Could not save the category.'
-        );
+        )
       } else {
-        setFormError('Could not reach the server. Press Save again to retry.');
+        setFormError('Could not reach the server. Press Save again to retry.')
       }
     } finally {
-      savingRef.current = false;
-      setSaving(false);
+      savingRef.current = false
+      setSaving(false)
     }
-  };
+  }
 
   const renderGroup = (title: string, type: 'expense' | 'income') => {
-    const items = categories.filter((c) => c.type === type);
+    const items = categories.filter((c) => c.type === type)
     return (
       <Card className="p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
@@ -197,8 +197,8 @@ export default function FinanceCategoriesPage() {
           </ul>
         )}
       </Card>
-    );
-  };
+    )
+  }
 
   return (
     <PageTransition>
@@ -308,5 +308,5 @@ export default function FinanceCategoriesPage() {
         </div>
       </Modal>
     </PageTransition>
-  );
+  )
 }

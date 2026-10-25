@@ -132,11 +132,7 @@ const baseCookie = {
   path: '/',
 } as const
 
-export const writeSessionCookies = async (
-  token: string,
-  csrfToken: string,
-  createdAt?: Date
-) => {
+export const writeSessionCookies = async (token: string, csrfToken: string, createdAt?: Date) => {
   const opts = sessionCookieOptions(createdAt)
   const store = await cookies()
 

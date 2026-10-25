@@ -62,7 +62,9 @@ const makeAttemptDb = () => {
           // Our implementation now sorts ascending for lockout-start calculation
           // and descending for the "newest" read; support both.
           const dir = s.createdAt === 1 ? 1 : -1
-          const sorted2 = [...results].sort((a, b) => dir * (a.createdAt.getTime() - b.createdAt.getTime()))
+          const sorted2 = [...results].sort(
+            (a, b) => dir * (a.createdAt.getTime() - b.createdAt.getTime())
+          )
           return {
             limit: (n: number) => ({ toArray: async () => sorted2.slice(0, n) }),
           }

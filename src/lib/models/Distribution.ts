@@ -96,7 +96,10 @@ export function ensureDistributionIndexes(db: Db): Promise<void> {
             { idempotencyKey: 1 },
             { unique: true, sparse: true, name: 'distribution_idempotency_unique' }
           ),
-          getProfitDistributionCollection(db).createIndex({ status: 1 }, { name: 'distribution_status' }),
+          getProfitDistributionCollection(db).createIndex(
+            { status: 1 },
+            { name: 'distribution_status' }
+          ),
         ])
       } catch (error) {
         distributionIndexPromise = null
