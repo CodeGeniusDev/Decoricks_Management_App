@@ -21,6 +21,24 @@ const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/health']
 const SESSION_PROTECTED_PUBLIC = ['/change-password', '/api/auth/change-password']
 
 /**
+ * Machine-called routes that authenticate with a shared secret header instead of
+ * a session (currently only `GET /api/cron/notifications`, which an external
+ * cron service calls on a timer). They must reach the handler with no cookie —
+ * a cron service has none — so the edge gate cannot be their protection and the
+ * route enforces its own secret, rate limiting and 404-when-unconfigured
+ * behaviour. Listed EXACTLY, never by prefix: adding one here is a deliberate
+ * decision about one URL, because everything else on `/api/` keeps requiring a
+ * session below.
+ *
+ * These paths also skip `withCsrfRequirement`, which is correct rather than a
+ * gap: CSRF defence exists to stop another site riding a victim's session
+ * cookie, and there is no cookie and no session code in this request path. A
+ * double-submit token would be unobtainable for the very caller that is allowed
+ * in, and the method it uses is a safe one anyway.
+ */
+const SECRET_AUTHENTICATED_PATHS = new Set(['/api/cron/notifications'])
+
+/**
  * Methods that cannot change state. `SameSite=Lax` already blocks cross-site
  * requests for the rest, but the CSRF check is enforced independently so the
  * protection does not rest on one browser default.
@@ -40,6 +58,12 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   if (isPublic(pathname)) return NextResponse.next()
+
+  // Header-authenticated machine routes: no session exists to check, so the edge
+  // gate steps aside and the route's own secret check answers. Exact match only
+  // (see SECRET_AUTHENTICATED_PATHS), so nothing under /api/cron/ is public by
+  // accident and every other path below still needs a session cookie.
+  if (SECRET_AUTHENTICATED_PATHS.has(pathname)) return NextResponse.next()
 
   const hasSessionCookie = Boolean(request.cookies.get(SESSION_COOKIE)?.value)
 

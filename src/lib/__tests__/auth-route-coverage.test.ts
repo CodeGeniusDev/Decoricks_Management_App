@@ -22,6 +22,19 @@ describe('api route authorization coverage', () => {
       // /api/health/database is NOT public: it makes a real DB round trip and is
       // a Founder-only operator diagnostic (requireFounder), so it belongs to the
       // protected set below. Only the DB-free liveness probe stays public.
+      //
+      // DELIBERATE EXCEPTION, not an oversight: /api/cron/notifications is
+      // called by an external cron service that has no session, so it cannot
+      // use any of the four markers this test looks for. It is authenticated by
+      // the `x-cron-secret` shared-secret header (`CRON_SECRET`, constant-time,
+      // minimum length 32) instead — and when that variable is unset the route
+      // answers 404 and runs nothing, so an unconfigured deployment exposes no
+      // surface at all. Failures are rate limited per IP plus a process-wide
+      // backstop, the response carries counts only, and middleware admits this
+      // one exact path without a cookie (src/middleware.ts). Removing the header
+      // check would be a real hole, so the route is covered by its own suite:
+      // see src/lib/__tests__/cron-notifications-route.test.ts.
+      'src/app/api/cron/notifications/route.ts',
     ])
     const missing: string[] = []
     for (const r of routes) {
