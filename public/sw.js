@@ -26,10 +26,10 @@
 
 // Bump the trailing number on every deploy that changes the shell set.
 // `activate` treats any cache name not in the current family as stale.
-const VERSION = 'phase9-offline-v1'
-const SHELL_CACHE = 'decoricks-shell-v1'
-const PAGES_CACHE = 'decoricks-pages-v1'
-const STATIC_CACHE = 'decoricks-static-v1'
+const VERSION = 'phase9-offline-v2'
+const SHELL_CACHE = 'decoricks-shell-v2'
+const PAGES_CACHE = 'decoricks-pages-v2'
+const STATIC_CACHE = 'decoricks-static-v2'
 const CURRENT_CACHES = [SHELL_CACHE, PAGES_CACHE, STATIC_CACHE]
 
 // Shell precache: static assets batch in; the dynamic login HTML is fetched
@@ -40,6 +40,13 @@ const SHELL_ASSETS = [
   '/favicon.svg',
   '/icon.svg',
   '/maskable-icon.svg',
+  // Raster icons: the manifest needs them for Android/iOS install, and
+  // notification `icon`/`badge` only accept raster images reliably.
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-maskable-192.png',
+  '/icons/icon-maskable-512.png',
+  '/icons/apple-touch-icon.png',
 ]
 
 self.addEventListener('install', (event) => {
@@ -185,8 +192,11 @@ self.addEventListener('push', (event) => {
     // Dedupe key: the server-supplied notification `_id`. Re-delivery of the same
     // event, or the same event observed by several open tabs, shows once.
     tag: payload.notificationId || 'decoricks',
-    icon: '/icon.svg',
-    badge: '/maskable-icon.svg',
+    // Raster PNGs, not SVG: the spec and Chrome/Android/Safari only reliably
+    // render raster notification `icon`/`badge` — an SVG here silently shows
+    // no picture on Android and iOS home-screen installs.
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-maskable-192.png',
     timestamp: Date.now(),
     data: {
       link: payload.link || '/',

@@ -30,7 +30,9 @@ export const metadata: Metadata = {
       { url: '/favicon.ico', sizes: '32x32' },
       { url: '/favicon.svg', type: 'image/svg+xml' },
     ],
-    apple: '/favicon.ico',
+    // iOS reads apple-touch-icon (180x180 PNG) when added to the Home Screen.
+    // It must be a PNG — Safari does not use favicon.ico or the manifest here.
+    apple: '/icons/apple-touch-icon.png',
   },
 }
 
