@@ -1,4 +1,5 @@
 import { getKarachiDate } from './lib/date'
+import { assertProductionRunnable } from './lib/db-name'
 
 /**
  * Server-only instrumentation for Node runtime.
@@ -9,6 +10,21 @@ export async function register(): Promise<void> {
 
   if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'development') return
   if (process.env.NEXT_PHASE === 'phase-production-build') return
+
+  // Hard startup gate. A real production process that is missing required config,
+  // or is pointed at the `test` / a sandbox database, must NOT keep serving.
+  // Throwing alone is not enough on Next 15: `register()` errors surface as an
+  // unhandledRejection while the server still prints "Ready" and holds the port
+  // open, so a broken deployment would look alive to the platform. We print the
+  // exact reason and exit non-zero, which makes Render fail the deploy instead of
+  // routing traffic to a misconfigured instance. Dev and test runners are exempt
+  // (assertProductionRunnable / productionDatabaseRefusal return silently there).
+  try {
+    assertProductionRunnable()
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error)
+    process.exit(1)
+  }
 
   try {
     const { getDatabase } = await import('./lib/mongodb')

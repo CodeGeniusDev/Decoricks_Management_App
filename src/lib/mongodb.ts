@@ -1,6 +1,11 @@
 import { MongoClient, type Db } from 'mongodb'
 import { getEnv } from './env'
-import { resolveDatabase, bareProdTestWarning, type DatabaseNameSource } from './db-name'
+import {
+  resolveDatabase,
+  bareProdTestWarning,
+  productionDatabaseRefusal,
+  type DatabaseNameSource,
+} from './db-name'
 import { isTransientMongoError } from './mongo-errors'
 import { timeStage } from './timing'
 
@@ -167,14 +172,24 @@ export async function getDatabase(): Promise<Db> {
     // error rather than a misleading "connection failed".
     const { dbName, source, warning } = resolveDbName()
 
+    // The bare-`test`-in-production hazard is refused here, before any socket is
+    // opened: a production process (not a test runner) resolving to `test`, a
+    // `decoricks_test` / `test_*` sandbox, or nothing at all (driver falls back to
+    // `test`) must serve zero requests. `resolveDatabase` already normalises the
+    // driver-default case to `dbName: undefined`, so the refusal sees it too.
+    // Elsewhere (dev) the same condition stays a loud, non-fatal warning.
+    const refusal = productionDatabaseRefusal(
+      { dbName, source },
+      { nodeEnv: process.env.NODE_ENV ?? '', inTestRunner: process.env.E2E_TEST_MODE === '1' },
+    )
+    if (refusal) throw new Error(`[mongodb] ${refusal}`)
+
     try {
       const connected = await connectWithRetry()
       const db = connected.db(dbName)
-      // `db.databaseName` is the name that will actually be used, which is the
-      // only way to report the driver-default case honestly. It is also the only
-      // reliable place to catch the bare-`test`-in-production hazard: whether the
-      // name came from MONGODB_DB=test or the driver's own fallback, the process
-      // is talking to the live production database, so warn loudly (never crash).
+      // `db.databaseName` is the name that will actually be used, which is the only
+      // way to report the driver-default case honestly, and the reason dev still
+      // gets the advisory bare-`test` warning rather than a crash.
       const bareTest = bareProdTestWarning(db.databaseName)
       const combinedWarning = [warning, bareTest].filter(Boolean).join(' ')
       announceDatabase(db.databaseName, source, combinedWarning || undefined)

@@ -6,6 +6,8 @@ import {
   validateDatabaseName,
   assertScriptDatabaseConsent,
   bareProdTestWarning,
+  productionDatabaseRefusal,
+  assertProductionRunnable,
   isInTestRunner,
   PROD_DB_CONSENT_FLAG,
   type DatabaseNameSource,
@@ -291,5 +293,75 @@ describe('bareProdTestWarning — warn (never crash) on the live "test" DB', () 
         isInTestRunner({ MONGODB_URI: 'mongodb://h', NODE_ENV: 'production' })
       )
     ).not.toBeNull()
+  })
+})
+
+describe('productionDatabaseRefusal / assertProductionRunnable — hard boot gate (Phase 11)', () => {
+  const prod = { nodeEnv: 'production', inTestRunner: false }
+
+  it('refuses a production process with no explicit database (driver would fall back to "test")', () => {
+    const msg = productionDatabaseRefusal(
+      { dbName: undefined, source: 'driver default' },
+      prod,
+    )
+    expect(msg).toMatch(/no explicit database/)
+    expect(msg).toMatch(/decoricks_prod/)
+  })
+
+  it('refuses the bare "test" database in production', () => {
+    const msg = productionDatabaseRefusal({ dbName: 'test', source: 'MONGODB_DB' }, prod)
+    expect(msg).toMatch(/against database "test"/)
+    expect(msg).toMatch(/not a production database here/)
+  })
+
+  it('refuses a test-shaped sandbox in production', () => {
+    for (const dbName of ['decoricks_test', 'test_abcd']) {
+      const msg = productionDatabaseRefusal({ dbName, source: 'MONGODB_DB' }, prod)
+      expect(msg).toMatch(/test-shaped sandbox/)
+    }
+  })
+
+  it('allows the real production database', () => {
+    expect(
+      productionDatabaseRefusal({ dbName: 'decoricks_prod', source: 'MONGODB_DB' }, prod),
+    ).toBeNull()
+  })
+
+  it('exempts a real test runner even under NODE_ENV=production (Playwright web-server)', () => {
+    const runner = { nodeEnv: 'production', inTestRunner: true }
+    expect(productionDatabaseRefusal({ dbName: 'test_e2e', source: 'MONGODB_DB' }, runner)).toBeNull()
+    expect(productionDatabaseRefusal({ dbName: 'test', source: 'driver default' }, runner)).toBeNull()
+  })
+
+  it('is a no-op outside production (dev still only warns, never refuses)', () => {
+    expect(
+      productionDatabaseRefusal({ dbName: 'test', source: 'MONGODB_DB' }, { nodeEnv: 'development', inTestRunner: false }),
+    ).toBeNull()
+  })
+
+  it('assertProductionRunnable throws for every misconfigured production shape', () => {
+    // No MONGODB_DB + empty-path URI → driver default → would land on "test".
+    expect(() => assertProductionRunnable(BASE)).toThrow(/no explicit database/)
+    expect(() =>
+      assertProductionRunnable({ MONGODB_URI: 'mongodb://h', MONGODB_DB: 'test', NODE_ENV: 'production' }),
+    ).toThrow(/against database "test"/)
+    expect(() =>
+      assertProductionRunnable({
+        MONGODB_URI: 'mongodb://h',
+        MONGODB_DB: 'decoricks_test',
+        NODE_ENV: 'production',
+      }),
+    ).toThrow(/test-shaped/)
+  })
+
+  it('assertProductionRunnable is silent for decoricks_prod and for any non-production env', () => {
+    expect(() =>
+      assertProductionRunnable({
+        MONGODB_URI: 'mongodb://h',
+        MONGODB_DB: 'decoricks_prod',
+        NODE_ENV: 'production',
+      }),
+    ).not.toThrow()
+    expect(() => assertProductionRunnable({ MONGODB_URI: 'mongodb://h', NODE_ENV: 'development' })).not.toThrow()
   })
 })

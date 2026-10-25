@@ -229,3 +229,65 @@ export const resolveDatabase = (env: DbEnv = getEnv()): ResolvedDatabase => {
       "no database name is configured: MONGODB_DB is unset and MONGODB_URI has an empty path, so the driver falls back to its implicit default. Set MONGODB_DB to the database that actually holds this application's data.",
   }
 }
+
+/**
+ * A HARD refusal for the misconfigurations that `bareProdTestWarning` only warns
+ * about, but scoped to real production processes (Phase 11 deployment gate).
+ *
+ * In this deployment the bare name `test` is the live production database, and
+ * `decoricks_test` / `test_*` are throwaway sandboxes. A process that claims to
+ * be production (`NODE_ENV=production`) and is NOT a test runner must never be
+ * pointed at either:
+ *
+ *   - no explicit database at all (driver would fall back to `test`);
+ *   - the bare `test` database;
+ *   - a test-shaped sandbox (`decoricks_test`, `test_*`).
+ *
+ * Test runners are exempt because the Playwright web-server legitimately runs a
+ * `next build` + `next start` under `NODE_ENV=production` with `E2E_TEST_MODE=1`
+ * against a `test_*` database; that is not a real deployment. Everything else is
+ * returned as an operator-facing message. This function has no side effects so
+ * the wording is unit-testable regardless of the ambient environment; callers
+ * turn a non-null result into a thrown error.
+ */
+export const productionDatabaseRefusal = (
+  resolved: ResolvedDatabase,
+  opts: { nodeEnv: string; inTestRunner: boolean },
+): string | null => {
+  if (opts.nodeEnv !== 'production') return null
+  if (opts.inTestRunner) return null
+
+  const { dbName, source } = resolved
+  if (!dbName) {
+    return (
+      'no explicit database is configured (MONGODB_DB unset and MONGODB_URI has an empty path), ' +
+      'so the driver would fall back to the database named "test" — which is the live production ' +
+      'data in this deployment. Set MONGODB_DB=decoricks_prod for a production deployment.'
+    )
+  }
+  if (dbName === 'test' || looksLikeTestDatabase(dbName)) {
+    const reason =
+      dbName === 'test'
+        ? 'the bare name "test" is not a production database here'
+        : 'it is a test-shaped sandbox database'
+    return (
+      `refusing to run production against database "${dbName}" (from ${source}) — ${reason}. ` +
+      'Set MONGODB_DB to the production database (e.g. decoricks_prod).'
+    )
+  }
+  return null
+}
+
+/**
+ * Boot-time gate. Throws (rather than warns) when a real production process is
+ * misconfigured to reach a test database. Call this from `register()` OUTSIDE any
+ * try/catch so the unhandled throw actually stops the server from starting — an
+ * app pointed at the wrong database must not serve a single request.
+ */
+export const assertProductionRunnable = (env: DbEnv = getEnv()): void => {
+  const message = productionDatabaseRefusal(resolveDatabase(env), {
+    nodeEnv: env.NODE_ENV,
+    inTestRunner: isInTestRunner(env),
+  })
+  if (message) throw new Error(`[startup] ${message}`)
+}
