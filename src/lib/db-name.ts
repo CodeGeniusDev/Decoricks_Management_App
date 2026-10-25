@@ -55,6 +55,22 @@ export const looksLikeTestDatabase = (name: string): boolean =>
   TEST_DB_PATTERNS.some((pattern) => pattern.test(name))
 
 /**
+ * The live production database name for this deployment. Distinct from
+ * `looksLikeTestDatabase` and from the bare `test` legacy name: `decoricks_prod`
+ * is where real business records now live and Render's service points at it.
+ *
+ * Seed/fixture scripts must NEVER write here, and a restore must never merge
+ * into it from a foreign source. Unlike the test consent flag, there is no
+ * override for a production target: the refusal is absolute. The set is small
+ * and explicit so a typo like `decoricks_prod2` is simply not production and
+ * falls through to the ordinary consent rules.
+ */
+const PRODUCTION_DATABASE_NAMES = new Set(['decoricks_prod'])
+
+export const isProductionDatabaseName = (name: string): boolean =>
+  PRODUCTION_DATABASE_NAMES.has(name.trim().toLowerCase())
+
+/**
  * The explicit operator opt-in required before any seed / migration / cleanup
  * script may write to a database that is NOT test-shaped.
  *

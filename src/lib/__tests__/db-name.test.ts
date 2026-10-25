@@ -10,6 +10,7 @@ import {
   assertProductionRunnable,
   isInTestRunner,
   PROD_DB_CONSENT_FLAG,
+  isProductionDatabaseName,
   type DatabaseNameSource,
 } from '@/lib/db-name'
 
@@ -363,5 +364,30 @@ describe('productionDatabaseRefusal / assertProductionRunnable — hard boot gat
       }),
     ).not.toThrow()
     expect(() => assertProductionRunnable({ MONGODB_URI: 'mongodb://h', NODE_ENV: 'development' })).not.toThrow()
+  })
+})
+
+describe('isProductionDatabaseName — the absolute seed/restore gate (Stage 2)', () => {
+  it('recognises only the exact live production name, case/space insensitive', () => {
+    expect(isProductionDatabaseName('decoricks_prod')).toBe(true)
+    expect(isProductionDatabaseName('DECORICKS_PROD')).toBe(true)
+    expect(isProductionDatabaseName('  decoricks_prod  ')).toBe(true)
+  })
+
+  it('does not treat dev, test sandboxes, the bare legacy "test", or near-miss typos as production', () => {
+    // A typo like decoricks_prod2 is NOT production and falls through to the
+    // ordinary consent rules rather than being silently refused as prod.
+    for (const name of ['decoricks_dev', 'decoricks_test', 'test', 'test_e2e', 'decoricks_prod2', 'decoricks']) {
+      expect(isProductionDatabaseName(name), `${name} is not the prod name`).toBe(false)
+    }
+  })
+
+  it('is disjoint from looksLikeTestDatabase — a name is never both sandbox and production', () => {
+    // The seed/restore guards rely on these two predicates being mutually
+    // exclusive: seed refuses a test shape AND separately refuses production, so
+    // overlap would make the messaging contradictory.
+    for (const name of ['decoricks_prod', 'decoricks_test', 'test', 'test_ab', 'decoricks_dev']) {
+      expect(isProductionDatabaseName(name) && looksLikeTestDatabase(name)).toBe(false)
+    }
   })
 })
