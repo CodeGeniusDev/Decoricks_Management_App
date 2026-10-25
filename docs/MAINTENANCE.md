@@ -7,6 +7,7 @@ variables and a small set of scripts, and most mistakes come from editing the
 wrong one.
 
 > **Golden rules**
+>
 > - **Never put a real secret in Git or in this repo.** Secrets live in Render's
 >   environment settings and Atlas, and in `.env.local` on your own machine.
 > - **Never print secret values** into chat, logs, screenshots or tickets —
@@ -136,6 +137,14 @@ version:
 4. For a real disaster: restore to a new DB, confirm counts vs the `.meta.json`,
    then point `MONGODB_DB` at it (or switch over). Only after checks pass.
 
+> **Production restore guard (Stage-2 hardening):** `restore.ts` will only write into
+> `decoricks_prod` for a **same-name disaster recovery** — the archive's own
+> `sourceDatabase` must be `decoricks_prod`. Restoring a `decoricks_dev` or `test_…`
+> backup into production is refused unless you pass the deliberate
+> `--allow-foreign-source` flag (and still need `DECORICKS_ALLOW_PROD_DB=1` and an
+> empty target). This makes it impossible to overwrite real records with dev/test
+> data by accident.
+
 > The **encryption key is not in Git and not in the backup folder.** Lose the
 > key and the archive is unreadable forever. Keep `~/.decoricks/backup.key` in a
 > password manager and on a disk you also back up.
@@ -187,7 +196,7 @@ The `test` database **may be deleted only when ALL of these are true**:
 4. **Explicit go-ahead from the owner** (this is a destructive, irreversible
    action on the business's data).
 
-The date **2026-11-24** is the *earliest* this window is expected to open — it is
+The date **2026-11-24** is the _earliest_ this window is expected to open — it is
 a gate to check, **not** a calendar instruction. If the two-week stability bar is
 not met, **do not delete**; push the date back. When it is finally approved, take
 a fresh backup first, drop it from Atlas, and confirm `decoricks_prod` is
@@ -195,3 +204,66 @@ unaffected by opening `/api/health/database` as the signed-in Founder afterward.
 
 > Until every gate above is met, leave `test` exactly as it is. This guide does
 > **not** delete it now.
+
+---
+
+## 7. Keeping development and production separate
+
+Production (`decoricks_prod`) was purged of all demo data on 2026-10-25 and is the
+**clean baseline** — empty business collections, configuration intact (4 users, 4
+roles, 3 accounts at opening balance PKR 0, 13 categories, 3 chat channels),
+`counters` empty. **Enter real records yourself; never seed or restore fixtures
+into it.**
+
+### Every script that can write to the database, and its guard
+
+The shared line of defence is `assertScriptDatabaseConsent` (`src/lib/db-name.ts`):
+any database that is **not** test-shaped (`decoricks_test` / `test_…`) refuses to be
+written unless the operator sets `DECORICKS_ALLOW_PROD_DB=1` on that one command.
+`.env.local` sets `MONGODB_DB=decoricks_dev`, so ordinary runs never even look at
+prod.
+
+| Script | Writes? | Guard(s) |
+| --- | --- | --- |
+| `seed.ts` | founder, roles, SPEC defaults | refuses test-shaped **and** now **absolutely refuses `decoricks_prod` — no override flag**; consent for any other non-test name |
+| `seed-e2e.ts` | e2e fixture users/roles | `assertTestTarget` — **test-shaped only**, throws before consent; cannot reach prod |
+| `cleanup-e2e-data.ts` | `deleteMany` sweep | dry-run default · `--apply` + `--confirm=<name>` · consent |
+| `cleanup-demo-data.ts` | frozen demo `_id`s | dry-run default · fresh verified backup · `--confirm` · consent · **drift abort** · single txn · audit · reconcile |
+| `restore.ts` | replaces an **empty** target | dry-run default · consent · empty-target rule · **prod only from same-source backup, else `--allow-foreign-source`** |
+| `backfill-role-permissions.ts` | `updateOne` roles | dry-run default · `--apply` + `--confirm-backup` · consent |
+| `migrate-tasks-assignees.ts` | board/column/task writes | `DRY_RUN=true` default · consent when applying |
+| `migrate-chat-clientid-index.ts` | index + `updateMany` | dry-run default · `--apply` + `--confirm-backup` · consent |
+| `index-migrate-dry-run.ts` | `updateMany` | read-only default · `--apply` + `--i-have-a-backup` · consent |
+
+Read-only (cannot corrupt prod): `backup.ts`, `verify-finance.ts`, `db-inventory.ts`,
+`db-probe.ts`, `stage1-demo-inventory.ts`, `index-audit.ts`, the `*-probe` scripts.
+
+### Your local connection can still reach production — do something about it
+
+`decoricks_prod` is **not** protected by a separate credential today. The
+`MONGODB_URI` in your local `.env.local` connects as the **admin** Atlas user
+(`atlasAdmin@admin`, read/write on *every* database). `MONGODB_DB=decoricks_dev` only
+sets the *default* — the same credential writes to `decoricks_prod` if you ever export
+`MONGODB_DB=decoricks_prod DECORICKS_ALLOW_PROD_DB=1` (which is exactly how the purge
+was run). The production **host** (Render) connects as the least-privilege
+`decoricks_app` user (§2b), so the *app* is fine; the risk is the admin credential on
+your laptop.
+
+Recommended, in order of value:
+
+1. **Create a read-only Atlas user for Compass / local inspection** — e.g.
+   `decoricks_ro` with the built-in `readAnyDatabase@admin` role (or a custom
+   `{ db: 'decoricks_prod', role: 'read' }` only). Use it for browsing; never for
+   scripts. This means an accidental `deleteMany` from a Compass shell is impossible.
+2. **Stop keeping the `atlasAdmin` URI in `.env.local` for day-to-day work.** Point
+   local development at a user scoped to `decoricks_dev`/`decoricks_test` only; keep
+   the admin credential for explicit, deliberate migration windows and paste it inline
+   rather than storing it.
+3. **Rotate the admin password** (§2c) if it has ever been shared or committed.
+4. Never run a whole suite or `npm run seed` with `MONGODB_DB=decoricks_prod` — the
+   guards above now make the seed path impossible even so, but keep the habit.
+
+The in-app, auditable way to set the three accounts' **real opening balances** before
+the first transaction is documented in `docs/DB_MIGRATION.md` (§ "Opening balances") —
+use PATCH/POST `/api/finance/accounts` as the Founder, never edit the documents in
+Atlas directly.

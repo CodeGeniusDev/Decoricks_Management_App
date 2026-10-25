@@ -463,5 +463,88 @@ was set inline on each write command only. Timestamps are UTC from the tooling.
    headroom for the 30-day dual-`test` rollback window.
 
 **Remaining, gated on the operator:** the host `MONGODB_DB=decoricks_prod` cutover
-(section B) and the local `.env.local` → `decoricks_dev` switch (section A). Neither
-has been done. `test` is untouched and stays the rollback for 30 days.
+(section B) and the local `.env.local` → `decoricks_dev` switch (section A). Both are
+now in place: the local `.env.local` carries `MONGODB_DB=decoricks_dev`, and the
+production host serves `decoricks_prod` (`/api/health` green). `test` is untouched and
+stays the rollback for 30 days (drop target 2026-11-24).
+
+---
+
+### DEMO-data purge (2026-10-25) — `decoricks_prod` reset to a clean baseline
+
+The operator confirmed **every business record in `decoricks_prod` was demo/test data —
+nothing real** (including the PKR 7,450 Shopify expense), so a two-stage cleanup was run
+to hand them a clean, empty-but-configured production database.
+
+**Stage 1 — READ-ONLY inventory** (`scripts/stage1-demo-inventory.ts`): 33 collections,
+mostly configuration. The DEMO footprint was exactly **56 documents across 10
+collections**; all three account opening balances were PKR 0 and `reconcile()` passed.
+The operator froze the id lists and accepted this report before any write.
+
+**KEEP (never in scope):** `users` (4), `roles` (4), `businessSettings` (1), `accounts`
+(3, opening balances untouched), `financeCategories` (13), `taskLabels` (0), `auditLog`,
+the three seeded `chatChannels` (general, orders, content), and the live `sessions`. The
+legacy `income`/`expenses`/`transfers` (all empty) stay.
+
+**DELETE (by explicit `_id` only, 56 docs):** transactions 2, boards 1, columns 5,
+tasks 2, taskActivity 15, messages 22, chatChannelReads 5, budgets 1,
+profitDistributions 1, notifications 2.
+
+**Stage 2 — the purge** (`scripts/cleanup-demo-data.ts` +
+`src/lib/cleanup/demo-cleanup.ts`, unit-tested in
+`src/lib/cleanup/__tests__/demo-cleanup.test.ts` against a hermetic
+`mongodb-memory-server`, including the abort-on-mismatch path):
+
+1. Safeguards, in order: dry-run by default; `--confirm=decoricks_prod` must restate the
+   target; `DECORICKS_ALLOW_PROD_DB=1` via `assertScriptDatabaseConsent`; a **fresh,
+   verified encrypted backup** of the target made within the last hour is mandatory;
+   explicit `_id` lists only (never `deleteMany({})`); a **drift check** re-verifies the
+   live counts against the frozen set and ABORTS on any missing/extra document; one
+   append-only `auditLog` entry `demo_data_cleanup` (counts + backup sha256 + operator);
+   a full-history `reconcile()` + direct zero-activity assertion, exiting non-zero unless
+   the ledger is empty with opening balances intact.
+2. **Run log (UTC):**
+   - Fresh pre-cleanup backup `decoricks-backup-2026-10-25T17-40-56-667Z.enc`
+     (sha256 `e52258f3…60c24cd0`, 384,466 bytes; **verified MATCH** vs manifest).
+   - Dry-run against `decoricks_prod`: **exactly 56** docs matched the frozen set; every
+     config baseline intact (users 4, roles 4, businessSettings 1, accounts 3,
+     financeCategories 13, taskLabels 0, chatChannels 3).
+   - `--apply --confirm=decoricks_prod`: deletion ran in a **single transaction** (Atlas
+     replica set supports transactions, so the ordered-checkpoint fallback was not used).
+     **56 deleted**, all 9 reconcile checks PASS, revenue/expenses/net profit 0, every
+     account at its opening balance, inventory 0, config intact.
+   - Independent post-checks: all 10 demo collections = 0; `auditLog` 562 → **563**
+     (the one `demo_data_cleanup` entry); sessions kept (3); legacy income/expenses/
+     transfers still 0/0/0; `counters` untouched (0). `/api/health` → `ok`.
+   - **CLEAN-BASELINE backup** `decoricks-backup-2026-10-25T17-45-39-407Z.enc`
+     (sha256 `633e3377…9d676896`, 365,274 bytes; 32 collections / **594** docs = the
+     pre-cleanup 649 minus 56 deleted plus the 1 audit row; **verified MATCH**).
+
+**Serial counters — nothing reset (confirmed, not touched):** the `counters` collection
+is empty and was left so. `orders`/`purchases`/`returns` allocate via `allocateSerial`
+from `counters`, so the next number in each month's prefix starts at `0001`. `tasks`
+(`TASK-YYYYMM-NNNN`) and `budgets` (`BUDGET-YYYYMM-NNNN`) scan the highest in-collection
+value, which is now 0, so the next is `…-0001` too. No counter state exists to rewind.
+
+**Opening balances — the auditable way (nothing was changed):** an account's balance is
+**derived** (`openingBalance + Σ ledger deltas`), never stored, so opening balance is a
+configuration field, not a posted transaction. Before the first real entry, set each
+account's real opening balance through the app as the Founder (requires `finance.approve`):
+either **PATCH `/api/finance/accounts/[id]`** (edit the existing Cash / Bank Account /
+Wallet) or **POST `/api/finance/accounts`** (add a new one), passing `openingBalance` in
+integer **paisa** (PKR 1 = 100). Both are recorded in `auditLog` as `account_updated` /
+`account_created` with the before/after value. Do **not** edit the `accounts` documents
+directly in Atlas — that bypasses the audit trail.
+
+**Dev/prod separation hardened (this run):**
+- `scripts/seed.ts` now **refuses to run against `decoricks_prod` with no override flag**
+  (there is no consent value that allows seeding production; it writes demo roles, a
+  Founder and SPEC financial defaults). Test/dev use `decoricks_dev` / `seed:e2e`.
+- `scripts/restore.ts` now **refuses to restore into `decoricks_prod` unless the backup's
+  own `sourceDatabase` is `decoricks_prod`** (same-name disaster recovery). A foreign
+  source (a `decoricks_dev` / `test_…` backup) is rejected unless the operator passes the
+  deliberate `--allow-foreign-source` flag.
+- `scripts/seed-e2e.ts` was already hard-locked to a test-shaped database
+  (`assertTestTarget` throws before any consent check), so it cannot reach production.
+- New pure predicate `isProductionDatabaseName()` in `src/lib/db-name.ts`, tested in
+  `src/lib/__tests__/db-name.test.ts`, is the single source of truth both guards share.
