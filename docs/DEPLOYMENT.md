@@ -25,11 +25,26 @@ Related docs: `docs/DB_MIGRATION.md` (test → `decoricks_prod` cutover),
    the driver silently falls back to a database literally named `test`. That is
    the production hazard described in `docs/DB_MIGRATION.md`; do not deploy
    until the cutover there is done and `decoricks_prod` holds the data.
+   **This is now enforced, not advisory:** in a real production process
+   (`NODE_ENV=production`, not a test runner) `src/instrumentation.node.ts` calls
+   `assertProductionRunnable()` before the server is ready and **exits with a
+   non-zero code** — refusing to start — when the resolved database is unset,
+   the bare `test`, or a `decoricks_test` / `test_*` sandbox. Render therefore
+   shows the deploy as **failed** instead of routing traffic to a
+   misconfigured instance. `src/lib/mongodb.ts` enforces the same rule per
+   request as a second line of defence.
 2. **`MONGODB_TEST_DB` must NEVER be set on a host.** `src/lib/db-name.ts`
    refuses to serve a first DB call unless the process is a test runner
    (`NODE_ENV=test` or `E2E_TEST_MODE=1`). On a production host that variable
    would crash the app. It is a test-runner-only switch; keep it out of every
-   dev and prod copy of the env.
+   dev and prod copy of the env. The same reasoning excludes `E2E_TEST_MODE` —
+   both must be **absent** in production, and leaving them out is what makes the
+   startup gate actually bite.
+
+Required config is validated at boot too: a missing `MONGODB_URI` or
+`SESSION_SECRET` (or `SESSION_MAX_LIFETIME_MINUTES < SESSION_TTL_MINUTES`) makes
+`getEnv()` throw, which the same startup gate turns into a clean non-zero exit
+rather than a half-up server.
 
 The app also pins its process clock: set `TZ=Asia/Karachi` (see §4). The date
 layer renders Karachi wall time and re-parses it in the process zone, so a
@@ -78,18 +93,27 @@ Do **NOT** put these on the production host runtime env (seed-only, used by
 
 ## 2. Health check
 
-Both hosts accept an HTTP health-check path. Use the app's own endpoint:
+Both hosts accept an HTTP health-check path. Use the app's **liveness** endpoint
+— it deliberately makes **no database round trip**, so a cold start cannot be
+marked unhealthy behind a slow first Mongo handshake:
 
-- Path: `GET /api/health`
-- Returns `200 { "status": "ok", "database": "healthy" }` when the DB is
-  reachable; `503` when it is not (`src/app/api/health/route.ts`). It also calls
-  `getEnv()`, so a missing/invalid required variable surfaces here as a failure
-  rather than a blank screen.
+- **Platform health path: `GET /api/health`** (`src/app/api/health/route.ts`).
+  Returns `200 { "status": "ok", "uptimeSeconds", "timestamp" }` as soon as the
+  Node process is serving HTTP. No DB call, so it is safe for the host's
+  automated probe (Render/Koyeb poll this).
+- **Operator/deep check: `GET /api/health/database`**
+  (`src/app/api/health/database/route.ts`). This DOES call `healthCheck()` (a DB
+  `ping`): `200 { database: "healthy" }` when storage is reachable, `503` when
+  not. Use it by hand or from an uptime monitor; do **not** point the platform
+  health probe here (a cold first call can take ~1–2s and would flake the probe).
+  Both are under the public `/api/health*` prefix (`src/middleware.ts`), so
+  neither needs a session.
 
-Set the health check to `http://<host>/api/health` and point the public port at
-the app (see §3). Do not mark a deploy "live" until `/api/health` is green AND
-the resolved database name (printed on startup by `src/lib/mongodb.ts`) is
-`decoricks_prod` — never `test`.
+Set the host health check to `http://<host>/api/health`. Do not mark a deploy
+"live" until `/api/health` is green AND the startup log line from
+`src/lib/mongodb.ts` announces the resolved database as `decoricks_prod` — never
+`test`. If the process was misconfigured it will have **exited non-zero at boot**
+(see §0), so a green `/api/health` already implies a valid `MONGODB_DB`.
 
 ---
 
@@ -399,3 +423,160 @@ pending the operator's decision. Whether Render is reachable "without an
 international credit card" for YOUR situation depends on the card, and the
 always-on vs sleeping choice depends on what the partners will tolerate — both
 are the operator's call.
+
+---
+
+## 10. Render — final step-by-step checklist (Free, Singapore)
+
+This is the exact sequence to run when the operator gives the go-ahead. It has
+**NOT** been executed — nothing here is deployed. It assumes the `decoricks_prod`
+cutover in `docs/DB_MIGRATION.md` is complete and `decoricks_prod` holds the real
+records, and that `test` is being kept read-only as the 30-day rollback.
+
+> Local (not Render) measurements that back this checklist, taken 2026-10-25 on
+> this working tree with a production build: `next start` honoured `PORT` and
+> bound `*:PORT` (all interfaces — the IPv4 `0.0.0.0` equivalent Render needs);
+> process launch → "Ready" ≈ 1.2s (Next reports ~0.45s internally); the first DB
+> call (the boot-time `ensureAuthIndexes` warming the pool) added roughly 1–2s to
+> the very first storage-touching request; `GET /api/health` answered `200` with
+> **no** DB round trip; and starting with `MONGODB_DB=test` under
+> `NODE_ENV=production` made the process **exit 1 with the startup refusal** and
+> leave the port unbound. None of this was run on Render itself.
+
+### Step 1 — Connect the private repo, branch `abdullah`
+
+1. Render dashboard → **New** → **Web Service** → connect the **private** GitHub
+   repo for this app (via the GitHub app / OAuth — do not use a fine-grained
+   token that lacks the repo).
+2. **Branch:** `abdullah` (the deployment branch maintained in
+   `docs/DB_MIGRATION.md`). Auto-deploy on push can stay off until the operator
+   trusts the pipeline.
+
+### Step 2 — Region (confirm in the picker)
+
+- Choose **Singapore (APAC, `ap-southeast-1`)** — the nearest Render region to
+  the Atlas cluster in AWS Mumbai `ap-south-1` (§3a). **You MUST confirm Singapore
+  is selectable for the Free plan in the region picker at creation time** — §6a
+  records that Render's docs do not state a free-plan region subset, so this is
+  unverified until seen live. Region cannot be changed after creation (you would
+  redeploy in the new region). If Singapore is not offered on Free, stop and
+  reconsider rather than silently picking a far region.
+
+### Step 3 — Runtime, build, start, health
+
+- **Runtime:** Node — pin an LTS the build passes on (local dev is Node 26;
+  prefer **Node 20 or 22 LTS** on Render). Set via the dashboard or an
+  `.nvmrc`/`engines` entry; the build must be re-run to change it.
+- **Build command:** `npm ci && npm run build`
+- **Start command:** `npm run start`  (which runs `next start`; it reads `PORT`
+  and binds all interfaces — verified locally above).
+- **Health check path:** `/api/health`  (liveness, no DB — see §2). Do **not**
+  use `/api/health/database` for the platform probe.
+- **Instance type:** **Free** (0.1 CPU / 512 MB). Know the tradeoffs (§6a, §8):
+  spins down after ~15 min idle, ~1-minute cold start, 750 free instance
+  hours/month, rollbacks limited to the last two deploys.
+
+`npm run build` only compiles — no seed, migration, or e2e step runs during build
+or start (§4f below). The only boot work is `instrumentation` →
+`ensureAuthIndexes` (idempotent index creation), guarded against the build phase.
+
+### Step 4 — Environment variables (names + how to generate each value)
+
+Fill these in Render → Environment. Mark the secrets as **Secret Values**. Never
+commit any value. `SESSION_SECRET` must be **fresh and production-only — never
+the local one** (a shared secret means sessions/CSRF tokens are forgeable across
+environments).
+
+| Name | Value / how to generate |
+| --- | --- |
+| `MONGODB_URI` | Atlas SRV connection string using the **dedicated `decoricks_app` database user** (least-privilege, see Step 5). **SECRET.** |
+| `MONGODB_DB` | Exactly `decoricks_prod`. The startup gate (see §0) refuses to boot if it is unset or test-shaped. |
+| `SESSION_SECRET` | A fresh random secret, ≥16 chars: `openssl rand -base64 32`. **SECRET**, production-only. |
+| `TZ` | Exactly `Asia/Karachi` (Render defaults containers to UTC otherwise). |
+| `NODE_ENV` | `production`. (`next build`/`next start` set it themselves; setting it explicitly documents intent. Do **not** add `NODE_ENV` to any `.env.local` — it breaks local `next build`.) |
+| `MONGODB_TEST_DB` | **MUST BE ABSENT.** Test-runner only; setting it on the host crashes the app and would also disarm the startup gate. |
+| `E2E_TEST_MODE` | **MUST BE ABSENT.** Same reasoning — it marks the process as a test runner and exempts it from the production DB guard. |
+| `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` / `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | **Optional — only if Web Push is wanted.** Leave all three unset to disable push (the app then falls back to in-app + browser notifications). If enabling: generate once with `npx web-push generate-vapid-keys`, paste the public key into `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (must be set in the **build** environment — it is inlined into the client bundle, so changing it needs a rebuild, not just a redeploy), the private key into `VAPID_PRIVATE_KEY` (**SECRET**), and `VAPID_SUBJECT` as a `mailto:` or `https:` contact. |
+
+`FOUNDER_EMAIL` / `FOUNDER_NAME` / `FOUNDER_PASSWORD` are **seed-only** and must
+**NOT** be on the host — the Founder already exists in `decoricks_prod` (Step 6).
+
+### Step 5 — Atlas Network Access (and the limited user)
+
+1. **Atlas Database Access:** create a dedicated user `decoricks_app`
+   (password authentication) scoped to **least privilege** — e.g. a custom role
+   with `readWrite` **only** on `decoricks_prod` (no cluster-level admin, no
+   `atlasAdmin`). Use this user's credentials in `MONGODB_URI`. Do not reuse the
+   owner/admin account the console "Connect" button hands out.
+2. **Atlas Network Access (IP allowlist):**
+   - **Preferred:** add **Render's published outbound IP ranges** if Render
+     exposes a static/published set for the service. On the **Free** plan Render
+     does **not** provide a fixed static egress IP (static outbound IPs are a
+     paid feature), so this is usually **not available on Free** — check the
+     Render service's egress info at deploy time; if a published range exists,
+     add each CIDR to the Atlas allowlist.
+   - **Otherwise (typical on Free):** allow `0.0.0.0/0` **but only because** the
+     connection is gated by the strong-credential, least-privilege `decoricks_app`
+     user — i.e. the network is open, the *account* is not. This is the
+     documented fallback. Rotate the `decoricks_app` password periodically and
+     keep its role minimal so an open allowlist is bounded by credentials, not
+     by network position.
+
+### Step 6 — Deploy, then verify the resolved database
+
+1. Trigger the first deploy. Watch the Render build/start logs.
+2. In the **runtime logs** confirm the startup line
+   `[mongodb] using database "decoricks_prod" (MONGODB_DB)`. If the process
+   instead **exits non-zero** with `[startup] refusing to run production against
+   database "test"…` (or "no explicit database is configured"), the deploy is
+   **correctly failing** — fix `MONGODB_DB` / the URI path, redeploy.
+3. `GET https://<host>/api/health` → expect `200 {"status":"ok"}`.
+   `GET https://<host>/api/health/database` → expect `200 {"database":"healthy"}`.
+
+### Step 7 — First login (no password reset)
+
+The Founder **already exists** in `decoricks_prod` (restored from `test`), and it
+was verified this turn that its `mustChangePassword` is **`false`**. So:
+
+- Go to `https://<host>/login` and sign in as **`abdullah@decoricks.com`** with
+  the **current** production password. **No forced password change applies** —
+  login goes straight to the dashboard; you are not bounced to
+  `/change-password`.
+- **Do not** create or reset any password, and do not run `npm run seed` against
+  the host (seed is for a fresh sandbox and would mark the Founder
+  `mustChangePassword: true`). The password lives wherever the operator already
+  keeps it; this doc never records it.
+- If the Founder ever has `mustChangePassword: true` (a freshly **seeded** db),
+  login returns a password-change-required state and guarded routes 403 until the
+  change is completed — that is **not** the current `decoricks_prod` state.
+
+### Step 8 — Post-deploy sanity (read-only)
+
+- One login, load the dashboard, confirm live `decoricks_prod` records render
+  (not an empty database). Open `/api/health/database` once. Do not run write
+  smokes against production — the ledger is append-only and real.
+
+### Rollback (Render side)
+
+1. **Code:** Render → Deploys → last green deploy → **Rollback** (Free tier keeps
+   the two most recent). Rolling code back never touches the database.
+2. **Config:** if the app resolved to `test`, the fix is `MONGODB_DB` (a config
+   change + redeploy), not a data operation — the startup gate already stopped it
+   serving bad data.
+3. **Data:** a data rollback is a **restore** governed by
+   `docs/BACKUP_RECOVERY.md` — restore the latest verified pre-change encrypted
+   backup into a clean target and re-check counts. Atlas cloud backups are
+   **inactive** on this cluster (§3a), so the nightly `decoricks_prod` backup +
+   its `.meta.json` SHA-256 are the only recovery path; the untouched `test`
+   database is the 30-day safety net (deletable no earlier than **2026-11-24**,
+   after a final backup).
+
+### §4f note — nothing data-changing runs automatically
+
+`package.json` has **no** `postinstall` / `prepare` / `prebuild` hooks: `build` is
+only `next build` and `start` is only `next start`. `seed`, the migrations, the
+`cleanup:e2e` script and `playwright` are separate `npm run` scripts that must be
+invoked explicitly (and the writing ones additionally require
+`DECORICKS_ALLOW_PROD_DB=1` + a `--confirm`/`--apply` flag). Therefore a Render
+`npm ci && npm run build && npm run start` can never seed, migrate, backfill, or
+run e2e against `decoricks_prod` on its own.
