@@ -10,7 +10,10 @@
  * Safety rails (mirrors the seed guard philosophy):
  *   - DRY-RUN by default; nothing is written without --apply.
  *   - --into must be a test-shaped name (matches TEST_DB_PATTERNS) OR the run
- *     must carry DECORICKS_ALLOW_PROD_DB=1. Production is never a restore target.
+ *     must carry DECORICKS_ALLOW_PROD_DB=1. Restoring into the production
+ *     database is allowed only for a same-name disaster recovery — the backup's
+ *     source database must equal the target — and any foreign source additionally
+ *     requires --allow-foreign-source.
  *   - The target database must be EMPTY (0 documents) — restore never merges
  *     into live data. Use a brand-new database name.
  *
@@ -22,7 +25,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { MongoClient } from 'mongodb'
 import { getEnv } from '../src/lib/env'
-import { assertScriptDatabaseConsent, looksLikeTestDatabase } from '../src/lib/db-name'
+import { assertScriptDatabaseConsent, looksLikeTestDatabase, isProductionDatabaseName } from '../src/lib/db-name'
 import { decodePayload, restoreDatabase } from '../src/lib/backup/serialize'
 import { decryptBackup } from '../src/lib/backup/crypto'
 import { reconcile } from '../src/lib/metrics/reconciliation'
@@ -80,6 +83,26 @@ async function main(): Promise<void> {
   // A restore target must be a sandbox unless the operator explicitly consents.
   if (!looksLikeTestDatabase(into)) {
     assertScriptDatabaseConsent(into, { script: 'scripts/restore.ts' })
+  }
+
+  // Restoring into the live production database is ONLY ever a same-name
+  // disaster recovery: the archive must itself have been taken from that exact
+  // production database. Loading a backup whose source is `decoricks_dev` or a
+  // `test_…` sandbox into production would replace real records with
+  // fixture/dev data, so it is refused outright; a foreign source may proceed
+  // only with the deliberate `--allow-foreign-source` flag (and still needs the
+  // consent flag and an empty target).
+  if (isProductionDatabaseName(into) && payload.sourceDatabase !== into) {
+    if (!process.argv.includes('--allow-foreign-source')) {
+      throw new Error(
+        `Refusing to restore into production database "${into}" from a backup whose source is ` +
+          `"${payload.sourceDatabase}". A production restore must come from the same production ` +
+          `database (disaster recovery). To override deliberately, add --allow-foreign-source.`
+      )
+    }
+    console.warn(
+      `WARNING: --allow-foreign-source — restoring "${payload.sourceDatabase}" backup into production "${into}".`
+    )
   }
 
   const client = new MongoClient(env.MONGODB_URI)
