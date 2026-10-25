@@ -30,10 +30,30 @@ export MONGODB_DB="$BACKUP_DB"
 cd "$PROJECT_DIR"
 
 mkdir -p "$BACKUP_DIR"
+
+# ---- Backup key safeguard ---------------------------------------------------
+# The key file is created ONCE, by hand, and then NEVER regenerated: every
+# .enc archive ever taken is only decryptable with this exact key, so
+# overwriting or recreating it makes ALL older backups unreadable forever.
+# This script only READS it. It refuses (before doing anything else) if the
+# key file is missing, empty, or readable by group/world.
 if [ ! -f "$DECORICKS_BACKUP_KEY_FILE" ]; then
   echo "$(date -u +%FT%TZ) ERROR: key file not found at $DECORICKS_BACKUP_KEY_FILE" >&2
+  echo "       The key file is created once, by hand, and then never regenerated." >&2
   exit 1
 fi
+if [ ! -s "$DECORICKS_BACKUP_KEY_FILE" ]; then
+  echo "$(date -u +%FT%TZ) ERROR: key file is empty: $DECORICKS_BACKUP_KEY_FILE" >&2
+  echo "       Refusing to back up with an empty key; restore the original key from where it is archived." >&2
+  exit 1
+fi
+KEY_PERMS=$(stat -f '%Lp' "$DECORICKS_BACKUP_KEY_FILE" 2>/dev/null || stat -c '%a' "$DECORICKS_BACKUP_KEY_FILE")
+if [ $((8#$KEY_PERMS & 8#044)) -ne 0 ]; then
+  echo "$(date -u +%FT%TZ) ERROR: key file is group/world-readable (mode $KEY_PERMS): $DECORICKS_BACKUP_KEY_FILE" >&2
+  echo "       Protect it with: chmod 600 $DECORICKS_BACKUP_KEY_FILE" >&2
+  exit 1
+fi
+# -----------------------------------------------------------------------------
 
 echo "$(date -u +%FT%TZ) backup starting (db: $BACKUP_DB, project: $PROJECT_DIR -> $BACKUP_DIR)"
 npx tsx scripts/backup.ts

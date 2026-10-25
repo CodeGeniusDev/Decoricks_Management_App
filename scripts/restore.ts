@@ -25,9 +25,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { MongoClient } from 'mongodb'
 import { getEnv } from '../src/lib/env'
-import { assertScriptDatabaseConsent, looksLikeTestDatabase, isProductionDatabaseName } from '../src/lib/db-name'
+import {
+  assertScriptDatabaseConsent,
+  looksLikeTestDatabase,
+  isProductionDatabaseName,
+} from '../src/lib/db-name'
 import { decodePayload, restoreDatabase } from '../src/lib/backup/serialize'
 import { decryptBackup } from '../src/lib/backup/crypto'
+import { readBackupPassphrase } from '../src/lib/backup/keyfile'
 import { reconcile } from '../src/lib/metrics/reconciliation'
 
 const loadEnvLocal = (): void => {
@@ -41,16 +46,12 @@ const loadEnvLocal = (): void => {
   }
 }
 
-const readPassphrase = (): string => {
-  const file = process.env.DECORICKS_BACKUP_KEY_FILE
-  if (file) {
-    if (!existsSync(file)) throw new Error(`DECORICKS_BACKUP_KEY_FILE missing: ${file}`)
-    return readFileSync(file, 'utf8').trim()
-  }
-  const inline = process.env.DECORICKS_BACKUP_KEY
-  if (inline) return inline.trim()
-  throw new Error('Set DECORICKS_BACKUP_KEY_FILE or DECORICKS_BACKUP_KEY to decrypt the backup.')
-}
+/**
+ * The passphrase comes from the shared key-file reader: the key file is READ
+ * only — never created, overwritten or regenerated here. A missing, empty or
+ * group/world-readable key file is a hard refusal.
+ */
+const readPassphrase = (): string => readBackupPassphrase()
 
 const argOf = (flag: string): string | undefined => {
   const i = process.argv.indexOf(flag)

@@ -21,6 +21,7 @@ import { getEnv } from '../src/lib/env'
 import { resolveDatabase } from '../src/lib/db-name'
 import { dumpDatabase, encodePayload } from '../src/lib/backup/serialize'
 import { encryptBackup } from '../src/lib/backup/crypto'
+import { readBackupPassphrase } from '../src/lib/backup/keyfile'
 
 const loadEnvLocal = (): void => {
   const file = path.join(process.cwd(), '.env.local')
@@ -33,21 +34,13 @@ const loadEnvLocal = (): void => {
   }
 }
 
-/** Read the passphrase from a file OUTSIDE the repo, or the inline env var. */
-const readPassphrase = (): string => {
-  const file = process.env.DECORICKS_BACKUP_KEY_FILE
-  if (file) {
-    if (!existsSync(file))
-      throw new Error(`DECORICKS_BACKUP_KEY_FILE points at a missing file: ${file}`)
-    return readFileSync(file, 'utf8').trim()
-  }
-  const inline = process.env.DECORICKS_BACKUP_KEY
-  if (inline) return inline.trim()
-  throw new Error(
-    'No backup passphrase. Set DECORICKS_BACKUP_KEY_FILE (preferred, a file outside the repo) ' +
-      'or DECORICKS_BACKUP_KEY. The key is never read from the repository.'
-  )
-}
+/**
+ * The passphrase comes from the shared key-file reader: the key file is READ
+ * only — it is never created, overwritten or regenerated here (regenerating it
+ * makes every older backup unreadable forever). A missing, empty or
+ * group/world-readable key file is a hard refusal.
+ */
+const readPassphrase = (): string => readBackupPassphrase()
 
 async function main(): Promise<void> {
   loadEnvLocal()

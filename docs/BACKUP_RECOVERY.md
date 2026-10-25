@@ -16,18 +16,32 @@ somewhere safe and separate from the backups themselves (a password manager, or
 
 ---
 
-## 1. Make your encryption key (once)
+## 1. Your encryption key (created once, by hand — never regenerated)
 
-Open Terminal and run:
+The key file `~/.decoricks/backup.key` is **created once, by hand, and then
+never regenerated**. No script in this repo will ever create or overwrite it —
+the backup, restore and scheduled-wrapper scripts only read it, and they refuse
+to run if it is missing, empty, or readable by group/world (`chmod 600` fixes
+the last one).
 
-```bash
-mkdir -p ~/.decoricks
-umask 077
-node -e "console.log(require('crypto').randomBytes(24).toString('base64'))" > ~/.decoricks/backup.key
-cat ~/.decoricks/backup.key   # sanity-check it is not empty
-```
+> **WARNING — do not regenerate the key.** Every `.enc` archive is only
+> decryptable with the exact key that existed when it was taken. Replacing the
+> key file — even with a "better" random value — makes **ALL older backups
+> unreadable, permanently**. If the key is lost, the backups are lost with it.
 
-That file is your key. Store a copy in your password manager now.
+How to create it the very first time (before your first backup ever):
+
+1. Generate a random value with your password manager's generator (or any tool
+   that only *prints* a value — nothing that redirects into the key file).
+2. Open `~/.decoricks/backup.key` in a text editor yourself (create the
+   `~/.decoricks` folder first) and paste the value as the only line.
+3. Lock it down: `chmod 600 ~/.decoricks/backup.key`.
+4. Store a copy in your password manager and on a disk you also back up.
+
+After that first manual step, the file is done. Nothing downstream touches it.
+
+`cat ~/.decoricks/backup.key` only ever when you are alone at the terminal —
+it prints the secret.
 
 ---
 
