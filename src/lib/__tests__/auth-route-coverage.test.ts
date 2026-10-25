@@ -19,9 +19,9 @@ describe('api route authorization coverage', () => {
       'src/app/api/auth/login/route.ts',
       'src/app/api/auth/logout/route.ts',
       'src/app/api/health/route.ts',
-      // Health-readiness lives under the same public /api/health* prefix the
-      // middleware already exempts (see PUBLIC_PATHS in src/middleware.ts).
-      'src/app/api/health/database/route.ts',
+      // /api/health/database is NOT public: it makes a real DB round trip and is
+      // a Founder-only operator diagnostic (requireFounder), so it belongs to the
+      // protected set below. Only the DB-free liveness probe stays public.
     ])
     const missing: string[] = []
     for (const r of routes) {
