@@ -1,5 +1,6 @@
 import { ObjectId } from 'mongodb'
 import { Db, Collection } from 'mongodb'
+import { isTransientMongoError } from '@/lib/mongo-errors'
 
 /**
  * Phase 7 team-chat documents (SPEC §3.1.9, §7).
@@ -172,16 +173,43 @@ export const getChannelReadCollection = (db: Db): Collection<ChannelRead> =>
 
 /* --------------------------------- indexes -------------------------------- */
 
+/**
+ * The current idempotency index: unique on `{ channelId, clientId }` but ONLY
+ * for documents that actually carry a string `clientId`.
+ */
+export const CHAT_CLIENT_IDEMPOTENCY_INDEX = 'messages_channel_client_partial_unique'
+
+/**
+ * The superseded Phase 7 definition — a compound `{ channelId, clientId }` index
+ * declared `unique + sparse`. It is what produced the recurring
+ * `E11000 … messages_channel_client_unique … { channelId, clientId: null }`.
+ *
+ * A compound **sparse** index only omits a document when it is missing EVERY
+ * indexed field. A legacy message that has a `channelId` but no `clientId` is
+ * therefore still indexed, under `{ channelId, null }` — and the second such
+ * message in the same channel collides. `migrateLegacyMessages` backfills
+ * `channelId` onto exactly those pre-channel rows, so every run fed a fresh
+ * `{ general, null }` pair into the index and threw. See
+ * `scripts/migrate-chat-clientid-index.ts` for the reversible swap.
+ */
+export const LEGACY_CHAT_CLIENT_IDEMPOTENCY_INDEX = 'messages_channel_client_unique'
+
 let chatIndexesPromise: Promise<void> | null = null
 
 /**
- * Idempotent per-process. Logged rather than thrown so a transient index hiccup
- * degrades to a slower scan instead of failing the request — matches
- * `ensureTaskIndexes` / `ensureSyncIndexes`.
+ * Idempotent per-process. Logged rather than thrown so an index hiccup degrades
+ * to a slower scan instead of failing the request — matches `ensureTaskIndexes`
+ * / `ensureSyncIndexes`.
  *
  * The global `{ createdAt: -1 }` message index is intentionally NOT created
  * here: `ensureSyncIndexes` already owns it for the change-cursor read, and
  * creating the same key pattern twice would fight over its name.
+ *
+ * It does NOT drop the legacy sparse index: boot-time work stays additive so a
+ * process never performs a destructive schema change on its own. That swap is a
+ * deliberate, approval-gated migration (`scripts/migrate-chat-clientid-index.ts`).
+ * Until it runs, the migration below fails once, is logged once, and the memo is
+ * HELD rather than reset — which is what stops the old every-request re-run.
  */
 export function ensureChatIndexes(db: Db): Promise<void> {
   if (!chatIndexesPromise) {
@@ -202,10 +230,16 @@ export function ensureChatIndexes(db: Db): Promise<void> {
             { name: 'messages_channel_created' }
           ),
           // Idempotent send: a client retry reuses the same clientId, so a second
-          // insert collides here instead of duplicating the message.
+          // insert collides here instead of duplicating the message. Partial (not
+          // sparse) so messages without a clientId — every pre-channel row — are
+          // left out of the index entirely and can never collide on `null`.
           getMessageCollection(db).createIndex(
             { channelId: 1, clientId: 1 },
-            { unique: true, sparse: true, name: 'messages_channel_client_unique' }
+            {
+              unique: true,
+              name: CHAT_CLIENT_IDEMPOTENCY_INDEX,
+              partialFilterExpression: { clientId: { $type: 'string' } },
+            }
           ),
           getChannelReadCollection(db).createIndex(
             { userId: 1, channelId: 1 },
@@ -213,7 +247,12 @@ export function ensureChatIndexes(db: Db): Promise<void> {
           ),
         ])
       } catch (error) {
-        chatIndexesPromise = null
+        // Only a transient outage (Atlas cold start, a dropped socket) is worth
+        // retrying on the next call. A permanent failure — a schema conflict, a
+        // duplicate key from the legacy index — re-attempted on EVERY request is
+        // exactly the terminal-spam behaviour this refactor removes, so we hold
+        // the memo and attempt it once per process.
+        if (isTransientMongoError(error)) chatIndexesPromise = null
         console.error('ensureChatIndexes failed:', error)
       }
     })()
@@ -228,24 +267,27 @@ let chatSetupPromise: Promise<void> | null = null
 /**
  * Brings the chat collections to a usable state on first touch: builds
  * indexes, ensures the three default channels exist, and additively backfills
- * any pre-channel message into `general`. Safe to call on every request — the
- * work happens once per process and the queries it repeats are indexed no-ops.
+ * any pre-channel message into `general`.
+ *
+ * Idempotent and NON-THRASHING. The memo is reset only for a transient failure
+ * so the next request retries an Atlas cold start; a permanent failure is
+ * logged once and the settled memo is kept, so a request after a broken init
+ * neither repeats the work nor re-prints the same stack on every page load. The
+ * error is swallowed either way — chat degrades to a slower scan, the request
+ * never fails because of initialisation.
  */
 export function ensureChatCollections(db: Db): Promise<void> {
-  if (!chatSetupPromise) {
-    chatSetupPromise = (async () => {
-      try {
-        await ensureChatIndexes(db)
-        await seedDefaultChannels(db)
-        await migrateLegacyMessages(db)
-      } catch (error) {
-        // Reset so a transient failure (e.g. Atlas cold start) is retried by
-        // the next request rather than permanently skipping the migration.
-        chatSetupPromise = null
-        console.error('ensureChatCollections failed:', error)
-      }
-    })()
-  }
+  if (chatSetupPromise) return chatSetupPromise
+  chatSetupPromise = (async () => {
+    try {
+      await ensureChatIndexes(db)
+      await seedDefaultChannels(db)
+      await migrateLegacyMessages(db)
+    } catch (error) {
+      if (isTransientMongoError(error)) chatSetupPromise = null
+      console.error('ensureChatCollections failed:', error)
+    }
+  })()
   return chatSetupPromise
 }
 
