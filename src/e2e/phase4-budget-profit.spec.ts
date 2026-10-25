@@ -20,10 +20,10 @@ import { FOUNDER_STATE } from './helpers'
  * even though the seeded database is persistent.
  */
 
-const MONTHS: Record<string, { budget: string; distribution: string }> = {
-  chromium: { budget: '2031-01', distribution: '2032-01' },
-  'Mobile Chrome': { budget: '2031-02', distribution: '2032-02' },
-  Tablet: { budget: '2031-03', distribution: '2032-03' },
+const MONTHS: Record<string, { budget: string; distribution: string; probe: string }> = {
+  chromium: { budget: '2031-01', distribution: '2032-01', probe: '2033-01' },
+  'Mobile Chrome': { budget: '2031-02', distribution: '2032-02', probe: '2033-02' },
+  Tablet: { budget: '2031-03', distribution: '2032-03', probe: '2033-03' },
 }
 
 const monthBounds = (month: string) => {
@@ -277,6 +277,71 @@ test.describe('phase 4 — budgeting and profit tracking', () => {
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
     )
     expect(scrolls, 'distribution detail page scrolls horizontally').toBe(false)
+  })
+
+  // Regression: the distribution detail screen subscribes to finance changes
+  // (useRealtimeSync('finance')) and reloads when one lands. It used to gate its
+  // whole body on `loading`, so a remote write remounted the screen — snapping an
+  // open "Show calculation" panel shut and detaching the toggle button mid-click
+  // (this is what intermittently failed the toggle on the slower Mobile render).
+  // The refresh is now silent, so the open disclosure must survive a cross-device
+  // finance write.
+  test('a background finance change keeps an open calculation panel from closing', async ({ page, browser }, testInfo) => {
+    guard(page)
+    const month = (MONTHS[testInfo.project.name] ?? MONTHS.chromium).probe
+    const bounds = monthBounds(month)
+
+    // A month with clear profit, then land on its distribution detail.
+    await postTransaction(page, {
+      type: 'income',
+      amount: '9000',
+      date: bounds.mid,
+      category: 'sales_revenue',
+      note: 'E2E probe revenue',
+    })
+    await postTransaction(page, {
+      type: 'expense',
+      amount: '3000',
+      date: bounds.start,
+      category: 'meta_ads',
+      note: 'E2E probe expense',
+    })
+    await page.goto('/distributions')
+    await setNativeValue(page.getByLabel('Month (Karachi)'), month)
+    await page.getByRole('button', { name: 'Calculate distribution' }).click()
+    await expect(page).toHaveURL(/\/distributions\/[a-f0-9]{24}/, { timeout: 20_000 })
+
+    // Open the Net profit disclosure and remember where we are.
+    const formula = page.getByText('Net profit = net sales − COGS − operating expenses')
+    await page.getByRole('button', { name: /Show calculation · Net profit/ }).click()
+    await expect(formula).toBeVisible()
+    const detailUrl = page.url()
+
+    // A second client — this Founder's other device — writes a finance record.
+    // That advances the finance change-stream and fires this screen's silent
+    // refresh, the exact remote edit that used to blank the page to a skeleton.
+    const other = await browser.newContext({ storageState: FOUNDER_STATE })
+    const otherPage = await other.newPage()
+    try {
+      await postTransaction(otherPage, {
+        type: 'income',
+        amount: '500',
+        date: bounds.mid,
+        category: 'sales_revenue',
+        note: 'E2E probe cross-device write',
+      })
+    } finally {
+      await other.close()
+    }
+
+    // Give the SSE round-trip time to reach this page, then assert the silent
+    // refresh left the open panel and the page body untouched.
+    await page.waitForTimeout(1500)
+    await expect(page.getByRole('button', { name: /Hide calculation · Net profit/ })).toBeVisible()
+    await expect(formula).toBeVisible()
+    await expect(page.getByText('Adds up exactly — no paisa lost or invented by rounding.')).toBeVisible()
+    await expect(mainHeading(page)).toBeVisible()
+    expect(page.url()).toBe(detailUrl)
   })
 
   test('every phase 4 screen loads clean at this width', async ({ page }) => {

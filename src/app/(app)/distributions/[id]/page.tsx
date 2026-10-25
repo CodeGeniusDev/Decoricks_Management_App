@@ -206,7 +206,13 @@ export default function DistributionDetailPage() {
     }
   };
 
-  if (loading) {
+  // The realtime refresh in useRealtimeSync() must be the *silent* variant: a
+  // background finance change reloads this record, but the body — including any
+  // "Show calculation" disclosure the Founder has open — stays painted and is
+  // updated in place. The full-page skeleton belongs to the very first load
+  // only; gating on `loading` alone remounted the whole screen on every remote
+  // edit, closing open panels and discarding scroll position.
+  if (loading && !dist) {
     return (
       <PageTransition>
         <PageHeader title="Profit Distribution" />
@@ -217,7 +223,7 @@ export default function DistributionDetailPage() {
     );
   }
 
-  if (error || !dist) {
+  if (!dist) {
     return (
       <PageTransition>
         <PageHeader title="Profit Distribution" />
