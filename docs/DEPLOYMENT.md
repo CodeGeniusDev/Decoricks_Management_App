@@ -36,29 +36,29 @@ go into the host's encrypted secret store, not the repository.
 
 Runtime (server-side, all `process.env`):
 
-| Name | Required | Notes |
-| --- | --- | --- |
-| `MONGODB_URI` | yes | Atlas SRV URI. **SECRET.** |
-| `MONGODB_DB` | yes | Set explicitly to `decoricks_prod`. |
-| `SESSION_SECRET` | yes | ≥16 chars; signs CSRF tokens. **SECRET.** |
-| `SESSION_TTL_MINUTES` | optional | Default 720 (12h sliding window). |
-| `SESSION_MAX_LIFETIME_MINUTES` | optional | Default 10080 (7d absolute). Must be ≥ TTL or the app refuses to boot. |
-| `SESSION_SLIDE_INTERVAL_SECONDS` | optional | Default 60. |
-| `PASSWORD_MIN_LENGTH` | optional | Default 12. |
-| `BCRYPT_COST` | optional | Default 12. |
-| `LOGIN_MAX_ATTEMPTS` | optional | Default 5. |
-| `LOGIN_WINDOW_MINUTES` | optional | Default 15. |
-| `LOCKOUT_MINUTES` | optional | Default 15. |
-| `TZ` | yes | Exactly `Asia/Karachi`. |
-| `MONGODB_TEST_DB` | **never** | Test-runner only. Must be absent on the host. |
+| Name                             | Required  | Notes                                                                  |
+| -------------------------------- | --------- | ---------------------------------------------------------------------- |
+| `MONGODB_URI`                    | yes       | Atlas SRV URI. **SECRET.**                                             |
+| `MONGODB_DB`                     | yes       | Set explicitly to `decoricks_prod`.                                    |
+| `SESSION_SECRET`                 | yes       | ≥16 chars; signs CSRF tokens. **SECRET.**                              |
+| `SESSION_TTL_MINUTES`            | optional  | Default 720 (12h sliding window).                                      |
+| `SESSION_MAX_LIFETIME_MINUTES`   | optional  | Default 10080 (7d absolute). Must be ≥ TTL or the app refuses to boot. |
+| `SESSION_SLIDE_INTERVAL_SECONDS` | optional  | Default 60.                                                            |
+| `PASSWORD_MIN_LENGTH`            | optional  | Default 12.                                                            |
+| `BCRYPT_COST`                    | optional  | Default 12.                                                            |
+| `LOGIN_MAX_ATTEMPTS`             | optional  | Default 5.                                                             |
+| `LOGIN_WINDOW_MINUTES`           | optional  | Default 15.                                                            |
+| `LOCKOUT_MINUTES`                | optional  | Default 15.                                                            |
+| `TZ`                             | yes       | Exactly `Asia/Karachi`.                                                |
+| `MONGODB_TEST_DB`                | **never** | Test-runner only. Must be absent on the host.                          |
 
 Optional Web Push (Phase 9). If unset, push is disabled and the app falls back
 to in-app + browser notifications while open:
 
-| Name | Required | Notes |
-| --- | --- | --- |
-| `VAPID_PRIVATE_KEY` | optional | **SECRET**, server-only. |
-| `VAPID_SUBJECT` | optional | e.g. `mailto:…`, server-only. |
+| Name                           | Required | Notes                                                                                                                                      |
+| ------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `VAPID_PRIVATE_KEY`            | optional | **SECRET**, server-only.                                                                                                                   |
+| `VAPID_SUBJECT`                | optional | e.g. `mailto:…`, server-only.                                                                                                              |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | optional | Inlined into the client **at build time**. Must be present in the BUILD environment, and changing it needs a rebuild, not just a redeploy. |
 
 Do **NOT** put these on the production host runtime env (seed-only, used by
@@ -108,11 +108,11 @@ Once you know the Atlas region, pick the closest host region:
 
 Example mapping (verify your Atlas region first):
 
-| Atlas region | Nearest Koyeb | Nearest Render |
-| --- | --- | --- |
-| AWS eu-central-1 (Frankfurt) | Frankfurt | Frankfurt |
-| AWS us-east-1 / -2 (Virginia/Ohio) | Washington, D.C. | Virginia or Ohio |
-| AWS ap-south-1 (Mumbai) | (neither is close; pick Frankfurt) | Singapore |
+| Atlas region                       | Nearest Koyeb                      | Nearest Render   |
+| ---------------------------------- | ---------------------------------- | ---------------- |
+| AWS eu-central-1 (Frankfurt)       | Frankfurt                          | Frankfurt        |
+| AWS us-east-1 / -2 (Virginia/Ohio) | Washington, D.C.                   | Virginia or Ohio |
+| AWS ap-south-1 (Mumbai)            | (neither is close; pick Frankfurt) | Singapore        |
 
 ---
 
@@ -157,7 +157,7 @@ instance type (512 MB RAM / 0.1 vCPU). Koyeb's own pricing FAQ says services do
 NOT automatically scale to zero — "Scale-to-Zero … You can also manually pause
 your Services" (a paid/roadmap feature). So on the Koyeb free tier the app stays
 awake and does not cold-start on idle; the free 5-hour active limit applies to
-the free *PostgreSQL* database, which this app does not use (it uses Atlas).
+the free _PostgreSQL_ database, which this app does not use (it uses Atlas).
 This is a documented claim from Koyeb's page, not something deployed or
 measured here.
 
@@ -189,6 +189,66 @@ minutes of inactivity** and take a cold start (tens of seconds) on the next
 request. They also have limited monthly free instance hours; without a payment
 method, exceeding the free allotment suspends the free services for the rest of
 the month. This is Render's documented behavior, not measured here.
+
+---
+
+## 6a. Render Free web service — the four questions
+
+Answers are taken from Render's official pages fetched for this section
+(`render.com/docs/free` and `render.com/docs/regions`). No host is recommended;
+this only records what the free tier does. Items not stated on those pages are
+marked NOT VERIFIED.
+
+**1. Is a payment card required to create a free web service?**
+No. The official "Create a Free instance" flow is: sign up → _New_ → choose
+Web Service → choose the **Free** compute plan → deploy ("That's it!"). No card
+or payment-method step appears in that flow, and the same page repeatedly
+describes the "if you haven't added a payment method" case (see §2 below),
+which only makes sense if a free service can exist without a card.
+_Source: `render.com/docs/free`._
+
+**2. Will a free service ever be charged automatically?**
+Not for the free instance hours themselves: when the 750 monthly free instance
+hours run out, Render **suspends** all free web services until the next month —
+it does not bill (source: `/docs/free`, "Free instance hours"). Charges can only
+arise from exceeding the workspace's **monthly included outbound bandwidth** or
+**build pipeline minutes**, and even then only **if a payment method is on file**:
+
+- Exceed included bandwidth → "Render bills you for a supplementary amount.
+  **If you haven't added a payment method, Render instead suspends all of your
+  Free services** for the remainder of the month."
+- Exceed pipeline minutes → bills a supplementary amount, **unless** no payment
+  method / a spend limit is set — then it **disables new builds** instead.
+
+So: **without a payment method, a free web service is never auto-charged** — it
+is suspended (services) or has builds disabled, for the rest of the month.
+**With** a payment method added, overage beyond the included amounts **can be
+billed automatically**. Source: `render.com/docs/free`.
+
+**3. Which regions are available?**
+Render's official regions page lists five regions for its services:
+**Oregon (US‑West), Ohio (US‑East), Virginia (US‑East), Frankfurt (Germany),
+Singapore.** Static sites use a global CDN (no region). A service's region is
+chosen at creation and **cannot be changed later** (redeploy in the new region).
+**NOT VERIFIED:** whether the **Free** compute plan is selectable in _every_ one
+of those five regions — the regions page does not state a free-plan-only subset.
+Confirm the region picker during creation before relying on a specific one.
+_Source: `render.com/docs/regions`._
+
+**4. Monthly free instance hours**
+**750 Free instance hours per workspace per calendar month.** Details from
+`/docs/free`:
+
+- A free web service consumes these hours only **while running**; a spun-down
+  service does **not** consume them.
+- Hours **reset to 750 each month**; unused hours do **not** roll over.
+- Exhausting them **suspends** all free web services until the next month.
+
+Related free-tier limits (same page, for context, not a recommendation): the free
+web-service plan is **0.1 CPU / 512 MB RAM**; it **spins down after 15 minutes**
+with no inbound traffic and takes **~1 minute** to spin up; local filesystem
+changes are lost on spin-down/redeploy; rollbacks limited to the two most recent
+deploys; no scaling, persistent disks, SSH, or one-off jobs.
 
 ---
 
@@ -257,10 +317,17 @@ live Koyeb or Render instance.
   start timings, health-check behavior, and sleep/queue interactions on the
   actual hosts are NOT VERIFIED (described from official docs + client code).
 - **Koyeb card requirement & free-tier always-on**, **Render free-tier spin-down
-  (15 min) and instance-hour suspension**, **Railway $5 trial without a card**,
-  and **Fly.io card-required** facts below are quoted from each provider's
-  official pages at the time of writing; providers change terms, so re-check
-  before committing.
+  (15 min), 750 monthly free instance hours and instance-hour suspension**,
+  **Railway $5 trial without a card**, and **Fly.io card-required** facts below
+  are quoted from each provider's official pages at the time of writing;
+  providers change terms, so re-check before committing.
+- **Render accepted payment methods** — the "all major credit and debit cards"
+  line in §9a is from Render's docs but its `payment-methods` / `billing` /
+  `pricing` pages returned 404 when re-fetched for §6a, so the exact accepted-
+  methods list is **NOT VERIFIED** this turn. The §6a free-service facts that
+  WERE verified come from `render.com/docs/free` and `render.com/docs/regions`.
+- **Whether the Render Free plan is selectable in all five regions** — the
+  regions page does not state a free-plan subset. NOT VERIFIED (see §6a).
 - **Exact free-tier performance** of this Next.js app (512 MB / 0.1 vCPU) under
   its SSE + change-stream load is NOT VERIFIED.
 
