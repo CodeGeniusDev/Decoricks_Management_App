@@ -360,6 +360,7 @@ lands on the change-password screen. That is expected.
 > Stage-2 write-path smoke artifacts (a board/column/task, a chat message, a
 > throwaway income entry, products/stock/orders). To hand it to yourself clean,
 > drop and re-seed it (there is nothing in it worth keeping):
+>
 > ```bash
 > # mongosh against the same MONGODB_URI, then:
 > use decoricks_dev
@@ -418,7 +419,7 @@ was set inline on each write command only. Timestamps are UTC from the tooling.
    push subscriptions) — legacy shapes exist only in `test`.
 3. **Switch (verified, not committed to `.env.local`)**: ran the app with inline
    `MONGODB_DB=decoricks_prod`; boot log showed `[mongodb] using database
-   "decoricks_prod" (MONGODB_DB)`; `/api/health` 200. Repointed the scheduled
+"decoricks_prod" (MONGODB_DB)`; `/api/health` 200. Repointed the scheduled
    backup config (`scripts/backup.sh`, the launchd sample, `docs/BACKUP_RECOVERY.md`)
    to `decoricks_prod`; **no launchd job was installed or loaded.**
 4. **Read-only smoke on `decoricks_prod`**: Founder login, dashboard, finance list,
@@ -534,9 +535,12 @@ either **PATCH `/api/finance/accounts/[id]`** (edit the existing Cash / Bank Acc
 Wallet) or **POST `/api/finance/accounts`** (add a new one), passing `openingBalance` in
 integer **paisa** (PKR 1 = 100). Both are recorded in `auditLog` as `account_updated` /
 `account_created` with the before/after value. Do **not** edit the `accounts` documents
-directly in Atlas — that bypasses the audit trail.
+directly in Atlas — that bypasses the audit trail. For how to fill the first real data
+without counting anything twice (including why capital goes in as `Partner capital`
+ledger entries, not opening balances), see **`docs/FIRST_REAL_ENTRIES.md`**.
 
 **Dev/prod separation hardened (this run):**
+
 - `scripts/seed.ts` now **refuses to run against `decoricks_prod` with no override flag**
   (there is no consent value that allows seeding production; it writes demo roles, a
   Founder and SPEC financial defaults). Test/dev use `decoricks_dev` / `seed:e2e`.
