@@ -89,6 +89,22 @@ const envSchema = z
      */
     VAPID_PRIVATE_KEY: z.string().min(1).optional(),
     VAPID_SUBJECT: z.string().min(1).optional(),
+
+    /**
+     * Shared secret for `GET /api/cron/notifications` — the timer an external
+     * cron service uses to run the time-based notification sweep on a host with
+     * no cron of its own. OPTIONAL: when unset the route answers 404 as if it
+     * did not exist, which is the correct behaviour for a deployment that never
+     * configured a monitor.
+     *
+     * Deliberately NOT `z.string().min(32)` here. A `.min()` on this schema
+     * would make a mistyped value fail `envSchema.parse`, and `getEnv()` throws
+     * — one typo in one optional variable would take the whole application down
+     * instead of disabling one route. The minimum length is therefore enforced
+     * where it is used (`/api/cron/notifications`), which treats a too-short
+     * secret as "not configured" and says so in the log.
+     */
+    CRON_SECRET: z.string().optional(),
   })
   // The absolute lifetime is the outer bound on a sliding window, so it can
   // never be shorter than the window it caps.
@@ -120,6 +136,7 @@ export const getEnv = () => {
       MONGODB_DB: process.env.MONGODB_DB,
       VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY,
       VAPID_SUBJECT: process.env.VAPID_SUBJECT,
+      CRON_SECRET: process.env.CRON_SECRET,
     })
     return _env
   } catch (error) {

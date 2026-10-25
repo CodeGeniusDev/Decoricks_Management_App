@@ -43,8 +43,25 @@ export interface SweepResult {
   lowStock: number
 }
 
+/**
+ * What `maybeRunNotificationSweep` actually did.
+ *
+ * `executed` is false when the call was throttled (a sweep ran less than
+ * `SWEEP_INTERVAL_MS` ago) or when the sweep threw. `failed` tells those two
+ * apart, and it exists because of WHO asks: the external timer is the only clock
+ * this app has, so a sweep that keeps throwing must not answer like a sweep that
+ * was simply early. A throttled call is normal (`failed: false`); a failed one is
+ * the signal a caller should escalate.
+ */
+export interface SweepOutcome extends SweepResult {
+  executed: boolean
+  failed: boolean
+}
+
 let lastRunAt = 0
-let inFlight: Promise<SweepResult> | null = null
+let inFlight: Promise<SweepOutcome> | null = null
+
+const NO_ALERTS: SweepResult = { overdue: 0, dueSoon: 0, lowStock: 0 }
 
 /**
  * Force a full sweep regardless of the throttle. Used by the sweep's own tests
@@ -123,21 +140,32 @@ export async function runNotificationSweep(db: Db): Promise<SweepResult> {
  * notifications instead of rendering, then re-rendering — no double-paint. It
  * shares one in-flight sweep across concurrent callers and never rejects: a
  * failure is logged and the awaiting read simply proceeds without new rows.
+ *
+ * It resolves with the counts so a caller that is *asked* whether work happened
+ * can answer truthfully instead of assuming. The bell and the dashboard ignore
+ * the value; `/api/cron/notifications` reports it, because an operator wiring an
+ * external timer needs to know whether the trigger actually fired a sweep, was
+ * folded into the 15-minute throttle, or found the sweep itself failing.
  */
-export function maybeRunNotificationSweep(db: Db): Promise<void> {
-  if (inFlight) return inFlight.then(() => undefined)
-  if (Date.now() - lastRunAt < SWEEP_INTERVAL_MS) return Promise.resolve()
+export function maybeRunNotificationSweep(db: Db): Promise<SweepOutcome> {
+  if (inFlight) return inFlight
+  if (Date.now() - lastRunAt < SWEEP_INTERVAL_MS) {
+    return Promise.resolve({ ...NO_ALERTS, executed: false, failed: false })
+  }
 
-  inFlight = runNotificationSweep(db)
+  const started = runNotificationSweep(db)
+    .then((result) => ({ ...result, executed: true, failed: false }))
     .catch((error) => {
       console.error('[sweep] notification sweep failed:', error)
-      return { overdue: 0, dueSoon: 0, lowStock: 0 } as SweepResult
-    })
-    .finally(() => {
-      inFlight = null
+      return { ...NO_ALERTS, executed: false, failed: true }
     })
 
-  return inFlight.then(() => undefined)
+  inFlight = started
+  started.finally(() => {
+    if (inFlight === started) inFlight = null
+  })
+
+  return started
 }
 
 /** Test seam: reset the throttle so a suite can force repeated sweeps. */
