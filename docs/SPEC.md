@@ -1523,17 +1523,22 @@ eventSource.onmessage = (event) => {
 
 ### 7.4 Free Tier Limitations
 
-**Vercel (Free Tier):**
+**Render (Free web service — chosen host):**
 
-- Serverless functions have 10-second timeout
-- SSE connections may timeout after 60 seconds of inactivity
-- Auto-reconnect logic required on client
+- A single **persistent** Node instance, so the SSE stream and MongoDB change
+  streams **do** work (unlike on a serverless platform) — see `REALTIME.md`.
+- The service **sleeps after ~15 min with no inbound traffic**; the keep-awake
+  monitor pinging `/api/health` prevents spin-down. After a cold wake the first
+  request is slow (~30–60 s).
+- **0.1 CPU / 512 MB RAM** and **750 instance-hours/month** (shared per workspace)
+  bound how much can run — enough for **one** always-on service.
 
-**MongoDB Atlas (Free Tier):**
+**MongoDB Atlas (Free M0):**
 
-- Change Streams are supported on M0 cluster
-- No real-time triggers (server must poll or use Change Streams)
-- Use MongoDB Change Streams for real-time database events
+- Change Streams are supported on M0.
+- No real-time triggers; the server uses Change Streams (serverless/none → falls
+  back to per-module cursor polling).
+- M0 is shared and single-instance (no failover); cloud backups are inactive.
 
 **Change Stream Implementation:**
 
@@ -1603,114 +1608,85 @@ same per-module cursor shape, so switching is transparent to subscribers.
 
 ### 8.1 Hosting Providers
 
-**Application Hosting: To be decided (Step 5) — persistent Node host recommended for SSE/change streams**
+**Application Hosting: Render (Free web service) + a keep-awake monitor — CHOSEN**
 
-- Next.js native support
-- Automatic deployments from Git
-- Free SSL certificates
-- Edge network for global performance
-- Limitations: 10-second function timeout, 100GB bandwidth/month
+The decision (recorded in `docs/SERVERLESS_OPTION.md` and `docs/DEPLOYMENT.md`) is
+**Render Free** running the standard **Node.js `next start`** server — a single
+**persistent** instance, which is what SSE / MongoDB change streams need. Netlify
+is kept as a documented **fallback** only; Vercel Hobby was **excluded** (its plan
+is for personal, non-commercial use).
+
+Render Free caveats that shape operations (see `docs/KNOWN_LIMITATIONS.md`):
+
+- Render's own docs say Free instances are **not for production** — treat this as
+  staging / controlled use.
+- The service **spins down after ~15 min idle**; a monitor pings `/api/health`
+  every ~10 min to keep it warm. **750 instance-hours/month** shared per
+  workspace fits exactly **one** always-on service.
+- The **first request after every deploy/restart is cold** (~30–60 s).
+
+Runtime is **Node 22** (`.nvmrc` + `engines` + Render `NODE_VERSION=22`). The
+whole date layer assumes **`TZ=Asia/Karachi`**. Build/config and troubleshooting
+are the authoritative source, in **`docs/DEPLOYMENT.md`**.
 
 **Database: MongoDB Atlas (Free M0 Cluster)**
 
-- 512MB storage
-- Shared RAM
-- Geo-distributed (choose region closest to Pakistan: Mumbai)
-- Limitations: No automated backups, connection pooling restrictions
+- 512MB storage (shared), single instance, no replica set / failover
+- Region closest to Pakistan (e.g. Mumbai)
+- **Cloud backups are INACTIVE on M0** — recovery relies on the encrypted
+  `npm run backup` archives (`docs/BACKUP_RECOVERY.md`)
+- Connect as the **least-privilege `decoricks_app`** user; `MONGODB_DB` pins the
+  database (currently **`decoricks_prod`**); the Atlas URI keeps an **empty** `/`
+  path so the driver never falls back to a DB literally named `test`
 
-**Asset Storage: To be decided**
-
-- For storing exported backup files
-- 1GB storage limit
-- Direct file uploads/downloads
+**Asset / backup storage:** the nightly encrypted archives land in a synced
+folder (e.g. Dropbox) on the operator's machine — no in-app object store.
 
 ### 8.2 Environment Variables
 
-**Required Variables:**
+Real names (validated by `src/lib/env.ts`); see `.env.example` for the full list.
+Set these in **Render → Environment**. **Never commit real values.**
 
 ```env
-MONGODB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/decoricks
-# Auth uses custom sessions (no NextAuth)
-# SESSION_TTL_MINUTES / SESSION_MAX_LIFETIME_MINUTES configurable
+MONGODB_URI=mongodb+srv://decoricks_app:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority
+# note the EMPTY path before `?` — the database name is set separately below
+MONGODB_DB=decoricks_prod
+SESSION_SECRET=<>=20 chars; regenerate with the crypto one-liner in docs/MAINTENANCE.md>
 NODE_ENV=production
+TZ=Asia/Karachi
+NODE_VERSION=22   # Render build/runtime pin
 ```
 
-**Optional Variables:**
-
-```env
-BACKUP_SCHEDULE=0 2 * * * # Daily at 2 AM Karachi time
-BACKUP_RETENTION_DAYS=30
-```
+- Auth is **custom cookie sessions + CSRF** (no NextAuth, no `NEXTAUTH_*`).
+- `SESSION_TTL_MINUTES` (sliding, default 12h) and
+  `SESSION_MAX_LIFETIME_MINUTES` (absolute ceiling, default 7d) are configurable;
+  the app refuses to boot if the ceiling is below the sliding window.
+- `MONGODB_TEST_DB` is **test-runner only** — must be absent from prod/dev env or
+  the app crashes on the first DB call (see `src/lib/db-name.ts`).
 
 ### 8.3 Deployment Steps
 
-**1. Prepare Repository:**
+The operator performs the deploy; the step-by-step runbook is
+**`docs/DEPLOYMENT.md`** (Atlas setup → Render web service → env vars → seed the
+Founder → health check). In outline:
 
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-```
-
-**2. Connect to host:**
-
-- Install host CLI as applicable
-- Login: `vercel login`
-- Deploy: `vercel`
-
-**3. Configure Environment Variables:**
-
-- Add environment variables in host dashboard
-- Set MongoDB connection string
-# No NextAuth secret required (custom sessions)
-
-**4. Setup MongoDB Atlas:**
-
-- Create free M0 cluster
-- Create database user with read/write permissions
-- Configure IP/firewall as needed
-- Get connection string
-
-**5. Deploy:**
-
-```bash
-vercel --prod
-```
-
-**6. Configure Custom Domain (Optional):**
-
-- Add domain in host/dashboard
-- Update DNS records
+1. Provision Atlas M0, create `decoricks_app` (least privilege) + an admin user,
+   allow the network, copy the connection URI.
+2. Create the Render **Free** web service from the repo (Auto-Deploy off),
+   build `npm install && npm run build`, start `npm start`, set `NODE_VERSION=22`
+   and the env vars above.
+3. Seed once: `npm run seed` (creates the four role documents + the Founder;
+   the Founder must change password on first login).
+4. Add the keep-awake monitor on `/api/health`.
+5. Confirm as a signed-in Founder that `/api/health/database` reports reachable.
 
 ### 8.4 CI/CD Pipeline
 
-**GitHub Actions (Free Tier):**
-
-```yaml
-name: Deploy
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: 18
-      - run: npm ci
-      - run: npm run build
-      - run: npm test
-      - uses: amondnet/vercel-action@v20
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.ORG_ID }}
-          vercel-project-id: ${{ secrets.PROJECT_ID }}
-          vercel-args: '--prod'
-```
+Not configured (deferred — see `docs/KNOWN_LIMITATIONS.md`). Auto-Deploy is
+**off** on the Render service; the operator triggers deploys manually after
+`npm run verify` (typecheck + lint + vitest + build) passes locally. A future
+GitHub Actions pipeline would run those same four gates on push to `main`
+(Node 22) before any manual Render deploy.
 
 ### 8.5 Monitoring
 
