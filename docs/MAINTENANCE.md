@@ -4,7 +4,8 @@ For the **Founder** (or whoever operates the deployment). This is the routine
 care of a live app on **Render Free + MongoDB Atlas M0**. Do these things here
 rather than improvising — the app reads its configuration from environment
 variables and a small set of scripts, and most mistakes come from editing the
-wrong one.
+wrong one. Day-to-day Render actions (logs, restart, rollback, uptime monitor,
+free-hour budget, post-deploy smoke test) are in **`docs/RENDER_OPERATIONS.md`**.
 
 > **Golden rules**
 >
@@ -223,17 +224,17 @@ written unless the operator sets `DECORICKS_ALLOW_PROD_DB=1` on that one command
 `.env.local` sets `MONGODB_DB=decoricks_dev`, so ordinary runs never even look at
 prod.
 
-| Script | Writes? | Guard(s) |
-| --- | --- | --- |
-| `seed.ts` | founder, roles, SPEC defaults | refuses test-shaped **and** now **absolutely refuses `decoricks_prod` — no override flag**; consent for any other non-test name |
-| `seed-e2e.ts` | e2e fixture users/roles | `assertTestTarget` — **test-shaped only**, throws before consent; cannot reach prod |
-| `cleanup-e2e-data.ts` | `deleteMany` sweep | dry-run default · `--apply` + `--confirm=<name>` · consent |
-| `cleanup-demo-data.ts` | frozen demo `_id`s | dry-run default · fresh verified backup · `--confirm` · consent · **drift abort** · single txn · audit · reconcile |
-| `restore.ts` | replaces an **empty** target | dry-run default · consent · empty-target rule · **prod only from same-source backup, else `--allow-foreign-source`** |
-| `backfill-role-permissions.ts` | `updateOne` roles | dry-run default · `--apply` + `--confirm-backup` · consent |
-| `migrate-tasks-assignees.ts` | board/column/task writes | `DRY_RUN=true` default · consent when applying |
-| `migrate-chat-clientid-index.ts` | index + `updateMany` | dry-run default · `--apply` + `--confirm-backup` · consent |
-| `index-migrate-dry-run.ts` | `updateMany` | read-only default · `--apply` + `--i-have-a-backup` · consent |
+| Script                           | Writes?                       | Guard(s)                                                                                                                        |
+| -------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `seed.ts`                        | founder, roles, SPEC defaults | refuses test-shaped **and** now **absolutely refuses `decoricks_prod` — no override flag**; consent for any other non-test name |
+| `seed-e2e.ts`                    | e2e fixture users/roles       | `assertTestTarget` — **test-shaped only**, throws before consent; cannot reach prod                                             |
+| `cleanup-e2e-data.ts`            | `deleteMany` sweep            | dry-run default · `--apply` + `--confirm=<name>` · consent                                                                      |
+| `cleanup-demo-data.ts`           | frozen demo `_id`s            | dry-run default · fresh verified backup · `--confirm` · consent · **drift abort** · single txn · audit · reconcile              |
+| `restore.ts`                     | replaces an **empty** target  | dry-run default · consent · empty-target rule · **prod only from same-source backup, else `--allow-foreign-source`**            |
+| `backfill-role-permissions.ts`   | `updateOne` roles             | dry-run default · `--apply` + `--confirm-backup` · consent                                                                      |
+| `migrate-tasks-assignees.ts`     | board/column/task writes      | `DRY_RUN=true` default · consent when applying                                                                                  |
+| `migrate-chat-clientid-index.ts` | index + `updateMany`          | dry-run default · `--apply` + `--confirm-backup` · consent                                                                      |
+| `index-migrate-dry-run.ts`       | `updateMany`                  | read-only default · `--apply` + `--i-have-a-backup` · consent                                                                   |
 
 Read-only (cannot corrupt prod): `backup.ts`, `verify-finance.ts`, `db-inventory.ts`,
 `db-probe.ts`, `stage1-demo-inventory.ts`, `index-audit.ts`, the `*-probe` scripts.
@@ -242,11 +243,11 @@ Read-only (cannot corrupt prod): `backup.ts`, `verify-finance.ts`, `db-inventory
 
 `decoricks_prod` is **not** protected by a separate credential today. The
 `MONGODB_URI` in your local `.env.local` connects as the **admin** Atlas user
-(`atlasAdmin@admin`, read/write on *every* database). `MONGODB_DB=decoricks_dev` only
-sets the *default* — the same credential writes to `decoricks_prod` if you ever export
+(`atlasAdmin@admin`, read/write on _every_ database). `MONGODB_DB=decoricks_dev` only
+sets the _default_ — the same credential writes to `decoricks_prod` if you ever export
 `MONGODB_DB=decoricks_prod DECORICKS_ALLOW_PROD_DB=1` (which is exactly how the purge
 was run). The production **host** (Render) connects as the least-privilege
-`decoricks_app` user (§2b), so the *app* is fine; the risk is the admin credential on
+`decoricks_app` user (§2b), so the _app_ is fine; the risk is the admin credential on
 your laptop.
 
 Recommended, in order of value:
