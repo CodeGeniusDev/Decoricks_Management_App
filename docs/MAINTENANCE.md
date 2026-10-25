@@ -6,6 +6,8 @@ rather than improvising — the app reads its configuration from environment
 variables and a small set of scripts, and most mistakes come from editing the
 wrong one. Day-to-day Render actions (logs, restart, rollback, uptime monitor,
 free-hour budget, post-deploy smoke test) are in **`docs/RENDER_OPERATIONS.md`**.
+The everyday business routine for the app itself (what to enter daily, weekly
+exports, monthly distribution) is in **`docs/DAILY_USE.md`**.
 
 > **Golden rules**
 >
