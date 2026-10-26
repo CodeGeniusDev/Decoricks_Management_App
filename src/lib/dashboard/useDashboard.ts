@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
+import { fetchDashboardSnapshot } from '@/lib/dashboard/snapshot-fetch'
 import { useRealtimeSync, useConnectionState } from '@/lib/sync/useRealtime'
 import type { RealtimeReadTracker } from '@/lib/sync/useRealtime'
 import type { DashboardMetrics } from '@/lib/metrics/dashboard-metrics'
@@ -27,6 +28,13 @@ import type { DashboardMetrics } from '@/lib/metrics/dashboard-metrics'
  * good snapshot and only surfaces the error on the initial load, matching the
  * "one failing widget never breaks the page" rule (the page-level error is
  * rendered by each widget from this shared state).
+ *
+ * The read itself is delegated to `snapshot-fetch`, which owns the timeout, the
+ * single retry, the failure classification and the safe message. This hook keeps
+ * the *policy* — when to read, what supersedes what, which refresh is silent —
+ * and no longer touches `Response` or `err.message` at all. That split exists
+ * because a transient network failure used to reach the screen verbatim: see
+ * `src/lib/dashboard/snapshot-fetch.ts`.
  */
 
 export type DashboardPeriod = 'day' | 'week' | 'month' | 'custom'
@@ -112,51 +120,80 @@ export function useDashboard(): DashboardState {
       const seq = ++requestSeq.current
       if (background) bgInFlight.current = true
       if (!background) setLoading(true)
-      const startedAt = Date.now()
       // Announced before it goes out, so a signal arriving during the round trip
       // is held for this read to answer instead of starting a second identical
       // snapshot beside it.
       for (const tracker of trackers) tracker.begin()
+
       try {
-        const res = await apiFetch(
+        const result = await fetchDashboardSnapshot<DashboardMetrics>(
           `/api/dashboard?${rangeQuery}`,
-          background ? { headers: { 'x-session-background': '1' } } : {}
+          {
+            background,
+            /*
+             * The read's own ticket. `fetchDashboardSnapshot` consults it before
+             * the first attempt and before the single retry, so a period switch
+             * mid-flight stops the old read instead of letting it land on top of
+             * the new one — and reports `aborted`, which is deliberately NOT an
+             * error the user is told about.
+             */
+            isCurrent: () => seq === requestSeq.current,
+            // Still `apiFetch`: same-origin credentials and the CSRF rules are
+            // the api-client's job, and this keeps the dashboard on exactly the
+            // transport every other read in the app uses.
+            fetchImpl: apiFetch,
+            /*
+             * The failure used to be visible only as a string in the page. This
+             * puts the *shape* of it in the console — kind, status, attempts,
+             * elapsed — which is what distinguishes "the Render instance was
+             * asleep" (`network` at ~0ms) from "the server said no" (`server`
+             * with a status) when someone is trying to diagnose a report of a
+             * blank dashboard. No URL, no payload, no message text.
+             */
+            onDiagnostics: (info) => {
+              if (info.kind === 'ok') {
+                if (info.attempts > 1)
+                  console.warn('[dashboard] snapshot recovered after retry', info)
+                return
+              }
+              console.warn('[dashboard] snapshot read failed', info)
+            },
+          }
         )
-        const body = (await res.json()) as {
-          success: boolean
-          data?: DashboardMetrics
-          timestamp?: string
-          error?: { message?: string }
-        }
-        if (seq !== requestSeq.current) {
-          // Superseded before it landed: these numbers are discarded, so they
-          // prove nothing about what is on screen and must not be recorded as
-          // freshness. The read was announced, though, and an announcement that
-          // is never released would hold every later signal for this tab.
+
+        // Superseded before it landed: these numbers prove nothing about what is
+        // on screen and must not be recorded as freshness. The read was
+        // announced, though, and an announcement that is never released would
+        // hold every later signal for this tab.
+        if (result.kind === 'aborted' || seq !== requestSeq.current) {
           for (const tracker of trackers) tracker.abandon()
           return
         }
-        const serverTime = body.timestamp ? Date.parse(body.timestamp) : null
-        const durationMs = Date.now() - startedAt
-        if (!res.ok || !body.success) {
-          throw new Error(body.error?.message ?? `Request failed (${res.status})`)
-        }
-        setData(body.data ?? null)
-        setError(null)
-        lastFetchedAt.current = Date.now()
-        // The server's own instant for the snapshot now on screen, plus how long
-        // the client waited for it: together they say where this read must have
-        // begun, which is what lets each of the four subscriptions decide that a
-        // baseline is describing rows it already holds. An unparseable stamp
-        // becomes `null`, which `settleRead` refuses to record as proof.
-        for (const tracker of trackers) tracker.settle(serverTime, durationMs)
-      } catch (err) {
-        for (const tracker of trackers) tracker.abandon()
-        if (seq !== requestSeq.current) return
-        // A background failure keeps the last good numbers; only the first paint
-        // is allowed to flip the whole board into an error state.
-        if (!background) {
-          setError(err instanceof Error ? err.message : 'Failed to load the dashboard')
+
+        if (result.ok) {
+          /*
+           * The server's own instant for the snapshot now on screen, plus how long
+           * the client waited for it: together they say where this read must have
+           * begun, which is what lets each of the four subscriptions decide that a
+           * baseline is describing rows it already holds. An unparseable stamp
+           * becomes `null`, which `settleRead` refuses to record as proof.
+           */
+          for (const tracker of trackers) tracker.settle(result.serverTime, result.durationMs)
+          setData(result.data)
+          setError(null)
+          lastFetchedAt.current = Date.now()
+        } else {
+          for (const tracker of trackers) tracker.abandon()
+          /*
+           * A background failure keeps the last good numbers and says nothing;
+           * only the first paint is allowed to flip the whole board into an
+           * error state. `result.message` is one of the fixed strings from
+           * `snapshot-fetch` (or an allowlisted server sentence) — never the
+           * runtime's own words, which is how "Failed to fetch" got on screen.
+           * The retry the brief asks for is already here: `ErrorState`'s
+           * "Try again" calls `refresh`, which is this same function.
+           */
+          if (!background) setError(result.message)
         }
       } finally {
         // Cleared unconditionally for background calls: a foreground load that
