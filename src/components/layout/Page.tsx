@@ -12,17 +12,44 @@ interface PageHeaderProps {
   /** Short, factual line under the title. Never marketing copy. */
   description?: string
   actions?: React.ReactNode
+  /**
+   * A small element ABOVE the title. Its own visibility is the caller's business —
+   * the dashboard uses it to lift the Live chip out of the actions cluster on
+   * phones, where the cluster no longer has room for it beside the title.
+   */
+  eyebrow?: React.ReactNode
 }
 
-export const PageHeader = ({ title, description, actions }: PageHeaderProps) => (
-  <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+/*
+ * `sm:flex-wrap` and `max-w-full` are both load-bearing, and they fix two
+ * different halves of the same bug.
+ *
+ * Without `sm:flex-wrap` this row is `sm:flex-row` with no wrap and a `shrink-0`
+ * actions block, so at tablet width the block's natural width is added to the
+ * title column instead of being given its own line, and the DOCUMENT scrolls
+ * sideways: measured on the dashboard at 768px, where the page asked for 819px —
+ * 51px of horizontal scroll on a page nobody tried to scroll.
+ *
+ * Adding the wrap alone did not remove that overflow, because wrapping needs a
+ * width to wrap inside: a `shrink-0` flex item is sized to its MAX-CONTENT
+ * contribution, so it happily wraps onto its own line and then stays 790px wide
+ * inside a 720px content box (measured at 768px after the first fix).
+ * `max-w-full` is what gives the wrapped line a ceiling, and therefore what makes
+ * the wrap reachable. On desktop the two still share one line and nothing is
+ * clamped, because together they fit.
+ */
+export const PageHeader = ({ title, description, actions, eyebrow }: PageHeaderProps) => (
+  <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
     <div className="min-w-0">
+      {eyebrow}
       <h1 className="text-xl font-semibold tracking-tight text-decoricks-dark md:text-2xl">
         {title}
       </h1>
       {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
     </div>
-    {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+    {actions && (
+      <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">{actions}</div>
+    )}
   </div>
 )
 

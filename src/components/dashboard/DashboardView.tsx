@@ -45,7 +45,13 @@ const DashboardCharts = dynamic(() => import('./charts'), {
   ),
 })
 
-const ConnectionChip = () => {
+/*
+ * Rendered twice, once per place it belongs at each width — see `PageHeader`'s
+ * `eyebrow`. `useConnectionState` is a read-only subscription to the sync
+ * coordinator (no connection is opened by it, `useDashboard` already owns that),
+ * so a second instance costs one listener and nothing else.
+ */
+const ConnectionChip = ({ className = '' }: { className?: string }) => {
   const { state } = useConnectionState()
   const label = state === 'live' ? 'Live' : state === 'offline' ? 'Offline' : 'Reconnecting'
   const dot =
@@ -57,7 +63,7 @@ const ConnectionChip = () => {
   return (
     <span
       title={`Realtime sync ${state}`}
-      className="inline-flex items-center gap-1.5 rounded-full border border-line-subtle px-2.5 py-1 text-2xs font-medium text-ink-muted"
+      className={`inline-flex items-center gap-1.5 rounded-full border border-line-subtle px-2.5 py-1 text-2xs font-medium text-ink-muted ${className}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden />
       {label}
@@ -78,14 +84,33 @@ export default function DashboardView() {
     <PageTransition>
       <PageHeader
         title="Dashboard"
+        eyebrow={
+          /*
+           * On a phone the actions cluster becomes a full-width block of its own,
+           * so the Live chip would share that row with the period control and the
+           * date inputs — it landed at the far end of a wrapped cluster, which is
+           * the "awkwardly positioned" report. Above the title is where a status
+           * belongs when there is no room beside it. From `sm` the chip returns to
+           * the actions row and the eyebrow disappears: desktop is unchanged.
+           */
+          <ConnectionChip className="mb-2 sm:hidden" />
+        }
         description={
           data
             ? `Period ${formatKarachiDate(new Date(data.range.start), 'date')} – ${formatKarachiDate(new Date(data.range.end), 'date')} · updated ${formatKarachiDate(new Date(data.generatedAt), 'time')}`
             : 'Sales, cash, inventory, orders, budget and team activity at a glance.'
         }
         actions={
-          <div className="flex items-center gap-2">
-            <ConnectionChip />
+          /*
+           * One column of full-width controls below `sm`, the original row from `sm`
+           * up. `sm:max-w-full` + `sm:flex-wrap` are not decoration: the actions block
+           * above this row is `shrink-0`, so without a ceiling of its own this row was
+           * measured at 790px of max-content inside a 720px tablet content box —
+           * wrapping had nowhere to happen. With the bound, the chip and the period
+           * cluster share the line on desktop and take separate lines when they can't.
+           */
+          <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:max-w-full sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+            <ConnectionChip className="hidden sm:inline-flex" />
             <PeriodSelector
               period={dash.period}
               customFrom={dash.customFrom}

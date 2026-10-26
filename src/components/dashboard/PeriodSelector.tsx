@@ -66,12 +66,24 @@ export const PeriodSelector = ({
     [onPeriod, onCustomRange, customFrom, customTo, today]
   )
 
+  /*
+   * Mobile geometry, because this control is what pushed the page sideways.
+   *
+   * The four labels do not fit one row on a phone, so below `sm` the group is a 2×2
+   * grid — two taps per row, each a full half-width and at least 36px tall, instead
+   * of four narrow pills squeezed into 288px — and from `sm` it is the original
+   * single inline row, where it always fitted. The same logic covers the rest of the
+   * column: the two date inputs share one line in `1fr auto 1fr` so each gets as
+   * much of the row as it needs and neither can widen the document, and Refresh goes
+   * full width under them. Every class from `sm:` onwards is the class the desktop
+   * already had.
+   */
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+    <div className="flex min-w-0 flex-col gap-2 sm:max-w-full sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
       <div
         role="group"
         aria-label="Reporting period"
-        className="inline-flex flex-wrap items-center gap-1 rounded-lg border border-line-subtle bg-surface-raised p-1"
+        className="grid grid-cols-2 gap-1 rounded-lg border border-line-subtle bg-surface-raised p-1 sm:inline-flex sm:flex-wrap sm:items-center sm:gap-1"
       >
         {OPTIONS.map((opt) => {
           const active = period === opt.value
@@ -94,21 +106,21 @@ export const PeriodSelector = ({
       </div>
 
       {period === 'custom' && (
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="flex items-center gap-1 text-xs text-ink-muted">
+        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+          <label className="flex min-w-0 items-center gap-1 text-xs text-ink-muted">
             <span className="sr-only">From date</span>
             <input
               type="date"
               value={customFrom}
               max={customTo || today}
               onChange={(e) => onCustomRange(e.target.value, customTo || e.target.value)}
-              className="min-h-[36px] rounded-md border border-line px-2 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown"
+              className="min-h-[36px] w-full min-w-0 rounded-md border border-line px-2 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown"
             />
           </label>
           <span className="text-xs text-ink-muted" aria-hidden>
             →
           </span>
-          <label className="flex items-center gap-1 text-xs text-ink-muted">
+          <label className="flex min-w-0 items-center gap-1 text-xs text-ink-muted">
             <span className="sr-only">To date</span>
             <input
               type="date"
@@ -116,7 +128,7 @@ export const PeriodSelector = ({
               min={customFrom || undefined}
               max={today}
               onChange={(e) => onCustomRange(customFrom || e.target.value, e.target.value)}
-              className="min-h-[36px] rounded-md border border-line px-2 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown"
+              className="min-h-[36px] w-full min-w-0 rounded-md border border-line px-2 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown"
             />
           </label>
         </div>
@@ -128,7 +140,7 @@ export const PeriodSelector = ({
         onClick={onRefresh}
         loading={refreshing}
         aria-label="Refresh dashboard"
-        className="self-start sm:self-auto"
+        className="w-full justify-center sm:w-auto sm:self-auto"
       >
         {!refreshing && <IconRefresh size={15} />}
         Refresh

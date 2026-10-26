@@ -287,7 +287,15 @@ export const CashWidget = ({
         Cash Position
       </Title>
 
-      <div className="mb-2 grid grid-cols-2 gap-2">
+      {/*
+        Cash in / cash out are the only two-up tiles on the board that hold a PKR
+        figure. At 320px the arithmetic leaves them ~100px of text (288 content −
+        the card's 16px padding, halved less the gap, less the tile's own 12px) and
+        `text-base tabular-nums` "PKR 1,234,567" is wider than that, so the figure
+        cannot hold one line. They stack below `sm` and keep the original pair from
+        `sm` up. The Team Tasks tiles hold small integers and stay two-up.
+      */}
+      <div className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <div className="rounded-md bg-surface-sunken px-3 py-2">
           <p className="text-2xs text-ink-muted">Cash in</p>
           <p className="text-base font-semibold tabular-nums text-status-success">
