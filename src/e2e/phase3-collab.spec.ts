@@ -228,11 +228,16 @@ test('a mention picked from the autocomplete persists, alerts the teammate, and 
   expect(sent.mentions).toEqual([{ userId: expect.any(String), name: 'E2E Afnan' }])
 
   // Afnan is alerted, with a link to this conversation and no message body.
-  // The room link is what makes the wait mean THIS alert. `decoricks_test` is
-  // not wiped between runs, so a bare "any mention is unread" poll is already
-  // true before this message has been delivered, the poll returns instantly and
-  // `alerts[0]` is a leftover row from an earlier suite — which is exactly how
-  // this test came to expect the wrong channel id.
+  // The room link is what makes the wait mean THIS alert: `decoricks_test` is
+  // not wiped between runs, so a bare "any mention is unread" poll can already
+  // be true before this message is delivered, return instantly, and read
+  // `alerts[0]` as a leftover row from an earlier suite.
+  //
+  // If this poll times out at zero, read "Known failure on a re-seeded test DB"
+  // in docs/E2E_RUNBOOK.md before touching the filter. Mentions are resolved by
+  // DISPLAY NAME, so a test DB with two active "E2E Afnan" accounts sends the
+  // alert to the one nobody logs in as — the fix there is the data, not this
+  // assertion, whose entire claim is that the named teammate is the one alerted.
   const link = `/chat?channel=${channelId}`
   const fetchMentionAlerts = async () => {
     const list = (await (await deviceB.request.get('/api/notifications?unread=only')).json()) as {

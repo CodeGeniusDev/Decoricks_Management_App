@@ -60,3 +60,32 @@ npx playwright test src/e2e/layout.spec.ts --project=chromium --project="Mobile 
 
 - Never point to production database
 - Auth setup requires seeded users in test DB
+
+## Known failure on a re-seeded test DB
+
+`src/e2e/phase3-collab.spec.ts` — "a mention picked from the autocomplete
+persists, alerts the teammate, and deep-links the room" fails on a test DB that
+holds more than one active user with the same display name, which is what
+`scripts/seed-e2e.ts` leaves behind when it is run with different
+`E2E_FOUNDER_EMAIL` / `E2E_AFNAN_EMAIL` values (the Oct 21 `@decoricks.com` pair
+and the Oct 25 `@decoricks.test` pair both stay active).
+
+Why the name is the problem: the composer sends text, not an id, and
+`findMentions` (`src/lib/chat-mentions.ts`) rebuilds identity by looking the
+display name up in a `Map` that is filled in `_id` order — last write wins. So
+`@E2E Afnan` resolves to the newest duplicate, `emitNotification` writes the
+alert to that account, and device B (logged in as the older one) correctly sees
+nothing. Every gate in `emitNotification` passes; the alert simply belongs to
+someone else.
+
+This is a test-data collision, not an app bug, and the two ways to clear it are
+both outside the e2e suite:
+
+- make the seeded names unique (re-seed with distinct names, or deactivate the
+  stale duplicate accounts), or
+- send the mentioned user's id alongside the text and stop resolving people by
+  display name — a Chat protocol change, deliberately not attempted here.
+
+Do not "fix" the spec by loosening the assertion. The test's whole claim is that
+the alert reaches the teammate whose name was typed, and a DB where two people
+share a name cannot show that.
