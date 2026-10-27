@@ -305,7 +305,12 @@ export const InventoryCalcPanel = () => {
                   )}
                   {data.valuation.rows.map((row) => (
                     <li key={row._id} className="flex items-baseline justify-between gap-3 text-xs">
-                      <span className="min-w-0 truncate text-ink-secondary">
+                      {/*
+                       * Wraps rather than clipping: "name · qty × unit cost" is the
+                       * valuation itself, and the ellipsis always ate the cost — the
+                       * number the row exists to show. The list already scrolls.
+                       */}
+                      <span className="min-w-0 break-words text-ink-secondary">
                         {row.name} · {row.totalAvailable} × {money(row.cost)}
                       </span>
                       <span className="whitespace-nowrap font-medium text-decoricks-dark">

@@ -239,7 +239,14 @@ export default function SyncPage() {
                           ` · ${entry.attempts} attempt${entry.attempts === 1 ? '' : 's'}`}
                       </span>
                     </div>
-                    <p className="mt-1.5 truncate text-sm font-medium text-ink">
+                    {/*
+                     * Wraps. This line is the only description of the queued write
+                     * ("Income 150,000 — client_payment · Order: Villa DHA"), and the
+                     * page exists so the user can decide which failed entry to retry.
+                     * Clipped to "Income 150,000 — client_pa…" the choice was guesswork.
+                     * The error line under it already wrapped; this one was the miss.
+                     */}
+                    <p className="mt-1.5 break-words text-sm font-medium text-ink">
                       {describeQueueEntry(entry)}
                     </p>
                     {entry.errorMessage && (

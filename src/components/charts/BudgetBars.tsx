@@ -45,7 +45,9 @@ export const BudgetBars = ({ rows, caption }: { rows: BudgetBarRow[]; caption: s
         {rows.map((row) => (
           <li key={row.label}>
             <div className="mb-1 flex items-baseline justify-between gap-2">
-              <span className="truncate text-xs font-medium text-decoricks-dark">{row.label}</span>
+              <span className="truncate text-xs font-medium text-decoricks-dark" title={row.label}>
+                {row.label}
+              </span>
               <span className="shrink-0 text-2xs text-ink-muted">
                 {row.level === 'ok' ? LEVEL_WORD.ok : `${LEVEL_WORD[row.level] ?? row.level}`}
               </span>

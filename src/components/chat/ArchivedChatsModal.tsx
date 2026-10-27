@@ -167,8 +167,12 @@ export function ArchivedChatsModal({
                   className="flex items-center gap-3 rounded-lg border border-line-subtle px-3 py-2.5"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-ink">#{c.name}</p>
-                    <p className="truncate text-xs text-ink-muted">
+                    <p className="truncate text-sm font-medium text-ink" title={`#${c.name}`}>
+                      #{c.name}
+                    </p>
+                    {/* The counts line wraps rather than clipping — "· archived 3 Oct"
+                        is the second half of the sentence, not decoration. */}
+                    <p className="break-words text-xs text-ink-muted">
                       {pluralize(c.messageCount ?? 0, 'message', 'messages')}
                       {day ? ` · archived ${day}` : ''}
                     </p>

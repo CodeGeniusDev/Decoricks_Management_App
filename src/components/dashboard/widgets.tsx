@@ -87,16 +87,27 @@ const Row = ({
         A figure must never set a minimum width for the page. This column used to be
         `shrink-0`, so a long hint — the dashboard prints the contributing category
         list here — held a 333px box open and made the whole document scroll sideways
-        at 320px/375px. It is capped at 55% of the row: the number itself never
-        truncates, the secondary hint does (with a title carrying the full text), and
-        the label keeps the rest. Below `sm` the hint drops under the figure; from
-        `sm` it stays inline, as it always did on desktop.
+        at 320px/375px. It is capped at 55% of the row so the label keeps the rest.
+        Below `sm` the hint drops under the figure; from `sm` it stays inline, as it
+        always did on desktop.
+
+        The hint WRAPS. It used to `truncate`, which is what hid the two sentences
+        this row is the only place they are ever printed: "provisional — no movement
+        data yet" (the COGS figure is a stand-in, which changes how you read the
+        margin below it) and the advertising category list. A bound column and a
+        clipped string were treated as the same problem; only the first is one.
+        `break-words` breaks a token only when it genuinely cannot fit, so
+        `flyers_printing` stays whole at any real width. `title` stays for desktop
+        hover; on a phone the whole sentence is simply on screen.
+
+        Ellipsis is still correct for names and ids — a truncated label loses no
+        meaning, a truncated caveat does. The rows above are caveats.
       */}
       <span className="flex min-w-0 max-w-[55%] flex-col items-end text-right sm:flex-row sm:items-baseline sm:justify-end">
         <span className={`shrink-0 text-sm font-semibold tabular-nums ${toneClass}`}>{value}</span>
         {hint && (
           <span
-            className="min-w-0 max-w-full truncate text-2xs text-ink-muted sm:ml-1"
+            className="min-w-0 max-w-full break-words text-2xs text-ink-muted sm:ml-1"
             title={hint}
           >
             {hint}
@@ -185,7 +196,7 @@ export const ProfitWidget = ({ block, range }: WidgetProps & { block: ProfitBloc
           { label: '= Gross profit', value: fmt(block.grossProfit) },
           { label: '− Operating expenses', value: fmt(block.operatingExpenses) },
           { label: '= Net profit', value: fmt(block.netProfit), strong: true },
-          { label: 'COGS source', value: block.cogsSource },
+          { label: 'COGS source', value: block.cogsSource, wrap: true },
         ]}
         gate="finance.view + sales.view"
       />
@@ -252,7 +263,11 @@ export const ExpensesWidget = ({ block, range }: WidgetProps & { block: ExpenseB
         rows={[
           { label: 'Total operating expenses', value: fmt(block.total), strong: true },
           { label: 'of which advertising', value: fmt(block.advertising) },
-          { label: 'Advertising categories', value: block.advertisingCategories.join(', ') || '—' },
+          {
+            label: 'Advertising categories',
+            value: block.advertisingCategories.join(', ') || '—',
+            wrap: true,
+          },
           ...top.map((c) => ({ label: c.category, value: fmt(c.amount) })),
         ]}
         gate="finance.view"

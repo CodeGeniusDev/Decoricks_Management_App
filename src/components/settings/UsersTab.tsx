@@ -167,7 +167,7 @@ export function UsersTab() {
                           {u.name.charAt(0).toUpperCase()}
                         </span>
                         <div className="min-w-0">
-                          <p className="truncate font-medium text-ink">
+                          <p className="truncate font-medium text-ink" title={u.name}>
                             {u.name}
                             {self && (
                               <span className="ml-1.5 text-xs font-normal text-ink-muted">
@@ -175,7 +175,9 @@ export function UsersTab() {
                               </span>
                             )}
                           </p>
-                          <p className="truncate text-xs text-ink-muted sm:hidden">{u.email}</p>
+                          <p className="truncate text-xs text-ink-muted sm:hidden" title={u.email}>
+                            {u.email}
+                          </p>
                           {u.mustChangePassword && (
                             <p className="mt-0.5 text-xs text-status-warning">
                               Password change required
@@ -185,7 +187,15 @@ export function UsersTab() {
                       </div>
                     </td>
                     <td className="hidden px-3 py-3 text-ink-secondary sm:table-cell sm:px-4">
-                      <span className="truncate">{u.email}</span>
+                      {/*
+                       * `block` is not cosmetic. `truncate` is overflow + ellipsis +
+                       * nowrap, and the first two do nothing to an inline <span> — only
+                       * nowrap applied, so a long email widened the table instead of
+                       * clipping, which is a horizontal scrollbar on the page.
+                       */}
+                      <span className="block truncate" title={u.email}>
+                        {u.email}
+                      </span>
                     </td>
                     <td className="px-3 py-3 sm:px-4">
                       <span className="inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-secondary">

@@ -283,7 +283,9 @@ export default function BudgetsPage() {
     _id: budget._id,
     name: (
       <div className="min-w-0">
-        <p className="truncate font-medium text-decoricks-dark">{budget.name}</p>
+        <p className="truncate font-medium text-decoricks-dark" title={budget.name}>
+          {budget.name}
+        </p>
         <p className="text-xs text-ink-muted">{budget.budgetNumber ?? '—'}</p>
       </div>
     ),
@@ -430,7 +432,9 @@ export default function BudgetsPage() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-decoricks-dark">{budget.name}</p>
+                      <p className="truncate font-medium text-decoricks-dark" title={budget.name}>
+                        {budget.name}
+                      </p>
                       <p className="text-xs text-ink-muted">
                         {budget.budgetNumber ?? '—'} · {toKarachiInputDate(budget.periodStart)} →{' '}
                         {toKarachiInputDate(budget.periodEnd)}

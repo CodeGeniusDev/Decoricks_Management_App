@@ -709,14 +709,20 @@ export default function ChatPage() {
               <IconMenu className="h-5 w-5" />
             </button>
             <div className="min-w-0 flex-1">
-              <h1 className="flex items-center gap-2 truncate text-sm font-semibold text-ink">
-                <span className="truncate">
+              {/*
+               * Both lines wrap. `truncate` here cut a channel name to "#living-ro…"
+               * on a phone, and the description lost the part that said which site
+               * the channel was for. The header has no fixed height — `py-2.5` grows
+               * with the text — so there was nothing to protect by clipping.
+               */}
+              <h1 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink">
+                <span className="min-w-0 break-words">
                   {displayChannel ? `#${displayChannel.name}` : 'Team Chat'}
                 </span>
                 {closedOnScreen && <Badge size="sm">Archived</Badge>}
               </h1>
               {displayChannel?.description && (
-                <p className="truncate text-xs text-ink-muted">{displayChannel.description}</p>
+                <p className="break-words text-xs text-ink-muted">{displayChannel.description}</p>
               )}
             </div>
             {viewingArchived && (

@@ -181,8 +181,16 @@ export const Modal = ({
             when no title was supplied. */}
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line-subtle px-4 py-3 sm:px-5 sm:py-3.5">
           <div className="min-w-0">
+            {/*
+             * The title wraps. Modal titles here are sentences ("Cancel purchase —
+             * a reversal entry will be recorded"), and at a phone width `truncate`
+             * cut them at "Cancel purchase — a reversal…", which is the part of the
+             * dialog that tells the user what is about to happen. The header is a
+             * flex row with `min-w-0` and a `shrink-0` close button, so an extra
+             * line grows the header and moves nothing else.
+             */}
             {title && (
-              <h2 className="truncate text-md font-semibold text-decoricks-dark">{title}</h2>
+              <h2 className="break-words text-md font-semibold text-decoricks-dark">{title}</h2>
             )}
             {description && <p className="mt-0.5 text-sm text-ink-muted">{description}</p>}
           </div>
@@ -190,7 +198,12 @@ export const Modal = ({
             <button
               type="button"
               onClick={onClose}
-              className="-mr-1 flex h-9 w-9 shrink-0 items-center justify-center rounded text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-decoricks-brown"
+              /*
+               * 44px on touch widths, 36px from `sm` up — the same ladder `Button`
+               * uses. A close affordance under the minimum is the one control a user
+               * has to hit to get out, and it sits far from the thumb's reach.
+               */
+              className="-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-decoricks-brown sm:h-9 sm:w-9"
               aria-label="Close dialog"
             >
               <IconClose size={18} />

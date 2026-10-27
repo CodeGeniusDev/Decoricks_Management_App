@@ -62,6 +62,7 @@ export const TrendBars = ({ points, caption }: { points: TrendPoint[]; caption: 
             <span
               key={point.fullLabel}
               className="min-w-0 flex-1 truncate text-center text-2xs text-ink-muted"
+              title={point.fullLabel}
             >
               {point.label}
             </span>

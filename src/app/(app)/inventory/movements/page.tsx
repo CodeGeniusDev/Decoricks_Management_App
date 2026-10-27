@@ -225,14 +225,19 @@ export default function StockMovementsPage() {
     date: formatKarachiDate(new Date(movement.date), 'date'),
     product: (
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-decoricks-dark">
+        <p
+          className="truncate text-sm font-medium text-decoricks-dark"
+          title={movement.productName}
+        >
           {movement.productName ?? '—'}
         </p>
-        {movement.notes && (
-          <p className="truncate text-xs text-ink-muted" title={movement.notes}>
-            {movement.notes}
-          </p>
-        )}
+        {/*
+         * The product name keeps its ellipsis — it is a name, and `title` puts the
+         * whole one a hover away. The note drops it: a movement note is the only
+         * record of why stock moved ("returned from DHA site, damaged frame"), and
+         * the row that has it has nowhere else to say it.
+         */}
+        {movement.notes && <p className="break-words text-xs text-ink-muted">{movement.notes}</p>}
       </div>
     ),
     type: (
@@ -423,7 +428,10 @@ export default function StockMovementsPage() {
                 <li key={movement._id} className="px-4 py-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-decoricks-dark">
+                      <p
+                        className="truncate text-sm font-medium text-decoricks-dark"
+                        title={movement.productName}
+                      >
                         {movement.productName ?? '—'}
                       </p>
                       <p className="text-xs text-ink-muted">
@@ -465,7 +473,7 @@ export default function StockMovementsPage() {
                     ) : null}
                   </div>
                   {movement.notes && (
-                    <p className="mt-1 truncate text-xs text-ink-muted">{movement.notes}</p>
+                    <p className="mt-1 break-words text-xs text-ink-muted">{movement.notes}</p>
                   )}
                   {canReverseRow(movement) && (
                     <div className="mt-2">

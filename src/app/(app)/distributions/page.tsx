@@ -276,7 +276,10 @@ export default function DistributionsPage() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-decoricks-dark">
+                      <p
+                        className="min-w-0 truncate font-medium text-decoricks-dark"
+                        title={monthLabelKarachi(item.month)}
+                      >
                         {monthLabelKarachi(item.month)}
                       </p>
                       <p className="text-xs text-ink-muted">{item.distributionNumber ?? '—'}</p>

@@ -275,8 +275,14 @@ export default function PurchasesPage() {
     date: formatKarachiDate(new Date(purchase.date), 'date'),
     product: (
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-decoricks-dark">{purchase.productName}</p>
-        {purchase.notes && <p className="truncate text-xs text-ink-muted">{purchase.notes}</p>}
+        <p
+          className="truncate text-sm font-medium text-decoricks-dark"
+          title={purchase.productName}
+        >
+          {purchase.productName}
+        </p>
+        {/* Notes wrap: free text about the purchase, shown nowhere else. */}
+        {purchase.notes && <p className="break-words text-xs text-ink-muted">{purchase.notes}</p>}
       </div>
     ),
     supplier: purchase.supplierName ?? <span className="text-ink-muted">—</span>,
@@ -463,7 +469,10 @@ export default function PurchasesPage() {
                 <li key={purchase._id} className="px-4 py-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-decoricks-dark">
+                      <p
+                        className="truncate text-sm font-medium text-decoricks-dark"
+                        title={purchase.productName}
+                      >
                         {purchase.productName}
                       </p>
                       <p className="text-xs text-ink-muted">

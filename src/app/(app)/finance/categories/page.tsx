@@ -177,7 +177,10 @@ export default function FinanceCategoriesPage() {
             {items.map((category) => (
               <li key={category._id} className="flex items-center justify-between gap-3 py-2">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-decoricks-dark">
+                  <p
+                    className="truncate text-sm font-medium text-decoricks-dark"
+                    title={category.label}
+                  >
                     {category.label}
                     {!category.isActive && (
                       <span className="ml-2">
@@ -185,7 +188,9 @@ export default function FinanceCategoriesPage() {
                       </span>
                     )}
                   </p>
-                  <p className="truncate text-xs text-ink-muted">{category.name}</p>
+                  <p className="truncate text-xs text-ink-muted" title={category.name}>
+                    {category.name}
+                  </p>
                 </div>
                 {canManage && (
                   <Button variant="ghost" size="sm" onClick={() => openEdit(category)}>

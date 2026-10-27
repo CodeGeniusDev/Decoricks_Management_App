@@ -459,7 +459,16 @@ export default function FinanceOverviewPage() {
                 className="rounded-lg border border-line-subtle bg-surface-sunken px-3 py-2.5"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-sm font-medium text-decoricks-dark">
+                  {/*
+                   * `min-w-0` is the fix, `title` is the escape hatch. A flex item's
+                   * default `min-width: auto` means `truncate` alone cannot clip —
+                   * the span's min-content width wins and the row pushes past the card
+                   * instead. With the floor released the ellipsis works as written.
+                   */}
+                  <span
+                    className="min-w-0 truncate text-sm font-medium text-decoricks-dark"
+                    title={account.name}
+                  >
                     {account.name}
                   </span>
                   {!account.isActive && <Badge size="sm">Inactive</Badge>}
@@ -542,7 +551,13 @@ export default function FinanceOverviewPage() {
                     <Badge variant={TYPE_BADGE_VARIANT[entry.type]} size="sm">
                       {ENTRY_TYPE_LABELS[entry.type]}
                     </Badge>
-                    <span className="hidden truncate text-sm text-ink-secondary sm:block">
+                    {/*
+                     * Wraps rather than clipping. This is "Account · Category · Partner"
+                     * — three pieces of an entry, and an ellipsis here usually deletes
+                     * the partner, the one part that says who the money went to. The
+                     * row grows a line instead; the figure on the right keeps its place.
+                     */}
+                    <span className="hidden break-words text-sm text-ink-secondary sm:block">
                       {entryAccountLabel(entry)}
                       {entry.categoryLabel ? ` · ${entry.categoryLabel}` : ''}
                       {entry.partnerName ? ` · ${entry.partnerName}` : ''}

@@ -395,7 +395,16 @@ export default function FinanceTransactionsPage() {
     account: entryAccountLabel(entry),
     category: entry.categoryLabel ?? '—',
     partner: entry.partnerName ?? '—',
-    note: <span className="block max-w-[220px] truncate text-ink-muted">{entry.note ?? ''}</span>,
+    /*
+     * The note wraps instead of clipping. It is free text the user typed ("advance
+     * for Al-Salam villa final fitting"), and this column is the only place it is
+     * ever shown — an ellipsis here destroys the record, it does not shorten it.
+     * The 220px cap stays so one long note cannot widen the document; rows grow
+     * upward, which is what a table cell is for.
+     */
+    note: (
+      <span className="block max-w-[220px] break-words text-ink-muted">{entry.note ?? ''}</span>
+    ),
     status: statusBadge(entry),
     actions:
       canApprove && !entry.isReversal && entry.status === 'posted' ? (
@@ -628,7 +637,15 @@ export default function FinanceTransactionsPage() {
                       <Badge variant={TYPE_BADGE_VARIANT[entry.type]} size="sm">
                         {ENTRY_TYPE_LABELS[entry.type]}
                       </Badge>
-                      <p className="mt-1 truncate text-sm font-medium text-decoricks-dark">
+                      {/*
+                       * Both lines wrap. The headline falls back to the free-text
+                       * note when an entry has no category label, and the note is
+                       * repeated underneath — clipping either one to a card width on a
+                       * phone hid the whole reason the entry exists. `break-words`
+                       * still cannot let a long word widen the document, which is what
+                       * `min-w-0` on the parent is for.
+                       */}
+                      <p className="mt-1 break-words text-sm font-medium text-decoricks-dark">
                         {entry.categoryLabel ??
                           entry.note ??
                           entry.partnerName ??
@@ -651,7 +668,7 @@ export default function FinanceTransactionsPage() {
                     </div>
                   </div>
                   {entry.note && (
-                    <p className="mt-1 truncate text-xs text-ink-muted">{entry.note}</p>
+                    <p className="mt-1 break-words text-xs text-ink-muted">{entry.note}</p>
                   )}
                   {canApprove && !entry.isReversal && entry.status === 'posted' && (
                     <div className="mt-2">

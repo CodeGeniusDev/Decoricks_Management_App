@@ -370,7 +370,13 @@ export default function BudgetDetailPage() {
               <ul className="mt-1 max-h-48 divide-y divide-line-subtle overflow-y-auto text-xs">
                 {budget.sourceEntries.map((entry) => (
                   <li key={entry._id} className="flex items-center justify-between gap-3 py-1.5">
-                    <span className="min-w-0 truncate text-ink-secondary">
+                    {/*
+                     * Wraps. The line is "date · category · note" and the list already
+                     * scrolls (`max-h-48 overflow-y-auto`), so the extra row costs
+                     * nothing while an ellipsis silently dropped the note — the only
+                     * part explaining an unusual expense.
+                     */}
+                    <span className="min-w-0 break-words text-ink-secondary">
                       {formatKarachiDate(new Date(entry.date), 'date')} ·{' '}
                       {categoryLabel(entry.category, labels)}
                       {entry.note ? ` · ${entry.note}` : ''}
@@ -441,7 +447,10 @@ export default function BudgetDetailPage() {
             <li key={row.category} className="py-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-decoricks-dark">
+                  <p
+                    className="truncate text-sm font-medium text-decoricks-dark"
+                    title={categoryLabel(row.category, labels)}
+                  >
                     {categoryLabel(row.category, labels)}
                   </p>
                   <p className="text-2xs text-ink-muted">{row.percentUsed}% used</p>

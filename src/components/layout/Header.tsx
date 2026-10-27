@@ -134,7 +134,15 @@ export const Header = () => {
           <IconMenu size={20} />
         </button>
 
-        <h1 className="min-w-0 flex-1 truncate text-md font-semibold tracking-tight text-decoricks-dark">
+        {/*
+         * The page name keeps its ellipsis (a header that changes height as routes
+         * rename themselves is worse than a clipped word) and carries `title` so the
+         * full label is reachable. Same reasoning for the account menu below.
+         */}
+        <h1
+          className="min-w-0 flex-1 truncate text-md font-semibold tracking-tight text-decoricks-dark"
+          title={titleForPath(pathname)}
+        >
           {titleForPath(pathname)}
         </h1>
 
@@ -206,8 +214,12 @@ export const Header = () => {
                 className="absolute right-0 top-[calc(100%+0.5rem)] z-40 w-60 rounded-lg border border-line bg-surface-overlay py-1 shadow-lg"
               >
                 <div className="border-b border-line-subtle px-3 py-2.5">
-                  <p className="truncate text-sm font-medium text-ink">{user?.name}</p>
-                  <p className="truncate text-xs text-ink-muted">{user?.email}</p>
+                  <p className="truncate text-sm font-medium text-ink" title={user?.name}>
+                    {user?.name}
+                  </p>
+                  <p className="truncate text-xs text-ink-muted" title={user?.email}>
+                    {user?.email}
+                  </p>
                   {isFounder && (
                     <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-status-info-bg px-2 py-0.5 text-2xs font-medium text-status-info">
                       <IconShieldCheck size={11} />

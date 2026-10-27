@@ -350,7 +350,9 @@ export default function OrderDetailPage() {
     _id: `${item.productId}-${index}`,
     product: (
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-decoricks-dark">{item.productName}</p>
+        <p className="truncate text-sm font-medium text-decoricks-dark" title={item.productName}>
+          {item.productName}
+        </p>
         {typeof item.unitCost === 'number' && (
           <p className="text-xs text-ink-muted">cost snapshot {formatPaisa(item.unitCost)}</p>
         )}
@@ -514,7 +516,10 @@ export default function OrderDetailPage() {
                 <li key={`${item.productId}-${index}`} className="py-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-decoricks-dark">
+                      <p
+                        className="truncate text-sm font-medium text-decoricks-dark"
+                        title={item.productName}
+                      >
                         {item.productName}
                       </p>
                       <p className="text-xs text-ink-muted">

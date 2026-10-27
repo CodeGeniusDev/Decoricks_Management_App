@@ -200,7 +200,9 @@ export default function InventoryOverviewPage() {
       _id: item._id,
       name: (
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-decoricks-dark">{item.name}</p>
+          <p className="truncate text-sm font-medium text-decoricks-dark" title={item.name}>
+            {item.name}
+          </p>
           <p className="text-xs text-ink-muted">
             {item.sku}
             {!item.isActive && (
@@ -416,7 +418,10 @@ export default function InventoryOverviewPage() {
                     <li key={item._id} className="px-4 py-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-decoricks-dark">
+                          <p
+                            className="truncate text-sm font-medium text-decoricks-dark"
+                            title={item.name}
+                          >
                             {item.name}
                           </p>
                           <p className="text-xs text-ink-muted">{item.sku}</p>

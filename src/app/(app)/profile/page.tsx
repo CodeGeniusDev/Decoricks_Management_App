@@ -83,8 +83,12 @@ export default function ProfilePage() {
             {user.name.charAt(0).toUpperCase()}
           </span>
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold text-ink">{user.name}</h2>
-            <p className="truncate text-sm text-ink-secondary">{user.email}</p>
+            <h2 className="truncate text-lg font-semibold text-ink" title={user.name}>
+              {user.name}
+            </h2>
+            <p className="truncate text-sm text-ink-secondary" title={user.email}>
+              {user.email}
+            </p>
             <p className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-surface-sunken px-2.5 py-1 text-xs font-medium text-ink-secondary">
               <IconShieldCheck size={13} />
               {roleLabel(user.role) ?? user.role}

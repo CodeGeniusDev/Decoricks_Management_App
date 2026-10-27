@@ -226,7 +226,9 @@ export default function InventoryProductsPage() {
       _id: product._id,
       name: (
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-decoricks-dark">{product.name}</p>
+          <p className="truncate text-sm font-medium text-decoricks-dark" title={product.name}>
+            {product.name}
+          </p>
           <p className="text-xs text-ink-muted">{product.sku}</p>
           {(product.variants?.length ?? 0) > 0 && (
             <p className="text-xs text-ink-muted">{product.variants!.length} variants</p>
@@ -408,7 +410,10 @@ export default function InventoryProductsPage() {
                 <li key={product._id} className="px-4 py-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-decoricks-dark">
+                      <p
+                        className="truncate text-sm font-medium text-decoricks-dark"
+                        title={product.name}
+                      >
                         {product.name}
                       </p>
                       <p className="text-xs text-ink-muted">

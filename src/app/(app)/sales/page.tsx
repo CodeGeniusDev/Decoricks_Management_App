@@ -273,7 +273,9 @@ export default function SalesOrdersPage() {
     date: formatKarachiDate(new Date(order.createdAt), 'date'),
     customer: (
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-decoricks-dark">{order.customerName}</p>
+        <p className="truncate text-sm font-medium text-decoricks-dark" title={order.customerName}>
+          {order.customerName}
+        </p>
         <p className="text-xs text-ink-muted">
           {order.customerCity} · {order.customerPhone}
         </p>
@@ -504,7 +506,10 @@ export default function SalesOrdersPage() {
                 <li key={order._id} className="px-4 py-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-decoricks-dark">
+                      <p
+                        className="truncate text-sm font-medium text-decoricks-dark"
+                        title={order.customerName}
+                      >
                         {order.customerName}
                       </p>
                       <p className="text-xs text-ink-muted">

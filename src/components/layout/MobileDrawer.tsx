@@ -177,7 +177,9 @@ export const MobileDrawer = () => {
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center">
                       {item.icon}
                     </span>
-                    <span className="truncate">{item.name}</span>
+                    <span className="truncate" title={item.name}>
+                      {item.name}
+                    </span>
                   </Link>
                 </li>
               )

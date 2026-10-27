@@ -383,7 +383,9 @@ export function Composer({
                         }`}
                       >
                         <IconUsers className="h-4 w-4 shrink-0 text-ink-muted" />
-                        <span className="truncate font-medium">{item.member.name}</span>
+                        <span className="truncate font-medium" title={item.member.name}>
+                          {item.member.name}
+                        </span>
                       </li>
                     )
                   }
@@ -403,7 +405,16 @@ export function Composer({
                       }`}
                     >
                       <Icon className="h-4 w-4 shrink-0 text-ink-muted" />
-                      <span className="min-w-0 flex-1 truncate">{item.record.label}</span>
+                      <span
+                        className="min-w-0 flex-1 truncate"
+                        title={
+                          item.record.meta
+                            ? `${item.record.label} · ${item.record.meta}`
+                            : item.record.label
+                        }
+                      >
+                        {item.record.label}
+                      </span>
                       <span className="shrink-0 text-2xs text-ink-muted">
                         {entityNoun(item.record.entityType)}
                       </span>

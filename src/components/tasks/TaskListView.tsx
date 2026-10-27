@@ -101,7 +101,10 @@ export function TaskListView(props: TaskListViewProps) {
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-decoricks-dark">{t.title}</p>
+                  {/* The title wraps: it is the whole row and the tap target is
+                      the card itself, so an ellipsis here would hide the one
+                      thing the user needs to read before deciding to open it. */}
+                  <p className="break-words text-sm font-medium text-decoricks-dark">{t.title}</p>
                   {t.taskNumber && (
                     <p className="mt-0.5 text-xs text-ink-muted tabular-nums">{t.taskNumber}</p>
                   )}

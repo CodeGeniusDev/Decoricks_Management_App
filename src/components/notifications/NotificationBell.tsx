@@ -282,9 +282,19 @@ export const NotificationBell = () => {
                     >
                       <NotificationGlyph type={item.type} />
                       <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-1.5">
+                        {/*
+                         * Both strings wrap. The title used to `truncate` and the
+                         * message used to `line-clamp-2`, which together hid the
+                         * half-sentence the user reported reading as "owner has not
+                         * enabled…" — and a notification is the one place where a
+                         * clamped sentence is the whole message. `line-clamp` is also
+                         * a hover-only escape on desktop and no escape at all on a
+                         * phone, which is the same mistake as bug 1. The panel already
+                         * scrolls internally, so taller rows cost nothing.
+                         */}
+                        <span className="flex items-start gap-1.5">
                           <span
-                            className={`truncate text-sm ${
+                            className={`min-w-0 break-words text-sm ${
                               item.isRead
                                 ? 'font-medium text-ink-secondary'
                                 : 'font-semibold text-decoricks-dark'
@@ -294,12 +304,12 @@ export const NotificationBell = () => {
                           </span>
                           {!item.isRead && (
                             <span
-                              className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-decoricks-brown"
+                              className="ml-auto mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-decoricks-brown"
                               aria-hidden="true"
                             />
                           )}
                         </span>
-                        <span className="mt-0.5 block text-xs text-ink-secondary line-clamp-2">
+                        <span className="mt-0.5 block break-words text-xs text-ink-secondary">
                           {item.message}
                         </span>
                         <span className="mt-1 block text-2xs text-ink-muted">
