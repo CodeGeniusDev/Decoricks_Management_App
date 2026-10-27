@@ -76,7 +76,7 @@ export function ChannelSidebar({
             type="button"
             onClick={() => setCreateOpen(true)}
             aria-label="New channel"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-muted hover:bg-surface-sunken hover:text-ink"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-md text-ink-muted hover:bg-surface-sunken hover:text-ink lg:h-8 lg:w-8"
           >
             <IconPlus className="h-4 w-4" />
           </button>
@@ -107,7 +107,9 @@ export function ChannelSidebar({
                       aria-current={active ? 'true' : undefined}
                       className="flex min-h-[44px] flex-1 items-center gap-2 px-3 py-2 text-left"
                     >
-                      <span className="flex-1 truncate text-sm font-medium">#{c.name}</span>
+                      <span className="flex-1 truncate text-sm font-medium" title={`#${c.name}`}>
+                        #{c.name}
+                      </span>
                       {c.unreadCount > 0 && (
                         <span
                           className={`min-w-[20px] rounded-full px-1.5 py-0.5 text-center text-2xs font-bold ${

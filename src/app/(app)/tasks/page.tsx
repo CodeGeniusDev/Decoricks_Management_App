@@ -1283,12 +1283,17 @@ function TaskCard(props: TaskCardProps) {
     >
       <div className="flex items-start gap-2">
         {/*
-         * The drag handle is a 32x32 touch target around a 16px grip. The negative
-         * margins take back exactly what the larger box adds, so the grip sits on the
-         * same pixel it always did and the card does not grow — only the area that
-         * responds to a thumb changes. (Phase 4 §8: a handle you cannot hit on a phone
-         * is not a mobile affordance, and the board's only other move path is the
-         * "Move to…" select below.)
+         * The drag handle is a 44x44 touch target around a 16px grip up to `lg`
+         * (32x32 from `lg`, where a pointer makes the smaller box the better fit).
+         * The negative margins take back exactly what the larger box adds — 14px
+         * against the card's 12px padding keeps the grip on the pixel it has always
+         * occupied — so the card does not shift, only the area that responds to a
+         * thumb changes. (Phase 4 §8: a handle you cannot hit on a phone is not a
+         * mobile affordance, and the board's only other move path is the "Move to…"
+         * select below. The 32px this used to be was measured by the responsive
+         * audit as the single most common sub-44 target in the app, and the cutoff
+         * is `lg` rather than `md` because 768px is an iPad portrait, which is a
+         * touch screen the audit rightly treats as one.)
          */}
         <button
           type="button"
@@ -1296,7 +1301,7 @@ function TaskCard(props: TaskCardProps) {
           {...attributes}
           {...listeners}
           aria-label={`Drag ${task.title} to another column`}
-          className="-ml-2 -mb-2 flex h-8 w-8 shrink-0 cursor-grab items-center justify-center rounded text-ink-muted hover:bg-surface-sunken hover:text-decoricks-dark focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-decoricks-brown active:cursor-grabbing"
+          className="-ml-3.5 -mb-3.5 flex h-11 w-11 shrink-0 cursor-grab items-center justify-center rounded text-ink-muted hover:bg-surface-sunken hover:text-decoricks-dark focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-decoricks-brown active:cursor-grabbing lg:-ml-2 lg:-mb-2 lg:h-8 lg:w-8"
         >
           <DragGrip />
         </button>
