@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import { fetchDashboardSnapshot } from '@/lib/dashboard/snapshot-fetch'
+import { runWakeRetry, type WakePhase } from '@/lib/dashboard/wake-retry'
 import { useRealtimeSync, useConnectionState } from '@/lib/sync/useRealtime'
 import type { RealtimeReadTracker } from '@/lib/sync/useRealtime'
 import type { DashboardMetrics } from '@/lib/metrics/dashboard-metrics'
@@ -54,6 +55,15 @@ export interface DashboardState {
   refresh: () => void
   /** The applied query string, for deep-linking click-through ranges. */
   rangeQuery: string
+  /**
+   * Non-null while a user-initiated read is being retried against a server that
+   * has not answered — a sleeping Render instance. `error` stays null for the
+   * whole of this, which is the point: nothing has gone wrong yet, the machine is
+   * still booting, and "Couldn't load the dashboard" was a lie about a transient
+   * wait. The retry schedule and its 90-second budget live in
+   * `wake-retry.ts`.
+   */
+  waking: { attempt: number; retryInMs: number; elapsedMs: number } | null
 }
 
 export function useDashboard(): DashboardState {
@@ -63,6 +73,7 @@ export function useDashboard(): DashboardState {
   const [period, setPeriod] = useState<DashboardPeriod>('month')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
+  const [waking, setWaking] = useState<DashboardState['waking']>(null)
 
   // Guards against an in-flight background refresh resolving after a newer one,
   // which would paint a stale snapshot on top of a fresh one.
@@ -71,6 +82,38 @@ export function useDashboard(): DashboardState {
   // landed. Together they make the polling fallback both quiet and self-healing.
   const bgInFlight = useRef(false)
   const lastFetchedAt = useRef(0)
+  /*
+   * Set for the whole life of a user-initiated read, which since the cold-start
+   * fix can be up to 90 seconds while it waits for a sleeping instance. Separate
+   * from `bgInFlight` because it guards a different race: without it, the 60s
+   * polling timer (or a realtime signal) fires `load(true)` on top of a retry
+   * loop that still has most of its window left, that call bumps `requestSeq`,
+   * and the loop's `superseded` check stops the very recovery it was started for.
+   * The user would watch the board restart from zero once a minute.
+   */
+  const wakeInFlight = useRef(false)
+
+  /*
+   * Whether this component instance is still on screen. A 90-second retry loop
+   * makes unmounting mid-read an ordinary event rather than a teardown edge case,
+   * and an ordinary `requestSeq` check cannot see it: the counter lives in a ref
+   * that nothing bumps when the router moves away, so the loop would keep dialing
+   * `/api/dashboard` for a minute and a half after the dashboard was gone. It is
+   * folded into the same ticket `isCurrent` returns, so every layer that already
+   * respects supersession respects this too without learning about it.
+   */
+  const mounted = useRef(true)
+  useEffect(() => {
+    // Re-armed on setup, not just cleared on cleanup. Under StrictMode's
+    // double-invoke the cleanup runs while the component stays mounted, and a
+    // one-way flag would then be permanently false — silently disabling every
+    // read for the rest of the session in development, which is precisely the
+    // environment where that would be noticed as "the dashboard never loads".
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   /*
    * The four subscriptions and the read they govern are wired as *one* pipeline:
@@ -116,56 +159,111 @@ export function useDashboard(): DashboardState {
       // background refresh is in flight, further background triggers are dropped.
       // Foreground loads (first paint, period switch, manual refresh) are never
       // dropped — they invalidate the pending background one via `requestSeq`.
-      if (background && bgInFlight.current) return
+      // A foreground read inside its wake-up window also blocks background
+      // triggers; see `wakeInFlight`.
+      if (background && (bgInFlight.current || wakeInFlight.current)) return
       const seq = ++requestSeq.current
       if (background) bgInFlight.current = true
-      if (!background) setLoading(true)
+      if (!background) {
+        wakeInFlight.current = true
+        setLoading(true)
+        setWaking(null)
+      }
       // Announced before it goes out, so a signal arriving during the round trip
       // is held for this read to answer instead of starting a second identical
       // snapshot beside it.
       for (const tracker of trackers) tracker.begin()
 
+      /*
+       * One attempt. Kept as a closure so the wake-up loop can call it again
+       * against the SAME `seq`: every retry belongs to the same logical read, so
+       * one period switch cancels all of them at once rather than only the one
+       * that happened to be on the wire.
+       */
+      const readOnce = () =>
+        fetchDashboardSnapshot<DashboardMetrics>(`/api/dashboard?${rangeQuery}`, {
+          background,
+          /*
+           * The read's own ticket. `fetchDashboardSnapshot` consults it before
+           * the first attempt and before the single retry, so a period switch
+           * mid-flight stops the old read instead of letting it land on top of
+           * the new one — and reports `aborted`, which is deliberately NOT an
+           * error the user is told about.
+           */
+          isCurrent: () => mounted.current && seq === requestSeq.current,
+          // Still `apiFetch`: same-origin credentials and the CSRF rules are
+          // the api-client's job, and this keeps the dashboard on exactly the
+          // transport every other read in the app uses.
+          fetchImpl: apiFetch,
+          /*
+           * The failure used to be visible only as a string in the page. This
+           * puts the *shape* of it in the console — kind, status, attempts,
+           * elapsed — which is what distinguishes "the Render instance was
+           * asleep" (`network` at ~0ms) from "the server said no" (`server`
+           * with a status) when someone is trying to diagnose a report of a
+           * blank dashboard. No URL, no payload, no message text.
+           */
+          onDiagnostics: (info) => {
+            if (info.kind === 'ok') {
+              if (info.attempts > 1)
+                console.warn('[dashboard] snapshot recovered after retry', info)
+              return
+            }
+            console.warn('[dashboard] snapshot read failed', info)
+          },
+        })
+
+      /*
+       * The view `runWakeRetry` needs. It is deliberately structural — the loop
+       * imports nothing from this module's collaborators, so the difference
+       * between "wait some more" and "stop and tell them" is one readable object
+       * rather than a call into the fetch layer.
+       *
+       * `offline` is read from the CLASSIFIED kind, which `snapshot-fetch` only
+       * ever sets from `navigator.onLine === false`. That is what makes the brief's
+       * "do not flip to Offline unless the browser is offline" true by
+       * construction: a reset, a timeout and a 503 are all wake-up candidates, and
+       * none of them can reach the offline branch.
+       */
+      const classify = (result: Awaited<ReturnType<typeof readOnce>>) => ({
+        ok: result.ok,
+        kind: result.kind,
+        message: result.ok ? '' : result.message,
+        offline: !result.ok && result.kind === 'offline',
+        aborted: result.kind === 'aborted' || !mounted.current || seq !== requestSeq.current,
+      })
+
       try {
-        const result = await fetchDashboardSnapshot<DashboardMetrics>(
-          `/api/dashboard?${rangeQuery}`,
-          {
-            background,
-            /*
-             * The read's own ticket. `fetchDashboardSnapshot` consults it before
-             * the first attempt and before the single retry, so a period switch
-             * mid-flight stops the old read instead of letting it land on top of
-             * the new one — and reports `aborted`, which is deliberately NOT an
-             * error the user is told about.
-             */
-            isCurrent: () => seq === requestSeq.current,
-            // Still `apiFetch`: same-origin credentials and the CSRF rules are
-            // the api-client's job, and this keeps the dashboard on exactly the
-            // transport every other read in the app uses.
-            fetchImpl: apiFetch,
-            /*
-             * The failure used to be visible only as a string in the page. This
-             * puts the *shape* of it in the console — kind, status, attempts,
-             * elapsed — which is what distinguishes "the Render instance was
-             * asleep" (`network` at ~0ms) from "the server said no" (`server`
-             * with a status) when someone is trying to diagnose a report of a
-             * blank dashboard. No URL, no payload, no message text.
-             */
-            onDiagnostics: (info) => {
-              if (info.kind === 'ok') {
-                if (info.attempts > 1)
-                  console.warn('[dashboard] snapshot recovered after retry', info)
-                return
-              }
-              console.warn('[dashboard] snapshot read failed', info)
-            },
-          }
-        )
+        /*
+         * Background reads are NOT put through the wake-up window. They are on a
+         * timer that will come round again in 60s, and a 90-second loop per tick
+         * would overlap the next tick — the duplicate-request behaviour this hook
+         * goes out of its way to prevent. Only a read someone is waiting on gets
+         * the budget.
+         */
+        const result = background
+          ? await readOnce()
+          : await runWakeRetry(readOnce, {
+              classify,
+              superseded: () => !mounted.current || seq !== requestSeq.current,
+              sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+              now: () => Date.now(),
+              onPhase: (phase: WakePhase) => {
+                if (phase.status === 'waking')
+                  setWaking({
+                    attempt: phase.attempt,
+                    retryInMs: phase.retryInMs,
+                    elapsedMs: phase.elapsedMs,
+                  })
+                else setWaking(null)
+              },
+            })
 
         // Superseded before it landed: these numbers prove nothing about what is
         // on screen and must not be recorded as freshness. The read was
         // announced, though, and an announcement that is never released would
         // hold every later signal for this tab.
-        if (result.kind === 'aborted' || seq !== requestSeq.current) {
+        if (result.kind === 'aborted' || !mounted.current || seq !== requestSeq.current) {
           for (const tracker of trackers) tracker.abandon()
           return
         }
@@ -202,7 +300,18 @@ export function useDashboard(): DashboardState {
         // the session. Only one background call can be in flight at a time, so it
         // is safe for the single in-flight call to clear it.
         if (background) bgInFlight.current = false
-        if (seq === requestSeq.current && !background) setLoading(false)
+        /*
+         * `mounted` is in the guard for a reason specific to the wake loop. A
+         * foreground read can now live for 90 seconds, so "the component went
+         * away" is a thing that happens mid-read rather than only at teardown,
+         * and a superseded-but-still-running loop must not hand its own
+         * `waking: null` back to the screen that replaced it.
+         */
+        if (seq === requestSeq.current && !background && mounted.current) {
+          setLoading(false)
+          setWaking(null)
+          wakeInFlight.current = false
+        }
       }
     },
     [rangeQuery, trackers]
@@ -284,5 +393,6 @@ export function useDashboard(): DashboardState {
     setCustomRange,
     refresh: manualRefresh,
     rangeQuery,
+    waking,
   }
 }

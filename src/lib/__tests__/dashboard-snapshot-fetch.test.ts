@@ -159,6 +159,79 @@ describe('snapshot-fetch — timeout and offline', () => {
   })
 })
 
+/**
+ * The default `isOffline`, which is the ONLY one the application runs.
+ *
+ * Every other case in this file injects `isOffline: () => false` through
+ * `build()`, which makes them blind to the default — and the shipped default was
+ * `navigator.onLine !== false`, an expression that is TRUE in every connected
+ * browser. The result was the original bug report reproduced exactly: the
+ * dashboard answered `kind: 'offline', attempts: 0, durationMs: 0` and never
+ * issued a request, on every load, for every user. The server was healthy; the
+ * client refused to ask it anything.
+ *
+ * So these cases stub `navigator` and pass NO `isOffline`. Omitting the option
+ * is the entire point of the block, and it is the reason it is separate.
+ */
+describe('snapshot-fetch — the default connectivity check', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+
+  const withNavigator = async (value: unknown, run: () => Promise<void>) => {
+    Object.defineProperty(globalThis, 'navigator', { value, configurable: true, writable: true })
+    try {
+      await run()
+    } finally {
+      if (original) Object.defineProperty(globalThis, 'navigator', original)
+      else delete (globalThis as { navigator?: unknown }).navigator
+    }
+  }
+
+  const withDefaultOptions = () => {
+    const calls: RequestInit[] = []
+    const options: SnapshotOptions = {
+      isCurrent: () => true,
+      background: false,
+      fetchImpl: async (_input, init) => {
+        calls.push(init)
+        return jsonResponse(okEnvelope)
+      },
+      sleep: async () => undefined,
+      // deliberately no `isOffline`
+    }
+    return { options, calls }
+  }
+
+  it('asks the server when the browser reports itself connected', async () => {
+    await withNavigator({ onLine: true }, async () => {
+      const { options, calls } = withDefaultOptions()
+      const result = await fetchDashboardSnapshot(URL, options)
+      expect(calls.length, 'a connected browser must spend a request').toBe(1)
+      expect(result.ok).toBe(true)
+    })
+  })
+
+  it('spends nothing when the browser reports itself disconnected', async () => {
+    await withNavigator({ onLine: false }, async () => {
+      const { options, calls } = withDefaultOptions()
+      const failure = expectFailure(await fetchDashboardSnapshot(URL, options))
+      expect(calls.length).toBe(0)
+      expect(failure.kind).toBe('offline')
+      expect(failure.attempts).toBe(0)
+    })
+  })
+
+  it('treats an unknown connectivity state as worth asking about', async () => {
+    // A runtime that has `navigator` but no `onLine` is not evidence of being
+    // offline, and guessing that it is would blank the board for everyone.
+    await withNavigator({}, async () => {
+      const { options, calls } = withDefaultOptions()
+      const result = await fetchDashboardSnapshot(URL, options)
+      expect(calls.length).toBe(1)
+      expect(result.ok).toBe(true)
+    })
+  })
+})
+
 describe('snapshot-fetch — server responses are classified, not parroted', () => {
   it.each([
     [401, 'unauthorized', false],

@@ -37,7 +37,11 @@ const unique = (label: string) => `${label}-${Date.now()}-${Math.floor(Math.rand
 /** Open chat and land on a specific channel through the real rail. */
 async function openChatOn(page: Page, channelName: string): Promise<void> {
   await page.goto('/chat')
-  await expect(page.getByRole('status')).toBeVisible({ timeout: 20_000 })
+  // `main` is not decoration. The header's connectivity pill is a live region
+  // too, so a bare `getByRole('status')` is two elements and a strict-mode
+  // failure — and the state worth waiting for is the chat's own, which only
+  // appears once the room has a stream.
+  await expect(page.locator('main [role="status"]')).toBeVisible({ timeout: 20_000 })
   await railButton(page, channelName).click()
   await expect(page.getByRole('heading', { name: `#${channelName}`, exact: true })).toBeVisible()
 }
@@ -224,22 +228,30 @@ test('a mention picked from the autocomplete persists, alerts the teammate, and 
   expect(sent.mentions).toEqual([{ userId: expect.any(String), name: 'E2E Afnan' }])
 
   // Afnan is alerted, with a link to this conversation and no message body.
+  // The room link is what makes the wait mean THIS alert. `decoricks_test` is
+  // not wiped between runs, so a bare "any mention is unread" poll is already
+  // true before this message has been delivered, the poll returns instantly and
+  // `alerts[0]` is a leftover row from an earlier suite — which is exactly how
+  // this test came to expect the wrong channel id.
+  const link = `/chat?channel=${channelId}`
   const fetchMentionAlerts = async () => {
     const list = (await (await deviceB.request.get('/api/notifications?unread=only')).json()) as {
       data?: { notifications?: Array<{ type: string; data?: { link?: string } }> }
     }
-    return (list.data?.notifications ?? []).filter((n) => n.type === 'mention')
+    return (list.data?.notifications ?? []).filter(
+      (n) => n.type === 'mention' && n.data?.link === link
+    )
   }
 
   await expect
     .poll(async () => (await fetchMentionAlerts()).length, {
       timeout: 20_000,
-      message: 'no mention notification for Afnan',
+      message: `no mention notification for Afnan linking to ${link}`,
     })
     .toBeGreaterThan(0)
 
   const alerts = await fetchMentionAlerts()
-  expect(alerts[0]?.data?.link).toBe(`/chat?channel=${channelId}`)
+  expect(alerts[0]?.data?.link).toBe(link)
   // The alert names the room, never what was said in it.
   const alertBodies = await (await deviceB.request.get('/api/notifications?unread=only')).json()
   expect(JSON.stringify(alertBodies)).not.toContain('please check the delivery')

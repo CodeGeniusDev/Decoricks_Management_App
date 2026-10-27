@@ -101,7 +101,7 @@ export interface SnapshotOptions {
   fetchImpl?: (input: string, init: RequestInit) => Promise<Response>
   /** Injected for tests. */
   sleep?: (ms: number) => Promise<void>
-  /** Injected for tests. Defaults to `navigator.onLine`. */
+  /** Injected for tests. Defaults to the browser's own connectivity claim. */
   isOffline?: () => boolean
   /**
    * Receives `{ kind, status, attempts, durationMs }` for every outcome,
@@ -241,7 +241,22 @@ export async function fetchDashboardSnapshot<T>(
     retryDelayMs = DEFAULT_RETRY_DELAY_MS,
     fetchImpl = (input, init) => fetch(input, init),
     sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-    isOffline = () => (typeof navigator === 'undefined' ? true : navigator.onLine !== false),
+    /*
+     * `onLine === false` is the only state that justifies spending no request.
+     *
+     * This expression used to read `navigator.onLine !== false`, which is TRUE
+     * in every connected browser — so the check answered "we are offline" for
+     * users who were online, and the dashboard returned `kind: 'offline'` with
+     * `attempts: 0` and `durationMs: 0` before a request ever went out. Every
+     * load, every user, and only on this page because this is the only read
+     * that uses the helper. The test suite could not see it: every case injects
+     * its own `isOffline`, so the default below was never evaluated.
+     *
+     * An absent `onLine` (a non-browser runtime, or a browser that does not
+     * implement it) is UNKNOWN, and unknown must attempt the read and let the
+     * transport decide — guessing "offline" there blackens the board.
+     */
+    isOffline = () => (typeof navigator === 'undefined' ? true : navigator.onLine === false),
     onDiagnostics,
   } = options
 

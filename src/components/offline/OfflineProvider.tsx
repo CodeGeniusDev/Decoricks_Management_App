@@ -197,7 +197,14 @@ const OfflineBanner = () => {
     >
       <div className="flex items-center gap-2">
         <IconOffline size={15} className="shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{message}</span>
+        {/*
+         * The message wraps. It is a sentence the user has to believe — "your
+         * queue is safe and will sync after you log in again" — and at a phone
+         * width the trailing clause is exactly what `truncate` cut off, leaving
+         * "Your session expired — your queue is…". The banner is `role="status"`,
+         * so the loss was announced and then un-readable.
+         */}
+        <span className="min-w-0 flex-1 break-words">{message}</span>
         <Link href="/sync" className="shrink-0 font-medium text-decoricks-brown hover:underline">
           Sync queue
         </Link>

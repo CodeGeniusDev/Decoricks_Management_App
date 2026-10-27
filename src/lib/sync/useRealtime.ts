@@ -99,8 +99,21 @@ export function useRealtimeSync(
  * it does not open or hold any connection itself.
  */
 export function useConnectionState(): { state: ConnectionState; mode: ConnectionMode } {
+  /*
+   * A fixed literal, deliberately NOT `getConnectionSnapshot()`. Reading the live
+   * module here would make the client's first render say `live` for a component
+   * that the server rendered as `connecting` — a hydration mismatch on the header
+   * chip, which is exactly the class of bug this file's sibling
+   * `NotificationBell` goes out of its way to avoid. The effect below subscribes
+   * and the store pushes the real snapshot synchronously, so the literal lives
+   * for less than one frame.
+   *
+   * It says `connecting` because that used to be `offline`, and `offline` was a
+   * claim about the network that nothing had earned: on a cold Render instance it
+   * sat on screen for seconds while the server woke up, on a phone with signal.
+   */
   const [snapshot, setSnapshot] = useState<{ state: ConnectionState; mode: ConnectionMode }>(
-    () => ({ state: 'offline', mode: 'polling' })
+    () => ({ state: 'connecting', mode: 'polling' })
   )
   useEffect(() => subscribeConnection(setSnapshot), [])
   return snapshot

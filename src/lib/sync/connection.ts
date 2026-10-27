@@ -25,7 +25,24 @@ interface Snapshot {
   mode: ConnectionMode
 }
 
-let snapshot: Snapshot = { state: 'offline', mode: 'polling' }
+/*
+ * `'connecting'`, not `'offline'`, and that word is a bug fix.
+ *
+ * This was the module's initial value, and `useConnectionState` seeded itself with
+ * the same one. Nothing had been attempted yet, so "offline" was not a
+ * measurement — it was a default, and it was rendered on the first paint of every
+ * page. On a cold Render instance, where the stream and the first snapshot request
+ * both take seconds to answer, that default sat there long enough to be read as a
+ * fact: the reported symptom was the header going Offline on a phone with full
+ * signal while the server woke up. `sse-transport.start()` already reports the
+ * truth — it sets `offline` when `navigator.onLine` is false — so an honest
+ * initial value costs nothing and self-corrects.
+ *
+ * `connecting` also keeps SSR and the client's first render identical, which a
+ * `navigator.onLine`-derived initial value would not: hydration would see a
+ * different label on the server and on a genuinely offline device.
+ */
+let snapshot: Snapshot = { state: 'connecting', mode: 'polling' }
 const listeners = new Set<(s: Snapshot) => void>()
 
 /** Which module high-water marks we last learned about — used by the UI to
