@@ -46,10 +46,12 @@ describe('Tooltip — the definition box must fit the screen it is on', () => {
   })
 
   it('is bounded by the viewport, not by its own text', () => {
-    // max-w references the viewport, so a long definition WRAPS instead of
-    // extending, and max-h exists so a very long one scrolls instead of covering
-    // the whole phone.
-    expect(tooltip).toMatch(/max-w-\[min\(22rem,calc\(100vw-1rem\)\)\]/)
+    // The ceiling is a JS constant rather than a Tailwind arbitrary value, because
+    // it is applied as an inline style in BOTH states — before placement has run
+    // and after — so a first measurement can never see an unbounded box. It must
+    // reference the viewport: a long definition has to WRAP, not extend.
+    expect(tooltip).toMatch(/MAX_WIDTH\s*=\s*'min\(20rem, ?calc\(100vw ?- ?2rem\)\)'/)
+    expect(tooltip).toContain('maxWidth: MAX_WIDTH')
     expect(tooltip).toMatch(/max-h-\[/)
     expect(tooltip).toContain('overflow-y-auto')
     expect(tooltip).toContain('overscroll-contain')

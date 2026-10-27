@@ -14,11 +14,26 @@ interface TooltipProps {
    * itself must still expose an accessible name. Pass the same string here.
    */
   disabled?: boolean
+  /**
+   * Classes for the wrapper span. The wrapper is `inline-flex`, so it
+   * shrink-wraps to the trigger — which is correct for a button in a sentence
+   * and wrong for a nav row that is meant to span its container. Pass `w-full`
+   * there, and nothing changes for any caller that omits it.
+   */
+  triggerClassName?: string
 }
 
 const GAP = 6
-/** Kept clear of the viewport edge — the same value the CSS bound below uses. */
-const EDGE = 8
+/**
+ * Kept clear of the viewport edge — the same bound the CSS below uses. The box
+ * is never wider than `100vw - 2*EDGE`, so a placement computed against this
+ * edge can always contain the box it was given.
+ */
+const EDGE = 16
+
+/** The tooltip's own width ceiling: 20rem, or the screen minus both edges. */
+const MAX_WIDTH = 'min(20rem, calc(100vw - 2rem))'
+const MAX_WIDTH_PX = 320
 
 /**
  * Tooltip — no animation library, rendered in a portal.
@@ -40,7 +55,7 @@ const EDGE = 8
  * padding and the box hung 1000+ pixels off the right-hand side of the screen,
  * unreachable because it ignored pointer events. So:
  *
- *   • the text WRAPS inside a viewport-bounded box (`max-w-[min(22rem,…)]`,
+ *   • the text WRAPS inside a viewport-bounded box (`min(20rem, 100vw - 2rem)`,
  *     never wider than the screen minus the edge), which is what makes
  *     containment possible at all;
  *   • placement FLIPS to the opposite side when the preferred one has no room
@@ -60,6 +75,7 @@ export const Tooltip = ({
   children,
   position = 'right',
   disabled = false,
+  triggerClassName,
 }: TooltipProps) => {
   const [open, setOpen] = useState(false)
   const [placed, setPlaced] = useState<Placed | null>(null)
@@ -149,7 +165,17 @@ export const Tooltip = ({
       })
     : children
 
-  if (typeof document === 'undefined') return <span ref={wrapRef}>{described}</span>
+  // Shared by the server branch and the client branch below: the two must render
+  // the same attributes or the wrapper is a hydration mismatch on every
+  // tooltip-bearing control.
+  const wrapClass = `relative inline-flex${triggerClassName ? ` ${triggerClassName}` : ''}`
+
+  if (typeof document === 'undefined')
+    return (
+      <span ref={wrapRef} className={wrapClass}>
+        {described}
+      </span>
+    )
 
   const show = () => setOpen(true)
   const hide = () => {
@@ -160,7 +186,7 @@ export const Tooltip = ({
   return (
     <span
       ref={wrapRef}
-      className="relative inline-flex"
+      className={wrapClass}
       onMouseEnter={show}
       onMouseLeave={hide}
       onFocusCapture={show}
@@ -190,20 +216,26 @@ export const Tooltip = ({
             id={id}
             onMouseEnter={() => scrollable && show()}
             onMouseLeave={hide}
-            className={`fixed z-[100] max-h-[min(50vh,24rem)] max-w-[min(22rem,calc(100vw-1rem))] overflow-y-auto overscroll-contain whitespace-normal break-words rounded bg-decoricks-dark px-2 py-1 text-2xs font-medium leading-relaxed text-white shadow-md ${
+            className={`fixed z-[100] max-h-[min(50vh,24rem)] overflow-y-auto overscroll-contain whitespace-normal break-words rounded bg-decoricks-dark px-2 py-1 text-2xs font-medium leading-relaxed text-white shadow-md ${
               scrollable ? 'pointer-events-auto' : 'pointer-events-none'
             } ${placed ? '' : 'invisible'}`}
             style={
-              placed
-                ? {
-                    left: placed.left,
-                    top: placed.top,
-                    // Never let the box reach past the edge the placement was
-                    // computed against, even if the font renders wider than
-                    // measured (a late web-font load is enough to cause this).
-                    maxWidth: `min(22rem, ${Math.max(80, placed.width)}px)`,
-                  }
-                : undefined
+              {
+                // The ceiling the brief specifies. Applied whether or not
+                // placement has run yet, so a tooltip measured before its first
+                // position pass can never be the wide box that overflowed.
+                maxWidth: MAX_WIDTH,
+                ...(placed
+                  ? {
+                      left: placed.left,
+                      top: placed.top,
+                      // Never let the box reach past the edge the placement was
+                      // computed against, even if the font renders wider than
+                      // measured (a late web-font load is enough to cause this).
+                      maxWidth: `min(${MAX_WIDTH_PX}px, ${Math.max(80, placed.width)}px)`,
+                    }
+                  : {}),
+              } as React.CSSProperties
             }
           >
             {content}

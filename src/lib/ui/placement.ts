@@ -19,8 +19,9 @@
  *      move — a tooltip that jumps to the far edge of the screen is no longer
  *      describing the thing it belongs to.
  *   2. NEVER FURTHER THAN `edge` INSIDE THE VIEWPORT, provided the caller keeps
- *      the box itself inside the viewport (`max-w-[min(22rem,calc(100vw-…))]`).
- *      That precondition is why `maxBox` is exported here too: the bound and the
+ *      the box itself inside the viewport (the tooltip's `min(20rem, 100vw - 2rem)`
+ *      and the notification panel's `min(22rem, viewport - 2*edge)`). That
+ *      precondition is why `maxBox` is exported here too: the bound and the
  *      placement are decided by the same file, so they cannot disagree.
  */
 

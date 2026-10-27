@@ -76,17 +76,19 @@ interface MetricHelpProps {
 /** A small "i" affordance carrying the metric's definition + engine citation. */
 export const MetricHelp = ({ definition, engine }: MetricHelpProps) => (
   /*
-   * Rendered 16px, hittable at 32px: the button box grows to `h-8 w-8` and `-m-2`
-   * gives the surrounding layout back exactly what it lent, so the badge keeps its
-   * place next to the heading while a thumb can actually reach it. A tooltip needs
-   * a tap to appear on a touch screen, which a 16px target cannot deliver
-   * reliably. (Phase 4 §8)
+   * A 44x44 hit area — the WCAG 2.5.8 / HIG minimum, and the same number
+   * `TraceLink` below already commits to. The glyph stays 13px, so the box grows
+   * to `h-11 w-11` and `-m-3.5` (44 - 2*14) gives the surrounding layout back
+   * exactly the 16px it was contributing before: the badge keeps its place next
+   * to the heading, and the title row does not gain height. A tooltip needs a
+   * tap to appear on a touch screen, which a 32px target cannot deliver reliably.
+   * (Phase 4 §8)
    */
   <Tooltip content={`${definition} · Source: ${engine}`} position="top">
     <button
       type="button"
       aria-label={`What is this? ${definition}. Computed by ${engine}.`}
-      className="-m-2 inline-flex h-8 w-8 items-center justify-center rounded-full text-ink-muted transition-colors hover:text-decoricks-brown focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown"
+      className="-m-3.5 inline-flex h-11 w-11 items-center justify-center rounded-full text-ink-muted transition-colors hover:text-decoricks-brown focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown"
     >
       <IconInfo size={13} />
     </button>
@@ -98,6 +100,14 @@ export interface CalcRow {
   value: string
   /** Emphasise the resolved figure (e.g. the resulting amount). */
   strong?: boolean
+  /**
+   * Free text rather than a figure. The value column is `shrink-0` so a money
+   * amount can never be broken across lines by a long label beside it — which is
+   * exactly what makes a sentence like the COGS source or the advertising category
+   * list wider than a 320px card. Pass `wrap` on those rows and the bound is
+   * lifted for that row only; every figure keeps its rule.
+   */
+  wrap?: boolean
 }
 
 interface ShowCalculationProps {
@@ -145,9 +155,9 @@ export const ShowCalculation = ({ formula, rows, gate }: ShowCalculationProps) =
               <div key={row.label} className="flex items-baseline justify-between gap-3">
                 <dt className="min-w-0 text-ink-muted">{row.label}</dt>
                 <dd
-                  className={`shrink-0 tabular-nums ${
+                  className={`tabular-nums ${
                     row.strong ? 'font-semibold text-decoricks-dark' : 'text-ink'
-                  }`}
+                  } ${row.wrap ? 'min-w-0 max-w-[70%] break-words text-right' : 'shrink-0'}`}
                 >
                   {row.value}
                 </dd>
