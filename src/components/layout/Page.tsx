@@ -54,6 +54,36 @@ export const PageHeader = ({ title, description, actions, eyebrow }: PageHeaderP
 )
 
 /**
+ * HeaderActions — the actions row for a header whose controls are a *tool*, not
+ * a couple of buttons: a period selector, a refresh, a status chip.
+ *
+ * `PageHeader`'s own actions box is `flex flex-wrap items-center`, which is right
+ * for buttons (each sizes to its label, they wrap) and wrong for a control group
+ * that has internal structure. A `PeriodSelector` is a chip grid plus date inputs
+ * plus a button; wrapped as a single flex item it sizes to its own max-content, so
+ * on a phone the grid sits at whatever width its two longest chips want and the
+ * Refresh button under it is a pill, not a bar — the reported "wraps onto a second
+ * row / third row" layout. Inside this row the same control becomes one full-width
+ * column of stacked controls below `sm`, and the original inline cluster from `sm`
+ * up.
+ *
+ * The two ceilings are load-bearing and belong here rather than at each call site:
+ * `sm:w-auto` returns the cluster to content width on desktop, and `sm:max-w-full`
+ * is what makes `PageHeader`'s `sm:flex-wrap` reachable — without it a `shrink-0`
+ * item is sized to max-content and simply pushes the document sideways (measured at
+ * 790px of content inside a 720px box at 768px).
+ *
+ * Exported rather than inlined at the dashboard, because Reconciliation renders
+ * the same `PeriodSelector` in its own header and had no version of this row at
+ * all — the phone layout was fixed on one page and left broken on the other.
+ */
+export const HeaderActions = ({ children }: { children: React.ReactNode }) => (
+  <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:max-w-full sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+    {children}
+  </div>
+)
+
+/**
  * PageSection — a titled group of content with consistent vertical rhythm.
  *
  * Use for grouping inside a page. Deliberately *not* a card: sections should not
@@ -109,13 +139,27 @@ const toneClasses: Record<NonNullable<MetricProps['tone']>, string> = {
   negative: 'text-status-danger',
 }
 
+/*
+ * The label and the hint wrap; only the figure is allowed to clip.
+ *
+ * All three used to `truncate`. On a phone `MetricGrid` is two columns, which
+ * hands each metric roughly 138px — and hints like "Mon–Sun, Karachi boundaries"
+ * or "Private mode — this tab only" were being cut to "Mon–Sun, Karachi…". A
+ * label or hint that loses its last word stops explaining the figure, which is
+ * the only reason it is there. A number is different: "PKR 12,345,678" losing
+ * its tail still reads as a large amount, and clipping it keeps every row on one
+ * baseline. It carries `title` so the exact figure is one hover away.
+ */
 export const Metric = ({ label, value, hint, tone = 'default' }: MetricProps) => (
   <div className="min-w-0 px-4 py-3.5">
-    <p className="truncate text-xs font-medium text-ink-muted">{label}</p>
-    <p className={`mt-1 truncate text-lg font-semibold tabular-nums ${toneClasses[tone]}`}>
+    <p className="text-xs font-medium text-ink-muted">{label}</p>
+    <p
+      className={`mt-1 truncate text-lg font-semibold tabular-nums ${toneClasses[tone]}`}
+      title={value}
+    >
       {value}
     </p>
-    {hint && <p className="mt-0.5 truncate text-xs text-ink-muted">{hint}</p>}
+    {hint && <p className="mt-0.5 break-words text-xs text-ink-muted">{hint}</p>}
   </div>
 )
 

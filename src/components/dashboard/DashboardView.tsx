@@ -4,7 +4,7 @@ import React from 'react'
 import dynamic from 'next/dynamic'
 
 import { PageTransition } from '@/components/PageTransition'
-import { PageHeader } from '@/components/layout/Page'
+import { HeaderActions, PageHeader } from '@/components/layout/Page'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useConnectionState } from '@/lib/sync/useRealtime'
@@ -50,10 +50,25 @@ const DashboardCharts = dynamic(() => import('./charts'), {
  * `eyebrow`. `useConnectionState` is a read-only subscription to the sync
  * coordinator (no connection is opened by it, `useDashboard` already owns that),
  * so a second instance costs one listener and nothing else.
+ *
+ * Four labels, not three. This used to fold `connecting` into "Reconnecting",
+ * which is small but untrue: it says a stream already existed and dropped, and it
+ * is what the chip read for seconds on a cold Render instance while the first
+ * stream was still being opened. `offline` is now the only state that may say
+ * Offline, and the store it reads cannot enter that state except from
+ * `navigator.onLine === false` — see the seed in `lib/sync/connection.ts`. Same
+ * four-way wording as `components/chat/ConnectionStatus`, which already had it.
  */
 const ConnectionChip = ({ className = '' }: { className?: string }) => {
   const { state } = useConnectionState()
-  const label = state === 'live' ? 'Live' : state === 'offline' ? 'Offline' : 'Reconnecting'
+  const label =
+    state === 'live'
+      ? 'Live'
+      : state === 'offline'
+        ? 'Offline'
+        : state === 'connecting'
+          ? 'Connecting…'
+          : 'Reconnecting…'
   const dot =
     state === 'live'
       ? 'bg-status-success'
@@ -73,7 +88,7 @@ const ConnectionChip = ({ className = '' }: { className?: string }) => {
 
 export default function DashboardView() {
   const dash = useDashboard()
-  const { data, loading, error, refresh } = dash
+  const { data, loading, error, refresh, waking } = dash
 
   // Whole-board first-load / error states. A background refresh never lands here
   // (the hook keeps the last good snapshot), so the page can never blank itself
@@ -103,13 +118,11 @@ export default function DashboardView() {
         actions={
           /*
            * One column of full-width controls below `sm`, the original row from `sm`
-           * up. `sm:max-w-full` + `sm:flex-wrap` are not decoration: the actions block
-           * above this row is `shrink-0`, so without a ceiling of its own this row was
-           * measured at 790px of max-content inside a 720px tablet content box —
-           * wrapping had nowhere to happen. With the bound, the chip and the period
-           * cluster share the line on desktop and take separate lines when they can't.
+           * up. The rules and the reason are `HeaderActions`' own doc comment — this
+           * row used to be inlined here, which is how Reconciliation ended up without
+           * it while rendering the same `PeriodSelector`.
            */
-          <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:max-w-full sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+          <HeaderActions>
             <ConnectionChip className="hidden sm:inline-flex" />
             <PeriodSelector
               period={dash.period}
@@ -119,14 +132,64 @@ export default function DashboardView() {
               onCustomRange={dash.setCustomRange}
               onRefresh={refresh}
               refreshing={loading && !!data}
+              refreshLabel="Refresh dashboard"
             />
-          </div>
+          </HeaderActions>
         }
       />
 
+      {/*
+       * The cold-start notice. It replaces nothing — the skeleton underneath it
+       * keeps painting, because the numbers may still arrive — but it is what the
+       * user reads instead of a silent spinner.
+       *
+       * The free Render instance sleeps after ~15 min idle, and the reported
+       * symptom was this screen saying "Couldn't load the dashboard / Failed to
+       * fetch" plus the header saying Offline, on a phone with full signal, for a
+       * server that was simply booting. Both words were wrong: nothing had failed
+       * and nothing was offline. `useDashboard` now keeps retrying for up to 90
+       * seconds and only admits an error when that window closes, so this line is
+       * the difference between "waiting" and "broken" being visible.
+       *
+       * `role="status"` + `aria-live="polite"` because it appears without the user
+       * doing anything, and a screen reader must hear the reason the board is still
+       * empty rather than just silence. No count-down is promised: `retryInMs` is
+       * how long until the NEXT attempt, which is honest, whereas "90 seconds"
+       * would be a promise the schedule cannot always keep.
+       */}
+      {waking && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mb-4 flex items-start gap-2.5 rounded-lg border border-line bg-surface-raised px-3 py-2.5 text-sm text-ink-secondary"
+        >
+          <span
+            className="mt-1 h-2 w-2 shrink-0 animate-pulse rounded-full bg-status-warning"
+            aria-hidden
+          />
+          <span className="min-w-0">
+            <span className="block font-medium text-decoricks-dark">
+              Server is waking up, retrying…
+            </span>
+            <span className="mt-0.5 block text-xs text-ink-muted">
+              Attempt {waking.attempt + 1}, next try in {Math.round(waking.retryInMs / 1000)}s. The
+              app is online; the server is still starting.
+            </span>
+          </span>
+        </div>
+      )}
+
       {firstPaint && <DashboardSkeleton />}
 
-      {!firstPaint && error && !data && (
+      {/*
+       * `!waking` is not redundant with `error`. They are set from different
+       * places — `error` only ever by the hook after the wake window has closed —
+       * so no overlap is possible today, but the two conditions are independent
+       * state and a future change could make them concurrent. Saying "Couldn't
+       * load" while the retry loop is still running is the exact bug being fixed,
+       * so it is guarded at the render too.
+       */}
+      {!firstPaint && error && !data && !waking && (
         <ErrorState
           title="Couldn’t load the dashboard"
           description={error}

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { PageTransition } from '@/components/PageTransition'
-import { PageHeader } from '@/components/layout/Page'
+import { HeaderActions, PageHeader } from '@/components/layout/Page'
 import { Card } from '@/components/ui/Card'
 import { HelpPanel } from '@/components/ui/HelpPanel'
 import { Table } from '@/components/ui/Table'
@@ -138,15 +138,24 @@ export default function ReconciliationPage() {
             : 'Independent re-computation of the money equalities. Any non-zero difference is a real fail.'
         }
         actions={
-          <PeriodSelector
-            period={period}
-            customFrom={customFrom}
-            customTo={customTo}
-            onPeriod={setPeriod}
-            onCustomRange={onCustomRange}
-            onRefresh={load}
-            refreshing={loading && !!report}
-          />
+          /*
+           * The dashboard's actions row, not a bare selector: `PageHeader`'s own
+           * actions box wraps flex items at their natural width, which is right for
+           * buttons and left this 2×2 chip grid plus a date row squeezed into
+           * whatever its longest label asks for on a phone.
+           */
+          <HeaderActions>
+            <PeriodSelector
+              period={period}
+              customFrom={customFrom}
+              customTo={customTo}
+              onPeriod={setPeriod}
+              onCustomRange={onCustomRange}
+              onRefresh={load}
+              refreshing={loading && !!report}
+              refreshLabel="Refresh reconciliation report"
+            />
+          </HeaderActions>
         }
       />
 

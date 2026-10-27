@@ -142,6 +142,7 @@ describe('PageHeader — the actions block may not widen the document', () => {
 describe('Dashboard header cluster at mobile', () => {
   const view = src('components', 'dashboard', 'DashboardView.tsx')
   const selector = src('components', 'dashboard', 'PeriodSelector.tsx')
+  const layout = src('components', 'layout', 'Page.tsx')
 
   it('shows exactly one Live chip per breakpoint, above the title on phones', () => {
     expect(view).toContain('sm:hidden')
@@ -150,10 +151,16 @@ describe('Dashboard header cluster at mobile', () => {
   })
 
   it('stacks the cluster on phones and keeps the desktop row', () => {
-    expect(view).toContain('flex w-full flex-col items-stretch gap-2 sm:w-auto')
-    expect(view).toContain('sm:flex-row sm:flex-wrap sm:items-center')
+    // The row itself lives in `HeaderActions` so Reconciliation, Weekly Summary and
+    // any other page rendering a `PeriodSelector` inherits the fix instead of
+    // re-inventing it — the dashboard's obligation is to use it, and the geometry
+    // is asserted where the classes are.
+    expect(view).toContain('<HeaderActions>')
+    const actions = layout.slice(layout.indexOf('export const HeaderActions'))
+    expect(actions).toContain('flex w-full flex-col items-stretch gap-2 sm:w-auto')
+    expect(actions).toContain('sm:flex-row sm:flex-wrap sm:items-center')
     // Bounded like the block above it, or it inherits the same max-content overflow.
-    expect(view).toContain('sm:max-w-full')
+    expect(actions).toContain('sm:max-w-full')
   })
 
   it('gives the four period options a 2x2 grid, not four squeezed pills', () => {

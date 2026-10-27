@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { PageHeader, HeaderActions } from '@/components/layout/Page'
 import { PageTransition } from '@/components/PageTransition'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -200,7 +201,10 @@ export default function WeeklySummaryPage() {
   if (loading) {
     return (
       <PageTransition>
-        <h1 className="text-2xl font-bold text-decoricks-dark mb-6">Weekly Summary</h1>
+        <PageHeader
+          title="Weekly Summary"
+          description="Sales, expenses and tasks for the current period."
+        />
         <div className="space-y-6">
           <div className="flex gap-4 mb-4">
             <Skeleton variant="rect" className="h-10 w-20" />
@@ -218,43 +222,63 @@ export default function WeeklySummaryPage() {
 
   return (
     <PageTransition>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-decoricks-dark">Weekly Summary</h1>
-        <div className="flex gap-2 flex-wrap items-center">
-          <Button
-            variant={period === 'week' ? 'primary' : 'outline'}
-            size="sm"
-            onClick={() => setPeriod('week')}
-          >
-            This Week
-          </Button>
-          <Button
-            variant={period === 'month' ? 'primary' : 'outline'}
-            size="sm"
-            onClick={() => setPeriod('month')}
-          >
-            This Month
-          </Button>
-          {canExport && (
-            <>
-              <a
-                href={`/api/reports/export?period=${period}&format=csv`}
-                className={exportAnchorClass}
-                data-testid="export-csv"
+      {/*
+       * `PageHeader`, not a hand-rolled title row. This was the last report page
+       * that invented its own heading (`text-2xl font-bold` plus its own flex
+       * cluster), which is exactly the rhythm drift `PageHeader` exists to stop —
+       * and on a phone its four controls wrapped into the title's line rather than
+       * becoming the tidy stacked block the dashboard has. `HeaderActions` gives it
+       * the same two-mode row: one full-width column of controls below `sm`, the
+       * original inline cluster from `sm` up.
+       */}
+      <PageHeader
+        title="Weekly Summary"
+        description={dateRange || 'Sales, expenses and tasks for the current period.'}
+        actions={
+          <HeaderActions>
+            <div
+              role="group"
+              aria-label="Reporting period"
+              className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-2"
+            >
+              <Button
+                variant={period === 'week' ? 'primary' : 'outline'}
+                size="sm"
+                aria-pressed={period === 'week'}
+                onClick={() => setPeriod('week')}
               >
-                Export CSV
-              </a>
-              <a
-                href={`/api/reports/export?period=${period}&format=pdf`}
-                className={exportAnchorClass}
-                data-testid="export-pdf"
+                This Week
+              </Button>
+              <Button
+                variant={period === 'month' ? 'primary' : 'outline'}
+                size="sm"
+                aria-pressed={period === 'month'}
+                onClick={() => setPeriod('month')}
               >
-                Export PDF
-              </a>
-            </>
-          )}
-        </div>
-      </div>
+                This Month
+              </Button>
+            </div>
+            {canExport && (
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-2">
+                <a
+                  href={`/api/reports/export?period=${period}&format=csv`}
+                  className={exportAnchorClass}
+                  data-testid="export-csv"
+                >
+                  Export CSV
+                </a>
+                <a
+                  href={`/api/reports/export?period=${period}&format=pdf`}
+                  className={exportAnchorClass}
+                  data-testid="export-pdf"
+                >
+                  Export PDF
+                </a>
+              </div>
+            )}
+          </HeaderActions>
+        }
+      />
 
       {/* Toast */}
       {toastMessage && (
