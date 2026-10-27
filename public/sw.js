@@ -26,10 +26,10 @@
 
 // Bump the trailing number on every deploy that changes the shell set.
 // `activate` treats any cache name not in the current family as stale.
-const VERSION = 'phase9-offline-v2'
-const SHELL_CACHE = 'decoricks-shell-v2'
-const PAGES_CACHE = 'decoricks-pages-v2'
-const STATIC_CACHE = 'decoricks-static-v2'
+const VERSION = 'phase9-offline-v3'
+const SHELL_CACHE = 'decoricks-shell-v3'
+const PAGES_CACHE = 'decoricks-pages-v3'
+const STATIC_CACHE = 'decoricks-static-v3'
 const CURRENT_CACHES = [SHELL_CACHE, PAGES_CACHE, STATIC_CACHE]
 
 // Shell precache: static assets batch in; the dynamic login HTML is fetched
@@ -37,11 +37,12 @@ const CURRENT_CACHES = [SHELL_CACHE, PAGES_CACHE, STATIC_CACHE]
 const SHELL_ASSETS = [
   '/offline.html',
   '/manifest.webmanifest',
-  '/favicon.svg',
-  '/icon.svg',
-  '/maskable-icon.svg',
   // Raster icons: the manifest needs them for Android/iOS install, and
-  // notification `icon`/`badge` only accept raster images reliably.
+  // notification `icon`/`badge` only accept raster images reliably. The set is
+  // PNG/ICO only — the brand mark is raster artwork, so there is no vector
+  // variant to precache, and an .svg name holding PNG bytes is a bug.
+  '/favicon.ico',
+  '/brand-mark.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/icon-maskable-192.png',

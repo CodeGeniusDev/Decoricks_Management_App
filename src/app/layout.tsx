@@ -26,9 +26,14 @@ export const metadata: Metadata = {
     title: 'Decoricks',
   },
   icons: {
+    // The brand mark is raster artwork, so the whole icon set is raster: a real
+    // ICO container (16/32/48 PNG payloads inside) for tabs and address bars,
+    // and fixed-size PNGs everywhere a size is declared. There are deliberately
+    // no `/favicon.svg` or `/icon.svg` entries — an .svg name holding PNG bytes
+    // is the bug `pwa-assets.test.ts` exists to catch.
     icon: [
-      { url: '/favicon.ico', sizes: '32x32' },
-      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: '48x48' },
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
     ],
     // iOS reads apple-touch-icon (180x180 PNG) when added to the Home Screen.
     // It must be a PNG — Safari does not use favicon.ico or the manifest here.

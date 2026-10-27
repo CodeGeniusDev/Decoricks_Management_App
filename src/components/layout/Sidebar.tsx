@@ -20,12 +20,20 @@ import { BrandMark } from './BrandMark'
  *  - Width animates via a single CSS `width` transition driven by a class
  *    change. No GSAP width animation, so the label clipping and the icon
  *    positions can never fight each other.
- *  - The brand row is a fixed three-column grid: mark / wordmark / toggle. The
- *    mark and toggle keep their size when collapsed, and only the wordmark
- *    fades, so nothing shifts or distorts.
+ *  - The collapse toggle lives in its own row at the foot of the rail, in BOTH
+ *    states. It used to sit at the right end of the brand row, which cannot
+ *    work when collapsed: a 64px rail minus `px-3` and a 32px button leaves an
+ *    8px column for a 24px brand mark — the mark either overlapped the toggle
+ *    by 17px or (as an <img>) was squashed by Preflight's `max-width: 100%`.
+ *    One fixed position also means the button never teleports mid-transition.
+ *  - The brand row is therefore purely brand: mark + wordmark expanded, the
+ *    mark centred alone when collapsed. Nothing shares the 64px with it.
  *  - Icons live in a fixed 20px slot and are never unmounted. Labels fade out
  *    while the rail narrows, and the rail clips them, so there is no reflow.
- *  - The active state is a filled pill that stays legible at 64px.
+ *  - The active state is a filled pill that spans the rail's content box, so it
+ *    stays legible at 64px. It is full width because `Tooltip` wraps the trigger
+ *    in a shrink-wrapping `inline-flex` span; without `w-full` on both, the
+ *    collapsed pill was 20px wide and sat 10px left of the rail's centre.
  */
 export const Sidebar = () => {
   const pathname = usePathname()
@@ -50,15 +58,18 @@ export const Sidebar = () => {
         isCollapsed ? 'w-sidebar-collapsed' : 'w-sidebar'
       } transition-[width] duration-240 ease-standard`}
     >
-      {/* Brand row — mark and toggle are fixed size; only the wordmark fades. */}
+      {/* Brand row — brand only. Collapsed it is the mark, centred on the
+          rail's own axis; the toggle is not here (see the file header). */}
       <div
-        className={`grid h-header shrink-0 items-center border-b border-line-subtle ${
-          isCollapsed ? 'grid-cols-[1fr_auto] px-3' : 'grid-cols-[auto_1fr_auto] gap-2.5 px-4'
+        className={`flex h-header shrink-0 items-center border-b border-line-subtle ${
+          isCollapsed ? 'justify-center px-2' : 'px-4'
         }`}
       >
         <Link
           href="/"
-          className="flex min-w-0 items-center gap-2.5 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-decoricks-brown"
+          className={`flex min-w-0 items-center rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-decoricks-brown ${
+            isCollapsed ? 'shrink-0' : 'w-full gap-2.5'
+          }`}
           aria-label="Decoricks Management — dashboard"
         >
           <BrandMark size={isCollapsed ? 24 : 26} />
@@ -71,16 +82,6 @@ export const Sidebar = () => {
             Decoricks
           </span>
         </Link>
-
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-decoricks-brown"
-          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          aria-expanded={!isCollapsed}
-        >
-          {isCollapsed ? <IconChevronRight size={16} /> : <IconChevronLeft size={16} />}
-        </button>
       </div>
 
       {/*
@@ -111,6 +112,7 @@ export const Sidebar = () => {
                   content={isCollapsed ? item.name : ''}
                   position="right"
                   disabled={!isCollapsed}
+                  triggerClassName="w-full"
                 >
                   <Link
                     href={item.href}
@@ -135,7 +137,7 @@ export const Sidebar = () => {
                      * it unconditionally keeps one stable name in both states.
                      */
                     aria-label={item.name}
-                    className={`group relative flex h-10 items-center rounded-lg transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-decoricks-brown ${
+                    className={`group relative flex h-10 w-full items-center rounded-lg transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-decoricks-brown ${
                       isCollapsed ? 'justify-center px-0' : 'gap-3 px-2.5'
                     } ${
                       isActive
@@ -163,6 +165,25 @@ export const Sidebar = () => {
           })}
         </ul>
       </nav>
+
+      {/*
+       * Collapse toggle — its own row, so it never competes with the brand mark
+       * for the rail's 64px. Same place in both states on purpose: a control
+       * that moved between the header and the foot would teleport during the
+       * 240ms width transition, which is the shifting-chrome behaviour this
+       * component was rewritten to remove.
+       */}
+      <div className="flex h-12 shrink-0 items-center justify-center border-t border-line-subtle">
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-decoricks-brown"
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!isCollapsed}
+        >
+          {isCollapsed ? <IconChevronRight size={16} /> : <IconChevronLeft size={16} />}
+        </button>
+      </div>
     </aside>
   )
 }

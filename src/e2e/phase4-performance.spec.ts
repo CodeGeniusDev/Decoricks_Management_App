@@ -307,15 +307,36 @@ test.describe('phase 4 — desktop sidebar usability', () => {
 
     const brand = rail(page).getByRole('link', { name: /Decoricks Management/ })
     const toggle = rail(page).getByRole('button', { name: 'Expand sidebar' })
+    const railBox = await rail(page).boundingBox()
     const [brandBox, toggleBox] = await Promise.all([brand.boundingBox(), toggle.boundingBox()])
     expect(brandBox).not.toBeNull()
     expect(toggleBox).not.toBeNull()
-    expect(brandBox!.x + brandBox!.width).toBeLessThanOrEqual(toggleBox!.x + 1)
+    /*
+     * The two must not overlap, and they must not be ordered left-to-right.
+     * That assertion used to read `brand.right <= toggle.x`, which described the
+     * OLD brand row: mark / wordmark / toggle in one 64px strip, where a 24px
+     * mark and a 32px button fought over 8px and either overlapped by 17px or
+     * were squashed into an ellipse by Preflight's `max-width: 100%`. The toggle
+     * now has its own row at the foot of the rail in both states, so the real
+     * guarantee is two-dimensional: no shared pixels, and both inside the rail.
+     */
+    const overlapX =
+      Math.min(brandBox!.x + brandBox!.width, toggleBox!.x + toggleBox!.width) -
+      Math.max(brandBox!.x, toggleBox!.x)
+    const overlapY =
+      Math.min(brandBox!.y + brandBox!.height, toggleBox!.y + toggleBox!.height) -
+      Math.max(brandBox!.y, toggleBox!.y)
+    expect(
+      overlapX > 0 && overlapY > 0,
+      `brand and toggle overlap by ${Math.round(overlapX)}x${Math.round(overlapY)}px`
+    ).toBe(false)
+    expect(brandBox!.x).toBeGreaterThanOrEqual(railBox!.x)
+    expect(brandBox!.x + brandBox!.width).toBeLessThanOrEqual(railBox!.x + railBox!.width + 1)
+    expect(toggleBox!.x + toggleBox!.width).toBeLessThanOrEqual(railBox!.x + railBox!.width + 1)
 
     // The first icon link is the active item; its icon must sit inside the rail.
     const icon = rail(page).locator('nav a').first().locator('svg').first()
     const iconBox = await icon.boundingBox()
-    const railBox = await rail(page).boundingBox()
     expect(iconBox!.width).toBeGreaterThanOrEqual(16)
     expect(iconBox!.x).toBeGreaterThanOrEqual(railBox!.x)
     expect(iconBox!.x + iconBox!.width).toBeLessThanOrEqual(railBox!.x + railBox!.width)

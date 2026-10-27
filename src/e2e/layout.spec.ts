@@ -7,6 +7,7 @@ import { AFNAN_STATE, FOUNDER_STATE } from './helpers'
  * These exist because each assertion below corresponds to a bug that shipped
  * once and was hard to notice by hand:
  *  - the collapsed sidebar rendered no icons at all
+ *  - the collapsed rail stretched the brand mark into a 7x24 ellipse
  *  - the content gutter did not follow the sidebar width
  *  - the header's mobile menu button had no click handler
  *  - the mobile drawer had no Escape handler and no focus trap
@@ -122,6 +123,66 @@ test.describe('navigation shell', () => {
     const sidebar = page.getByRole('complementary', { name: 'Main navigation' })
     // Name comes from the tooltip/content even though the label is visually hidden.
     await expect(sidebar.getByRole('link', { name: /Inventory/ })).toBeVisible()
+  })
+
+  /**
+   * Geometry, not presence — the assertions above ask whether an element is
+   * *visible*, and a 7x24 brand mark is perfectly visible.
+   *
+   * 7x24 is what actually shipped once. Tailwind Preflight carries
+   * `img, video { max-width: 100%; height: auto }`. The brand row's inline
+   * `height: 24px` beats Preflight's `height: auto`, but an inline `width` does
+   * not beat `max-width: 100%` — the cap is applied after the used width. The
+   * row gave the mark an 8px column because a 32px toggle button shared a 64px
+   * rail with it, so a 128px square artwork was drawn into a 7x24 box: a
+   * vertical ellipse. `flex-shrink: 0` cannot help, because nothing was
+   * shrinking.
+   */
+  test('collapsed rail keeps the brand mark square and on the rail axis', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/')
+
+    const sidebar = page.getByRole('complementary', { name: 'Main navigation' })
+    const mark = sidebar.locator('img[src="/brand-mark.png"]')
+    const centreOf = async (locator: typeof mark) => {
+      const box = (await locator.boundingBox())!
+      return box.x + box.width / 2
+    }
+
+    const expanded = (await mark.boundingBox())!
+    expect(expanded.width).toBe(26)
+    expect(Math.abs(expanded.width - expanded.height)).toBeLessThan(0.5)
+
+    await page.getByRole('button', { name: 'Collapse sidebar' }).click()
+    await expect.poll(async () => (await sidebar.boundingBox())!.width).toBe(64)
+
+    const collapsed = (await mark.boundingBox())!
+    // The regression: width capped to the container, height pinned by the
+    // inline style, `object-fit: fill` stretching the badge to match.
+    expect(collapsed.width).toBe(24)
+    expect(Math.abs(collapsed.width - collapsed.height)).toBeLessThan(0.5)
+
+    // Collapsed, the rail is 64px of nothing but icons — so mark, rows and the
+    // toggle all have to share its axis. They used to sit at 15.5 and 22 because
+    // the brand row was left-aligned and `Tooltip` shrink-wrapped each nav row
+    // to its 20px icon slot.
+    const axis = 64 / 2
+    // `exact` because the brand link's accessible name is "Decoricks Management
+    // — dashboard", which a substring match on "Dashboard" also answers to.
+    const firstLink = sidebar.getByRole('link', { name: 'Dashboard', exact: true })
+    const toggle = page.getByRole('button', { name: 'Expand sidebar' })
+    expect(Math.abs((await centreOf(mark)) - axis)).toBeLessThanOrEqual(1)
+    expect(Math.abs((await centreOf(firstLink)) - axis)).toBeLessThanOrEqual(1)
+    expect(Math.abs((await centreOf(toggle)) - axis)).toBeLessThanOrEqual(1)
+
+    // The active pill spans the rail's content box (64 less its 1px border and
+    // `px-3`), which is also what makes it a comfortable hit area.
+    expect((await firstLink.boundingBox())!.width).toBe(39)
+
+    // Clicking it back is the real test that nothing floats over the toggle:
+    // Playwright refuses to click through an intercepting element.
+    await toggle.click()
+    await expect.poll(async () => (await sidebar.boundingBox())!.width).toBe(240)
   })
 
   test('desktop sidebar is hidden and the drawer is used below 1024px', async ({ page }) => {

@@ -55,14 +55,7 @@
         width: 40px;
         height: 40px;
         margin: 0 auto 16px;
-        border-radius: 8px;
-        background: var(--ink);
-        color: #fff;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 700;
-        font-size: 18px;
+        display: block;
       }
       h1 {
         margin: 0 0 8px;
@@ -127,7 +120,12 @@
   </head>
   <body>
     <main>
-      <div class="mark" aria-hidden="true">D</div>
+      <!--
+        The brand badge, not a letter. /brand-mark.png is in the service
+        worker's SHELL_ASSETS alongside this page, and cache.addAll is atomic,
+        so either both are cached or this page was never installed.
+      -->
+      <img class="mark" src="/brand-mark.png" width="40" height="40" alt="" aria-hidden="true" />
       <h1>You're offline</h1>
       <p>
         This page couldn't load without a connection. Anything you saved while offline is safe in
