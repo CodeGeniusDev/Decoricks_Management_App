@@ -16,6 +16,7 @@ import { Toast } from '@/components/ui/Toast'
 import { IconPlus } from '@/components/ui/icons'
 import { apiJson, apiJsonMeta, ApiError } from '@/lib/api-client'
 import { useRealtimeSync } from '@/lib/sync/useRealtime'
+import { usePolling } from '@/hooks/usePolling'
 import { enqueueCreate } from '@/lib/offline/browser'
 import type { BudgetCreatePayload } from '@/lib/offline/types'
 import { useAuth } from '@/components/auth/AuthProvider'
@@ -149,6 +150,15 @@ export default function BudgetsPage() {
    * screen mounts its own first read; this one relied on a signal that only
    * arrives when somebody else writes to finance.
    */
+  /*
+   * Self-healing read: retries on the backoff ladder while `error` is on screen
+   * and re-reads after three quiet minutes, so neither a failed fetch nor a
+   * silently dead stream can strand this page until someone reloads it. The
+   * realtime signal above covers other people's changes; it cannot cover this
+   * page's own read. Reasoning in `hooks/usePolling.ts`.
+   */
+  usePolling(() => load({ background: true }), { error })
+
   useEffect(() => {
     void load()
   }, [load])

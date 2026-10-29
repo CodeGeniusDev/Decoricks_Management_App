@@ -9,6 +9,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useConnectionView } from '@/lib/sync/useRealtime'
 import { formatKarachiDate } from '@/lib/date'
+import { updatedLine } from '@/lib/dashboard/updated-line'
 
 import { useDashboard } from '@/lib/dashboard/useDashboard'
 import { PeriodSelector } from './PeriodSelector'
@@ -115,7 +116,10 @@ export default function DashboardView() {
         }
         description={
           data
-            ? `Period ${formatKarachiDate(new Date(data.range.start), 'date')} – ${formatKarachiDate(new Date(data.range.end), 'date')} · updated ${formatKarachiDate(new Date(data.generatedAt), 'time')}`
+            ? `Period ${formatKarachiDate(new Date(data.range.start), 'date')} – ${formatKarachiDate(
+                new Date(data.range.end),
+                'date'
+              )} · ${updatedLine(dash.lastUpdated, dash.stale)}`
             : 'Sales, cash, inventory, orders, budget and team activity at a glance.'
         }
         actions={
@@ -150,9 +154,11 @@ export default function DashboardView() {
        * symptom was this screen saying "Couldn't load the dashboard / Failed to
        * fetch" plus the header saying Offline, on a phone with full signal, for a
        * server that was simply booting. Both words were wrong: nothing had failed
-       * and nothing was offline. `useDashboard` now keeps retrying for up to 90
-       * seconds and only admits an error when that window closes, so this line is
-       * the difference between "waiting" and "broken" being visible.
+       * and nothing was offline. `useDashboard` retries on a schedule that has a
+       * ceiling on the DELAY (30s) and none on the number of attempts, so this
+       * line is the difference between "waiting" and "broken" being visible — and
+       * when it does finally admit an error, the retrying behind it has not
+       * stopped.
        *
        * `role="status"` + `aria-live="polite"` because it appears without the user
        * doing anything, and a screen reader must hear the reason the board is still
@@ -195,7 +201,7 @@ export default function DashboardView() {
       {!firstPaint && error && !data && !waking && (
         <ErrorState
           title="Couldn’t load the dashboard"
-          description={error}
+          description={`${error} Retrying automatically.`}
           action={{ label: 'Try again', onClick: refresh }}
         />
       )}

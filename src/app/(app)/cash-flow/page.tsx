@@ -1,6 +1,7 @@
 'use client'
 
 import { useRealtimeSync } from '@/lib/sync/useRealtime'
+import { usePolling } from '@/hooks/usePolling'
 import React, { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { PageTransition } from '@/components/PageTransition'
@@ -110,6 +111,15 @@ export default function CashFlowPage() {
     },
     [filter]
   )
+
+  /*
+   * Self-healing read: retries on the backoff ladder while `error` is on screen
+   * and re-reads after three quiet minutes, so neither a failed fetch nor a
+   * silently dead stream can strand this page until someone reloads it. The
+   * realtime signal above covers other people's changes; it cannot cover this
+   * page's own read. Reasoning in `hooks/usePolling.ts`.
+   */
+  usePolling(() => load({ background: true }), { error })
 
   useEffect(() => {
     void load()

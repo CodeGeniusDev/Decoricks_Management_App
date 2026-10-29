@@ -4,6 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import { fetchDashboardSnapshot } from '@/lib/dashboard/snapshot-fetch'
 import { runWakeRetry, type WakePhase } from '@/lib/dashboard/wake-retry'
+import {
+  isStale,
+  recoveryDelayMs,
+  STALE_AFTER_MS,
+  STALE_CHECK_MS,
+} from '@/lib/dashboard/read-recovery'
 import { useRealtimeSync, useConnectionState } from '@/lib/sync/useRealtime'
 import type { RealtimeReadTracker } from '@/lib/sync/useRealtime'
 import type { DashboardMetrics } from '@/lib/metrics/dashboard-metrics'
@@ -24,6 +30,17 @@ import type { DashboardMetrics } from '@/lib/metrics/dashboard-metrics'
  *   - polling fallback    → when the realtime transport is not live (or on a
  *                           slower `polling` mode) we re-check on an interval so
  *                           the dashboard still converges without a socket.
+ *   - while the store says `live` → a staleness watchdog, NOT silence. A stream
+ *                           can stay open while delivering nothing, and a timer
+ *                           switched off by a health flag is how this board ended
+ *                           up displaying "updated 12:39 am" hours later.
+ *   - after a failure     → the backoff ladder in `read-recovery.ts`: 2s, 4s, 8s,
+ *                           16s, then every 30s, with no attempt limit. `focus`,
+ *                           `visibilitychange` and `online` also reconcile.
+ *
+ * The last two lines are the whole point of `lastUpdated` and `stale` being part
+ * of this hook's contract: a page that keeps trying must also be able to say,
+ * truthfully, how old what it is showing actually is.
  *
  * A background refresh that fails does NOT blank the screen: it keeps the last
  * good snapshot and only surfaces the error on the initial load, matching the
@@ -64,6 +81,21 @@ export interface DashboardState {
    * `wake-retry.ts`.
    */
   waking: { attempt: number; retryInMs: number; elapsedMs: number } | null
+  /**
+   * When the numbers currently on screen last landed, as a client timestamp.
+   * Advanced ONLY by a successful read, which is what makes the "updated …" line
+   * on the page honest: it can never claim a fresher instant than the payload it
+   * is describing, so a failed refresh leaves it showing the age of the stale
+   * snapshot rather than the time of the attempt that failed.
+   */
+  lastUpdated: number | null
+  /**
+   * `lastUpdated` is older than `STALE_AFTER_MS` while this tab has been visible,
+   * i.e. the board on screen is behind the server and cannot be trusted to be
+   * current. The page pairs it with the retry schedule so "updated 12:39 am" is
+   * never shown as if it were fresh.
+   */
+  stale: boolean
 }
 
 export function useDashboard(): DashboardState {
@@ -82,6 +114,26 @@ export function useDashboard(): DashboardState {
   // landed. Together they make the polling fallback both quiet and self-healing.
   const bgInFlight = useRef(false)
   const lastFetchedAt = useRef(0)
+  /*
+   * The last time a read was ATTEMPTED, successful or not, and the clock the
+   * freshness watchdog measures against. Deliberately not `lastFetchedAt`: a
+   * failing board must not be re-read every 15 seconds by a watchdog that
+   * believes it has never tried, and the recovery ladder below already owns the
+   * pace of retries against a server that is refusing requests.
+   */
+  const lastAttemptAt = useRef(0)
+  /*
+   * Recovery bookkeeping. `failures` is how many attempts have failed in a row
+   * and selects the rung of the backoff ladder; `recoverId` is the single pending
+   * retry, so no combination of timers, signals and events can stack retries.
+   * Both exist because the reported bug was a dashboard that stopped trying: the
+   * cold-start window closed after 90 seconds, the polling timer was switched off
+   * by the `live` claim, and "updated 12:39 am" sat there for hours.
+   */
+  const failures = useRef(0)
+  const recoverId = useRef<number | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null)
+  const [stale, setStale] = useState(false)
   /*
    * Set for the whole life of a user-initiated read, which since the cold-start
    * fix can be up to 90 seconds while it waits for a sleeping instance. Separate
@@ -153,6 +205,45 @@ export function useDashboard(): DashboardState {
     return params.toString()
   }, [period, customFrom, customTo])
 
+  /*
+   * The retry ladder, kept in a ref-backed callback so it can call the CURRENT
+   * `load` (and therefore the current `rangeQuery`) without being rebuilt every
+   * time the range changes — a rebuild would cancel the pending rung and restart
+   * the ladder at two seconds on every period switch.
+   */
+  const loadRef = useRef<(background: boolean) => Promise<void>>(async () => {})
+  const armRecovery = useCallback(() => {
+    if (recoverId.current !== null) return
+    failures.current += 1
+    const delay = recoveryDelayMs(failures.current)
+    recoverId.current = window.setTimeout(() => {
+      recoverId.current = null
+      if (!mounted.current) return
+      /*
+       * Nothing visible is stale, and the browser says there is no network to try.
+       * Re-arm at the same rung instead of spending a request: "never give up"
+       * must not become "never stop hammering". The `online` listener in the
+       * reconcile effect below is what actually fires the moment a connection
+       * returns, and the polling timer keeps trying while a tab is visible.
+       */
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        armRecovery()
+        return
+      }
+      if (typeof document !== 'undefined' && document.hidden) {
+        armRecovery()
+        return
+      }
+      void loadRef.current(true)
+    }, delay)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (recoverId.current !== null) window.clearTimeout(recoverId.current)
+    }
+  }, [])
+
   const load = useCallback(
     async (background: boolean) => {
       // A slow dashboard call must not be piled on top of itself: while a
@@ -163,8 +254,21 @@ export function useDashboard(): DashboardState {
       // triggers; see `wakeInFlight`.
       if (background && (bgInFlight.current || wakeInFlight.current)) return
       const seq = ++requestSeq.current
+      lastAttemptAt.current = Date.now()
       if (background) bgInFlight.current = true
       if (!background) {
+        /*
+         * A read someone is actually waiting on owns the schedule: drop the
+         * pending ladder rung so a manual "Try again" starts again at the short
+         * rung rather than at the 30-second tail of a streak it may already have
+         * escaped. Without this, pressing "Try again" once during an outage would
+         * leave the next automatic attempt half a minute away.
+         */
+        if (recoverId.current !== null) {
+          window.clearTimeout(recoverId.current)
+          recoverId.current = null
+        }
+        failures.current = 0
         wakeInFlight.current = true
         setLoading(true)
         setWaking(null)
@@ -280,6 +384,18 @@ export function useDashboard(): DashboardState {
           setData(result.data)
           setError(null)
           lastFetchedAt.current = Date.now()
+          /*
+           * The board on screen is this instant old, and the streak that was
+           * driving the ladder is over: clear both, and drop a retry that is now
+           * redundant because the numbers it was waiting for have arrived.
+           */
+          setLastUpdated(lastFetchedAt.current)
+          setStale(false)
+          failures.current = 0
+          if (recoverId.current !== null) {
+            window.clearTimeout(recoverId.current)
+            recoverId.current = null
+          }
         } else {
           for (const tracker of trackers) tracker.abandon()
           /*
@@ -292,6 +408,22 @@ export function useDashboard(): DashboardState {
            * "Try again" calls `refresh`, which is this same function.
            */
           if (!background) setError(result.message)
+          /*
+           * The part of the report that was never fixed before: everything here
+           * had a give-up condition. The cold-start window closes after 90 seconds
+           * and the polling timer used to be switched off by a `live` claim, so a
+           * board that failed once stayed failed until the user reloaded the page.
+           * The ladder in `read-recovery.ts` has a ceiling on the DELAY, not on the
+           * number of attempts, so the dashboard keeps trying — 2s, 4s, 8s, 16s,
+           * then every 30s for as long as it takes — and recovers on its own when
+           * the host answers.
+           *
+           * Not armed when the browser itself says it has no connection: there is
+           * nothing to retry against, and the `online` listener below (plus the
+           * polling timer, which keeps running while the tab is visible) is the
+           * honest trigger for the moment a connection comes back.
+           */
+          if (result.kind !== 'offline') armRecovery()
         }
       } finally {
         // Cleared unconditionally for background calls: a foreground load that
@@ -314,8 +446,12 @@ export function useDashboard(): DashboardState {
         }
       }
     },
-    [rangeQuery, trackers]
+    [rangeQuery, trackers, armRecovery]
   )
+
+  useEffect(() => {
+    loadRef.current = load
+  }, [load])
 
   // (Re)load whenever the applied range changes. A period switch is a user action
   // (foreground, shows skeleton); this effect itself is the single trigger, so no
@@ -335,32 +471,72 @@ export function useDashboard(): DashboardState {
     void load(true)
   }, [syncTick, load])
 
-  // Polling fallback: keep converging when the socket isn't live. The interval
-  // tightens while connected-but-polling and relaxes when fully offline, so we
-  // never hammer the server through an outage.
-  //
-  // `document.hidden` is checked *at the tick*, not by tearing the interval down
-  // on visibilitychange: a hidden tab produces no visible staleness, so the cheapest
-  // correct behaviour is to skip those ticks and let the reconcile effect below fetch
-  // once the user is back. Before this guard the dashboard kept issuing a snapshot
-  // request every 60-90s in a background tab — the one module in the app whose
-  // fallback polling ignored visibility (the sync transport and `usePolling` both
-  // respect it).
+  /*
+   * The one timer that is always running, whatever the health store claims.
+   *
+   * It used to begin `if (connection === 'live') return`, and that single line is
+   * why "updated 12:39 am" survived for hours on a phone with signal: a stream can
+   * stay OPEN while delivering nothing — the server behind it stopped emitting,
+   * a proxy is buffering, the cursor never advances — and a `live` claim earned by
+   * one good frame was enough to switch off every automatic refresh the dashboard
+   * had. There was no timer left to notice.
+   *
+   * So while the store says `live` this is a WATCHDOG rather than a poll: it ticks
+   * often and reads only when what is on screen has genuinely aged past
+   * `STALE_AFTER_MS`, which keeps the quiet-path request rate where it was (a
+   * snapshot every three minutes at most, instead of none) without trusting a
+   * flag for freshness. Off `live` the interval is the ordinary fallback, at the
+   * same two speeds as before.
+   *
+   * `document.hidden` is checked *at the tick*, not by tearing the interval down
+   * on visibilitychange: a hidden tab produces no visible staleness, so the cheapest
+   * correct behaviour is to skip those ticks and let the reconcile effect below fetch
+   * once the user is back. Before this guard the dashboard kept issuing a snapshot
+   * request every 60-90s in a background tab — the one module in the app whose
+   * fallback polling ignored visibility (the sync transport and `usePolling` both
+   * respect it).
+   */
   const { state: connection } = useConnectionState()
   useEffect(() => {
-    if (connection === 'live') return
-    const ms = connection === 'reconnecting' ? POLL_MS : POLL_MS_FALLBACK
+    const watching = connection === 'live'
+    const ms = watching
+      ? STALE_CHECK_MS
+      : connection === 'reconnecting'
+        ? POLL_MS
+        : POLL_MS_FALLBACK
     const id = setInterval(() => {
       if (document.hidden) return
+      if (watching && !isStale(Date.now(), lastAttemptAt.current, STALE_AFTER_MS)) return
       void load(true)
     }, ms)
     return () => clearInterval(id)
   }, [connection, load])
 
-  // Reconcile when the tab is shown again or the network comes back, instead of
-  // waiting for the next tick of a timer that was paused meanwhile. Throttled by
-  // the same interval so a wake-from-sleep burst (visibility + focus + online)
-  // costs one request.
+  /*
+   * The "last updated" line's other half. `lastUpdated` can only ever move
+   * forward on a success, so the age it reports is the age of the numbers on
+   * screen — never the age of the last attempt that failed — and this ticker is
+   * what lets the page say plainly that what is painted is behind the server
+   * instead of letting an hours-old timestamp read as if it were current.
+   */
+  useEffect(() => {
+    const id = setInterval(() => {
+      setStale(lastFetchedAt.current > 0 && isStale(Date.now(), lastFetchedAt.current))
+    }, STALE_CHECK_MS)
+    return () => clearInterval(id)
+  }, [])
+
+  /*
+   * Reconcile when the tab is shown again, the window is refocused or the network
+   * comes back, instead of waiting for the next tick of a timer that was paused
+   * meanwhile. Throttled by the same interval so a wake-from-sleep burst
+   * (visibility + focus + online) costs one request.
+   *
+   * `focus` is listed alongside `visibilitychange` on purpose: on a desktop
+   * browser a tab that is already visible can be refocused from another window
+   * without producing any visibility event at all, which is the moment a user
+   * glancing back at a dashboard most expects it to be current.
+   */
   useEffect(() => {
     const maybeCatchUp = () => {
       if (document.visibilityState !== 'visible') return
@@ -368,9 +544,11 @@ export function useDashboard(): DashboardState {
       void load(true)
     }
     document.addEventListener('visibilitychange', maybeCatchUp)
+    window.addEventListener('focus', maybeCatchUp)
     window.addEventListener('online', maybeCatchUp)
     return () => {
       document.removeEventListener('visibilitychange', maybeCatchUp)
+      window.removeEventListener('focus', maybeCatchUp)
       window.removeEventListener('online', maybeCatchUp)
     }
   }, [load])
@@ -394,5 +572,7 @@ export function useDashboard(): DashboardState {
     refresh: manualRefresh,
     rangeQuery,
     waking,
+    lastUpdated,
+    stale,
   }
 }
