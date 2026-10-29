@@ -300,7 +300,6 @@ export default function InventoryProductsPage() {
     <PageTransition>
       <PageHeader
         title="Products"
-        description="Catalogue with SKUs, variants, prices and reorder levels. Products are archived, never deleted."
         actions={
           <>
             <ExportLink href={exportHref} />

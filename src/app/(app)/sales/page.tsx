@@ -340,7 +340,6 @@ export default function SalesOrdersPage() {
     <PageTransition>
       <PageHeader
         title="Sales"
-        description="COD orders. Creating an order reserves stock at the ship-from location; income is only posted when cash is confirmed received."
         actions={
           <>
             <ExportLink href={exportHref} />

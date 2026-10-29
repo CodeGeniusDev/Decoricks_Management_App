@@ -160,10 +160,7 @@ export default function BudgetDetailPage() {
   if (loading) {
     return (
       <PageTransition>
-        <PageHeader
-          title="Budget"
-          description="Actual versus budget, calculated from the ledger."
-        />
+        <PageHeader title="Budget" />
         <div className="space-y-4">
           <Skeleton variant="rect" className="h-24" />
           <Skeleton variant="rect" className="h-64" />

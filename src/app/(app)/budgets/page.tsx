@@ -253,7 +253,7 @@ export default function BudgetsPage() {
   if (loading) {
     return (
       <PageTransition>
-        <PageHeader title="Budgets" description="Period allocations with live actual-vs-budget." />
+        <PageHeader title="Budgets" />
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} variant="rect" className="h-20" />
@@ -343,7 +343,6 @@ export default function BudgetsPage() {
 
       <PageHeader
         title="Budgets"
-        description="Allocations per category, with actual spend calculated live from the ledger."
         actions={
           <>
             <div className="w-40">

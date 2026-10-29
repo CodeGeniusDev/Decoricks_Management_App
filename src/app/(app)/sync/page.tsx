@@ -137,7 +137,6 @@ export default function SyncPage() {
 
       <PageHeader
         title="Sync"
-        description="Entries you created while offline live here until the server confirms them."
         actions={
           <>
             <Button onClick={syncNow} loading={draining} disabled={!user?._id}>
@@ -170,21 +169,14 @@ export default function SyncPage() {
         />
       </MetricGrid>
 
-      <PageSection
-        title="Queue"
-        description="Newest attempts at the bottom; rows stay until resolved."
-      >
+      <PageSection title="Queue">
         {loading ? (
           <div className="space-y-2">
             <Skeleton className="h-16" />
             <Skeleton className="h-16" />
           </div>
         ) : rows.length === 0 ? (
-          <EmptyState
-            icon={<IconCheck size={20} />}
-            title="Nothing waiting"
-            description="Entries appear here the moment you save one offline and leave once the server confirms them. Nothing is waiting, so nothing is unsynced on this device."
-          />
+          <EmptyState icon={<IconCheck size={20} />} title="Nothing waiting" />
         ) : (
           <div className="space-y-2">
             {rows.map((entry) => (

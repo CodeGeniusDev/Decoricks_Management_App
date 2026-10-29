@@ -396,8 +396,8 @@ export default function DistributionDetailPage() {
         title={`Distribution · ${monthLabelKarachi(dist.month)}`}
         description={
           dist.distributionNumber
-            ? `${dist.distributionNumber} — calculated ${formatKarachiDate(new Date(dist.createdAt), 'date')} (Karachi), approved and locked only by the Founder.`
-            : 'Calculated from the ledger for this Karachi month.'
+            ? `${dist.distributionNumber} — calculated ${formatKarachiDate(new Date(dist.createdAt), 'date')} (Karachi)`
+            : undefined
         }
       />
 

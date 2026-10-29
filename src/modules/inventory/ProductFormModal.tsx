@@ -245,7 +245,6 @@ export const ProductFormModal = ({
       isOpen={isOpen}
       onClose={onClose}
       title={isEdit ? `Edit ${product?.name}` : 'New product'}
-      description="Prices are stored in paisa and shown as PKR. Stock is never typed here — it comes from purchases, sales and movements."
       size="lg"
       dismissible={!saving}
       footer={

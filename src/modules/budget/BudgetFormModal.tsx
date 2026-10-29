@@ -147,7 +147,6 @@ export const BudgetFormModal = ({
       isOpen={isOpen}
       onClose={onClose}
       title={mode === 'create' ? 'Create budget' : 'Edit budget'}
-      description="Your spend plan for one period, category by category."
       size="lg"
       dismissible={!saving}
     >

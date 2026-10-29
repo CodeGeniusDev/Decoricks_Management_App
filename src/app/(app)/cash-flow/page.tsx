@@ -406,10 +406,7 @@ export default function CashFlowPage() {
 
   return (
     <PageTransition>
-      <PageHeader
-        title="Cash Flow"
-        description="Where cash actually went — balances per account, capital in, withdrawals out."
-      />
+      <PageHeader title="Cash Flow" />
       <Card className="mb-4 p-4">
         <PeriodFilter value={filter} onChange={setFilter} busy={loading} />
       </Card>

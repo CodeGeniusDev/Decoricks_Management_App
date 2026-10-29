@@ -427,7 +427,6 @@ export default function FinanceTransactionsPage() {
     <PageTransition>
       <PageHeader
         title="Transactions"
-        description="The full ledger — every entry is permanent; mistakes are corrected with linked reversals."
         actions={
           <>
             <ExportLink href={exportHref} />

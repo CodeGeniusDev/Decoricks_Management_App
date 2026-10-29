@@ -269,7 +269,6 @@ export const ReturnFormModal = ({
       isOpen={isOpen}
       onClose={onClose}
       title={`Return ${order.orderNumber}`}
-      description="Returned units become stock movements, and the refund becomes a ledger entry that nets sales — in one action."
       size="lg"
       dismissible={!saving}
       footer={

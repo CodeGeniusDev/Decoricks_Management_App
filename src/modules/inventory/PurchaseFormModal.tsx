@@ -185,7 +185,6 @@ export const PurchaseFormModal = ({
       isOpen={isOpen}
       onClose={onClose}
       title="Record a purchase"
-      description="Stock comes in at a cost, the weighted average cost is restated, and the matching expense is posted to the ledger — as one action."
       size="lg"
       dismissible={!saving}
       footer={

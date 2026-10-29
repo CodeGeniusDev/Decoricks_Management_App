@@ -210,7 +210,7 @@ export default function FinanceOverviewPage() {
   if (loading) {
     return (
       <PageTransition>
-        <PageHeader title="Finance" description="Ledger overview, balances and cash flow." />
+        <PageHeader title="Finance" />
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} variant="rect" className="h-24" />

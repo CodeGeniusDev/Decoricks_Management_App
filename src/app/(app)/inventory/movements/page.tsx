@@ -306,10 +306,7 @@ export default function StockMovementsPage() {
 
   return (
     <PageTransition>
-      <PageHeader
-        title="Stock movements"
-        description="The append-only movement ledger. Mistakes are corrected with linked reversals, never edits."
-      />
+      <PageHeader title="Stock movements" />
 
       <SubNav items={INVENTORY_SUBNAV} />
 

@@ -156,10 +156,7 @@ export default function SalesReturnsPage() {
 
   return (
     <PageTransition>
-      <PageHeader
-        title="Returns"
-        description="Returned parcels: stock back through the movement ledger, refunds through the ledger — never edited away."
-      />
+      <PageHeader title="Returns" />
 
       <SubNav items={SALES_SUBNAV} />
 

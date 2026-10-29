@@ -110,7 +110,6 @@ export function ArchivedChatsModal({
       isOpen={isOpen}
       onClose={onClose}
       title="Archived Chats"
-      description="Closed channels and their full history. Nothing here was deleted."
       size="md"
       footer={
         <div className="flex justify-end">

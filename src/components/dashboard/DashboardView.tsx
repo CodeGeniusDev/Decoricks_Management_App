@@ -120,7 +120,7 @@ export default function DashboardView() {
                 new Date(data.range.end),
                 'date'
               )} · ${updatedLine(dash.lastUpdated, dash.stale)}`
-            : 'Sales, cash, inventory, orders, budget and team activity at a glance.'
+            : undefined
         }
         actions={
           /*

@@ -415,7 +415,6 @@ export default function ProfitLossPage() {
     <PageTransition>
       <PageHeader
         title="Profit & Loss"
-        description="Revenue, refunds, COGS, expenses and net profit — computed live from the ledger over Karachi periods (SPEC §5)."
         actions={
           <Link
             href="/distributions"

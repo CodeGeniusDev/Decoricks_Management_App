@@ -177,7 +177,6 @@ export default function FinanceAccountsPage() {
     <PageTransition>
       <PageHeader
         title="Accounts"
-        description="Manual cash, bank and wallet accounts. No bank integration — balances are computed from the ledger."
         actions={canManage ? <Button onClick={openCreate}>Add account</Button> : undefined}
       />
 

@@ -251,7 +251,6 @@ export default function InventoryOverviewPage() {
     <PageTransition>
       <PageHeader
         title="Inventory"
-        description="Stock by location, valued at weighted average cost. Every figure is derived from the movement ledger."
         actions={
           <>
             <ExportLink href="/api/stock/export" />

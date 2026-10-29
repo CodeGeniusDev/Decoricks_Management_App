@@ -211,10 +211,7 @@ export default function WeeklySummaryPage() {
   if (loading) {
     return (
       <PageTransition>
-        <PageHeader
-          title="Weekly Summary"
-          description="Sales, expenses and tasks for the current period."
-        />
+        <PageHeader title="Weekly Summary" />
         <div className="space-y-6">
           <div className="flex gap-4 mb-4">
             <Skeleton variant="rect" className="h-10 w-20" />
@@ -243,7 +240,7 @@ export default function WeeklySummaryPage() {
        */}
       <PageHeader
         title="Weekly Summary"
-        description={dateRange || 'Sales, expenses and tasks for the current period.'}
+        description={dateRange || undefined}
         actions={
           <HeaderActions>
             <div

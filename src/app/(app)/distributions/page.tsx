@@ -172,10 +172,7 @@ export default function DistributionsPage() {
         </div>
       )}
 
-      <PageHeader
-        title="Profit Distribution"
-        description="Monthly partner and charity shares, calculated from the ledger and the configured policy."
-      />
+      <PageHeader title="Profit Distribution" />
 
       {canApprove && (
         <Card className="mb-4 p-4">
