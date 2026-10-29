@@ -254,7 +254,6 @@ export const EntryFormModal = ({
       isOpen={isOpen}
       onClose={onClose}
       title="New transaction"
-      description="Records one entry in the ledger. Amount, date and account are enough to post it; the rest adds detail you can search later."
       size="md"
       dismissible={!submitting}
       footer={
@@ -286,7 +285,6 @@ export const EntryFormModal = ({
             setErrors({})
           }}
           options={typeOptions}
-          hint="This decides what the entry does to your money — the fields below change with it."
         />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

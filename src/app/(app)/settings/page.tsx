@@ -66,11 +66,6 @@ function SettingsInner() {
               return (
                 <Card className="p-6">
                   <h2 className="text-lg font-semibold text-decoricks-dark mb-4">Data Export</h2>
-                  <p className="mb-4 text-sm text-decoricks-dark/60">
-                    Download the current books as CSV files. Each export honors the same server-side
-                    permissions as the screens it comes from — the file contains exactly what your
-                    role is allowed to see.
-                  </p>
                   <div className="flex flex-wrap gap-2">
                     <ExportLink href="/api/finance/export">Transactions CSV</ExportLink>
                     <ExportLink href="/api/products/export">Products CSV</ExportLink>

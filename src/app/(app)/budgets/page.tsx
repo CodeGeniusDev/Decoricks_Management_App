@@ -456,7 +456,7 @@ export default function BudgetsPage() {
 
           <p className="mt-3 text-xs text-ink-muted">
             Budgets never store actual spend — every figure above is recomputed from the ledger on
-            load. Open a budget for its category breakdown, history and approvals.
+            load.
           </p>
         </>
       )}

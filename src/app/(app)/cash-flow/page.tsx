@@ -398,7 +398,7 @@ export default function CashFlowPage() {
     <PageTransition>
       <PageHeader
         title="Cash Flow"
-        description="Where cash actually went — balances per account, capital in, withdrawals out. Transfers never count as income or expense."
+        description="Where cash actually went — balances per account, capital in, withdrawals out."
       />
       <Card className="mb-4 p-4">
         <PeriodFilter value={filter} onChange={setFilter} busy={loading} />

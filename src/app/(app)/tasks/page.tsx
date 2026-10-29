@@ -833,7 +833,6 @@ export default function TasksBoardPage() {
     <PageTransition>
       <PageHeader
         title="Task board"
-        description="Team board — drag cards between columns, or use the Move-to dropdown. Keyboard: Tab to a card handle, press Space to lift, arrows to move, Space to drop."
         actions={
           founder && !loadingBoards && boards.length === 0 ? (
             <Button size="sm" onClick={() => setBoardModalOpen(true)}>
@@ -1126,7 +1125,6 @@ export default function TasksBoardPage() {
         isOpen={columnModalOpen}
         onClose={() => setColumnModalOpen(false)}
         title="Add column"
-        description="Only the Founder can add or archive columns. The board's done column controls completedAt on its cards."
         footer={
           <>
             <Button variant="ghost" onClick={() => setColumnModalOpen(false)}>
@@ -1148,7 +1146,6 @@ export default function TasksBoardPage() {
         isOpen={boardModalOpen}
         onClose={() => setBoardModalOpen(false)}
         title="Create board"
-        description="Only the Founder can create boards. A new board starts with the four default columns (To Do, In Progress, Review, Done)."
         footer={
           <>
             <Button variant="ghost" onClick={() => setBoardModalOpen(false)}>

@@ -164,7 +164,7 @@ export default function DistributionsPage() {
 
       <PageHeader
         title="Profit Distribution"
-        description="Monthly partner and charity shares, calculated from the ledger and the configured policy. Nothing here is automated — every record is a Founder decision."
+        description="Monthly partner and charity shares, calculated from the ledger and the configured policy."
       />
 
       {canApprove && (

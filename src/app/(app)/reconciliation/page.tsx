@@ -134,7 +134,7 @@ export default function ReconciliationPage() {
                 new Date(report.range.end),
                 'date'
               )} · generated ${formatKarachiDate(new Date(report.generatedAt), 'time')}`
-            : 'Independent re-computation of the money equalities. Any non-zero difference is a real fail.'
+            : undefined
         }
         actions={
           /*

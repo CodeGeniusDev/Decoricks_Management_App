@@ -636,7 +636,6 @@ export default function DistributionDetailPage() {
         isOpen={adjustOpen}
         onClose={() => (busy ? undefined : setAdjustOpen(false))}
         title="Profit-share adjustment"
-        description="Signed-off informally as a bonus or deduction against one partner's share. The reason is mandatory and goes to the audit log; the whole month is then re-split per the settings."
         footer={
           <>
             <Button variant="ghost" onClick={() => setAdjustOpen(false)} disabled={busy}>

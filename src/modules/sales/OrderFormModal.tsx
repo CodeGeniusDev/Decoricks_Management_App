@@ -312,7 +312,6 @@ export const OrderFormModal = ({
       isOpen={isOpen}
       onClose={onClose}
       title={isEdit ? `Edit ${order?.orderNumber}` : 'New order'}
-      description="Prices are taken from the product listing, never typed. Creating an order reserves the units at the chosen location."
       size="xl"
       dismissible={!saving}
       footer={

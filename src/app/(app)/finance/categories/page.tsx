@@ -209,11 +209,7 @@ export default function FinanceCategoriesPage() {
     <PageTransition>
       <PageHeader
         title="Categories"
-        description={
-          canManage
-            ? 'Seeded from SPEC Appendix A. Rename the label or deactivate; the stored slug never changes so history stays linked.'
-            : 'Seeded from SPEC Appendix A. Only the Founder can edit categories — this view is read-only.'
-        }
+        description={canManage ? undefined : 'Only the Founder can edit categories.'}
       />
 
       {toast && (

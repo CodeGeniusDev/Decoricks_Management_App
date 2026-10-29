@@ -239,7 +239,6 @@ export default function FinanceOverviewPage() {
 
       <PageHeader
         title="Finance"
-        description="Your money in one place: what you hold in cash, what came in, what went out and what the business earned."
         actions={
           <>
             <Button variant="outline" onClick={() => router.push('/finance/accounts')}>

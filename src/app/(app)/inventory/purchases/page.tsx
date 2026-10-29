@@ -320,7 +320,6 @@ export default function PurchasesPage() {
     <PageTransition>
       <PageHeader
         title="Purchases"
-        description="Goods received: stock in at cost, weighted average cost restated, ledger expense posted — one action."
         actions={
           canWriteAny ? (
             <Button onClick={() => setFormOpen(true)}>Record purchase</Button>

@@ -147,7 +147,7 @@ export const BudgetFormModal = ({
       isOpen={isOpen}
       onClose={onClose}
       title={mode === 'create' ? 'Create budget' : 'Edit budget'}
-      description="Your spend plan for one period, category by category. Only the plan is typed here — actual spend is read from the ledger later, so there is nothing to fill in on that side."
+      description="Your spend plan for one period, category by category."
       size="lg"
       dismissible={!saving}
     >
@@ -296,11 +296,6 @@ export const BudgetFormModal = ({
             {mode === 'create' ? 'Create budget' : 'Save changes'}
           </Button>
         </div>
-        <p className="text-xs text-ink-muted">
-          {mode === 'create'
-            ? 'Saving creates the budget as a Draft. The Founder approves it on the budget page to make it Active; spend is measured against it either way.'
-            : 'Saving keeps the previous allocations in the budget’s edit history, so the change is auditable.'}
-        </p>
       </form>
     </Modal>
   )

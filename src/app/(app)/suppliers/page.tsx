@@ -341,7 +341,6 @@ export default function SuppliersPage() {
       {!loadError && suppliers.length === 0 ? (
         <EmptyState
           title="No suppliers yet"
-          description="Add suppliers to manage your product supply chain. This list only shows suppliers you have added."
           action={{ label: 'Add Supplier', onClick: openModal }}
         />
       ) : (
