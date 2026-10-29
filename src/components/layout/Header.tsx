@@ -8,6 +8,7 @@ import { useAuth } from '@/components/auth/AuthProvider'
 import { NotificationBell } from '@/components/notifications/NotificationBell'
 import { SignOutModal } from '@/components/offline/SignOutModal'
 import { useOfflineQueueStats } from '@/hooks/useOfflineQueue'
+import { useBrowserOnline } from '@/hooks/useBrowserOnline'
 import {
   IconChevronDown,
   IconLogout,
@@ -31,7 +32,17 @@ export const Header = () => {
   const pathname = usePathname()
   const { toggleDrawer, isDrawerOpen } = useShellLayout()
   const { user, signOut } = useAuth()
-  const [isOnline, setIsOnline] = useState(true)
+  /*
+   * The browser's own connectivity, from the app's single reader. This used to be
+   * a hand-copied `useState(navigator.onLine)` plus its own `online`/`offline`
+   * listeners here, which is half of the reported mismatch: the pill measured one
+   * thing (the device), the dashboard chip measured another (the sync transport),
+   * and a reader comparing the two saw a lie in one of them. The pill keeps
+   * reporting exactly what it knows — whether THIS device has a connection — and
+   * `lib/sync/connection-view` now guarantees the chip answers "Offline" from the
+   * same fact, so the two can no longer disagree about being offline.
+   */
+  const isOnline = useBrowserOnline()
   const [menuOpen, setMenuOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [signOutModalOpen, setSignOutModalOpen] = useState(false)
@@ -42,24 +53,6 @@ export const Header = () => {
   const menuRef = useRef<HTMLDivElement>(null)
   const logoutRef = useRef<HTMLButtonElement>(null)
   usePressScale(logoutRef)
-
-  useEffect(() => {
-    setIsOnline(navigator.onLine)
-    const handleOnline = () => setIsOnline(true)
-    const handleOffline = () => setIsOffline()
-
-    function setIsOffline() {
-      setIsOnline(false)
-    }
-
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-    }
-  }, [])
 
   // Dismiss the account menu on outside click or Escape.
   useEffect(() => {

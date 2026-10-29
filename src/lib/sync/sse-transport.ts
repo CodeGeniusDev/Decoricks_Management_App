@@ -206,7 +206,20 @@ export function createSseTransport(options: SseTransportOptions = {}): SyncTrans
         window.removeEventListener('online', onOnline)
         window.removeEventListener('offline', onOffline)
       }
-      setConnection('offline', 'polling')
+      /*
+       * Teardown is not a network measurement, and this line used to report it as
+       * one. The coordinator stops the transport the moment its last subscriber
+       * unmounts (`coordinator.ts` — an ordinary client-side navigation), so this
+       * fired on a fully connected device and put red "Offline" on every chip that
+       * was still mounted. That is the reported mismatch: header "Online",
+       * dashboard "Offline", same phone, same second. Only the browser may say
+       * offline, so the store returns to the one claim that is true on teardown —
+       * nothing is connected right now, and the next `start()` will be the attempt
+       * that says more than that.
+       */
+      setConnection(
+        typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'connecting'
+      )
       onCursor = null
     },
   }

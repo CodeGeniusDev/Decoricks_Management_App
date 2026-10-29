@@ -1,34 +1,27 @@
 'use client'
 
-import { useConnectionState } from '@/lib/sync/useRealtime'
+import { useConnectionView } from '@/lib/sync/useRealtime'
 import { IconOffline } from '@/components/ui/icons'
+
+const TONE_DOT = {
+  success: 'bg-status-success',
+  warning: 'bg-status-warning',
+  danger: 'bg-status-danger',
+} as const
 
 /**
  * Realtime health, derived from the shared connection store — this component
- * opens nothing and holds no timers; it only reads. The wording is honest about
- * the delivery mode: an open SSE stream reads "Live", while the automatic
- * polling fallback reads "Live · sync" rather than pretending to be a stream.
+ * opens nothing and holds no timers; it only reads. The wording comes from
+ * `lib/sync/connection-view`, the same function the dashboard chip and the
+ * header now use, so there is exactly one meaning for each label app-wide: an
+ * open stream reads "Live", the automatic polling fallback reads "Updating every
+ * few seconds" rather than pretending to be a stream, and "Offline" is reserved
+ * for what the browser itself reports. This chip used to hold its own copy of
+ * that mapping, which is how two parts of the app ended up saying different
+ * things about one connection.
  */
 export function ConnectionStatus() {
-  const { state, mode } = useConnectionState()
-
-  const label =
-    state === 'live'
-      ? mode === 'sse'
-        ? 'Live'
-        : 'Live · syncing'
-      : state === 'connecting'
-        ? 'Connecting…'
-        : state === 'reconnecting'
-          ? 'Reconnecting…'
-          : 'Offline'
-
-  const dot =
-    state === 'live'
-      ? 'bg-status-success'
-      : state === 'offline'
-        ? 'bg-status-danger'
-        : 'bg-status-warning'
+  const { label, tone } = useConnectionView()
 
   return (
     <span
@@ -36,7 +29,7 @@ export function ConnectionStatus() {
       role="status"
       aria-live="polite"
     >
-      <span className={`h-2 w-2 rounded-full ${dot}`} aria-hidden />
+      <span className={`h-2 w-2 rounded-full ${TONE_DOT[tone]}`} aria-hidden />
       {label}
     </span>
   )

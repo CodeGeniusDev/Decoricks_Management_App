@@ -7,7 +7,7 @@ import { PageTransition } from '@/components/PageTransition'
 import { HeaderActions, PageHeader } from '@/components/layout/Page'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { useConnectionState } from '@/lib/sync/useRealtime'
+import { useConnectionView } from '@/lib/sync/useRealtime'
 import { formatKarachiDate } from '@/lib/date'
 
 import { useDashboard } from '@/lib/dashboard/useDashboard'
@@ -47,40 +47,43 @@ const DashboardCharts = dynamic(() => import('./charts'), {
 
 /*
  * Rendered twice, once per place it belongs at each width — see `PageHeader`'s
- * `eyebrow`. `useConnectionState` is a read-only subscription to the sync
- * coordinator (no connection is opened by it, `useDashboard` already owns that),
- * so a second instance costs one listener and nothing else.
+ * `eyebrow`. `useConnectionView` is a read-only subscription to the sync
+ * coordinator plus one `navigator.onLine` listener (no connection is opened by
+ * it, `useDashboard` already owns that), so a second instance costs one listener
+ * and nothing else.
  *
- * Four labels, not three. This used to fold `connecting` into "Reconnecting",
- * which is small but untrue: it says a stream already existed and dropped, and it
- * is what the chip read for seconds on a cold Render instance while the first
- * stream was still being opened. `offline` is now the only state that may say
- * Offline, and the store it reads cannot enter that state except from
- * `navigator.onLine === false` — see the seed in `lib/sync/connection.ts`. Same
- * four-way wording as `components/chat/ConnectionStatus`, which already had it.
+ * The words come from `lib/sync/connection-view`, which is the only place in the
+ * app allowed to turn health into a label. That is deliberate: this component
+ * used to hold its own four-way ternary over the store, the header held its own
+ * reading of `navigator.onLine`, and the two disagreed in production — green
+ * "Online" in the bar, red "Offline" here, same phone, same second. The
+ * transport was writing `offline` on teardown, which an ordinary navigation does
+ * on a connected device. Now the store cannot make that claim and this label
+ * function cannot repeat it: "Offline" here means the browser says so, and
+ * nothing else. Polling is named as polling ("Updating every few seconds")
+ * rather than dressed up as a stream, because a fallback that works is not a
+ * failure.
  */
-const ConnectionChip = ({ className = '' }: { className?: string }) => {
-  const { state } = useConnectionState()
-  const label =
-    state === 'live'
-      ? 'Live'
-      : state === 'offline'
-        ? 'Offline'
-        : state === 'connecting'
-          ? 'Connecting…'
-          : 'Reconnecting…'
-  const dot =
-    state === 'live'
-      ? 'bg-status-success'
-      : state === 'offline'
-        ? 'bg-status-danger'
-        : 'bg-status-warning'
+const TONE_DOT = {
+  success: 'bg-status-success',
+  warning: 'bg-status-warning',
+  danger: 'bg-status-danger',
+} as const
+
+const ConnectionChip = ({
+  className = '',
+  waking = false,
+}: {
+  className?: string
+  waking?: boolean
+}) => {
+  const { label, tone } = useConnectionView(waking)
   return (
     <span
-      title={`Realtime sync ${state}`}
+      title={`Realtime sync: ${label}`}
       className={`inline-flex items-center gap-1.5 rounded-full border border-line-subtle px-2.5 py-1 text-2xs font-medium text-ink-muted ${className}`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden />
+      <span className={`h-1.5 w-1.5 rounded-full ${TONE_DOT[tone]}`} aria-hidden />
       {label}
     </span>
   )
@@ -108,7 +111,7 @@ export default function DashboardView() {
            * belongs when there is no room beside it. From `sm` the chip returns to
            * the actions row and the eyebrow disappears: desktop is unchanged.
            */
-          <ConnectionChip className="mb-2 sm:hidden" />
+          <ConnectionChip waking={!!waking} className="mb-2 sm:hidden" />
         }
         description={
           data
@@ -123,7 +126,7 @@ export default function DashboardView() {
            * it while rendering the same `PeriodSelector`.
            */
           <HeaderActions>
-            <ConnectionChip className="hidden sm:inline-flex" />
+            <ConnectionChip waking={!!waking} className="hidden sm:inline-flex" />
             <PeriodSelector
               period={dash.period}
               customFrom={dash.customFrom}

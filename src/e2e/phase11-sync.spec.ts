@@ -10,11 +10,11 @@ import { AFNAN_STATE, CSRF_HEADER, FOUNDER_STATE, csrfFromState } from './helper
  * transport itself, plus the two claims the brief refuses to accept on trust:
  *
  *   1. **The live path really is the SSE stream** (not the poll). The connection
- *      chip reads exactly "Live" only when a frame arrives over `/api/events`;
- *      a poll that is carrying updates reads "Live · syncing", and only a
- *      carrier that has delivered nothing yet reads "Reconnecting…". Reading the
- *      `hello` frame directly additionally proves the stream is authorised per
- *      caller, not per deployment.
+ *      chip reads exactly "Live" only when a frame arrives over `/api/events`; a
+ *      poll that is carrying updates reads "Updating every few seconds", and only
+ *      a carrier that has delivered nothing yet reads "Reconnecting…". Reading
+ *      the `hello` frame directly additionally proves the stream is authorised
+ *      per caller, not per deployment.
  *   2. **Nothing is lost when the stream dies.** With `/api/events` blocked the
  *      page must still converge through the polling carrier, and the update
  *      made during the outage must still be there once the stream returns.
@@ -107,8 +107,8 @@ test.describe('phase 5 — cross-device synchronisation', () => {
     const page = await device.newPage()
     await page.goto('/chat')
 
-    // Exactly "Live" (not "Live · syncing", not "Reconnecting…") can only be
-    // produced by a frame received on the EventSource: the change-stream
+    // Exactly "Live" (not "Updating every few seconds", not "Reconnecting…") can
+    // only be produced by a frame received on the EventSource: the change-stream
     // watcher is therefore alive on this host and the stream is the carrier.
     await expect(statusChip(page)).toHaveText('Live', { timeout: 20_000 })
 
@@ -381,9 +381,9 @@ test.describe('phase 5 — cross-device synchronisation', () => {
     await chatPage.route('**/api/events**', (route) => route.abort())
     await stockPage.route('**/api/events**', (route) => route.abort())
     await chatPage.goto('/chat')
-    // "Live · syncing" is the polling carrier: sync is working, delivery is not
-    // instant, and the UI says so instead of crying reconnecting forever.
-    await expect(statusChip(chatPage)).toHaveText('Live · syncing', { timeout: 20_000 })
+    // "Updating every few seconds" is the polling carrier: sync is working,
+    // delivery is not instant, and the UI says so instead of crying offline.
+    await expect(statusChip(chatPage)).toHaveText('Updating every few seconds', { timeout: 20_000 })
 
     await stockPage.goto('/inventory')
     const sku = `SB-${uid()}`

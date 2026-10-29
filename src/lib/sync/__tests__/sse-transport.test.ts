@@ -243,11 +243,28 @@ describe('createSseTransport', () => {
     t.stop()
     expect(es.closed).toBe(true)
     expect(pollingStop).toHaveBeenCalled()
-    expect(setConnection).toHaveBeenLastCalledWith('offline', 'polling')
+    /*
+     * `connecting`, not `offline`. Teardown is not a network measurement: the
+     * coordinator stops the transport whenever its last subscriber unmounts, so
+     * this fired on ordinary client-side navigation on a fully connected device
+     * and put red "Offline" on every chip still mounted — the reported header
+     * "Online" vs dashboard "Offline" mismatch. Only the browser may say offline.
+     */
+    expect(setConnection).toHaveBeenLastCalledWith('connecting')
 
     // A pending timer must not resurrect polling after we stopped.
     pollingStart.mockClear()
     vi.advanceTimersByTime(5000)
     expect(pollingStart).not.toHaveBeenCalled()
+  })
+
+  it('stop() does report offline when the browser itself says it has no connection', () => {
+    defineGlobal('navigator', { onLine: false })
+    const t = createSseTransport()
+    t.start(vi.fn())
+    setConnection.mockClear()
+
+    t.stop()
+    expect(setConnection).toHaveBeenLastCalledWith('offline')
   })
 })

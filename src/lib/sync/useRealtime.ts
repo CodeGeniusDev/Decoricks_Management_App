@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { syncCoordinator, type SyncSubscription } from './coordinator'
 import { subscribeConnection, type ConnectionState, type ConnectionMode } from './connection'
+import { connectionView } from './connection-view'
+import { useBrowserOnline } from '@/hooks/useBrowserOnline'
 import type { SyncModule } from './types'
 
 /**
@@ -117,4 +119,20 @@ export function useConnectionState(): { state: ConnectionState; mode: Connection
   )
   useEffect(() => subscribeConnection(setSnapshot), [])
   return snapshot
+}
+
+/**
+ * The chip's words, from the store's facts *and* the browser's.
+ *
+ * `waking` is passed in by the data layer, because "the server is booting" is
+ * something only a request can discover; the transport knows its own state, not
+ * why the API is quiet.
+ */
+export function useConnectionView(waking = false): {
+  label: string
+  tone: 'success' | 'warning' | 'danger'
+} {
+  const { state, mode } = useConnectionState()
+  const online = useBrowserOnline()
+  return connectionView({ state, mode, online, waking })
 }
