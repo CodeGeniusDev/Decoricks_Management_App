@@ -10,7 +10,6 @@ import { Badge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ErrorState } from '@/components/ui/ErrorState'
-import { HelpPanel } from '@/components/ui/HelpPanel'
 import { Select } from '@/components/ui/Select'
 import { Table } from '@/components/ui/Table'
 import { Toast } from '@/components/ui/Toast'
@@ -358,36 +357,6 @@ export default function BudgetsPage() {
             )}
           </>
         }
-      />
-
-      {/* Phase 2 §8: every term on this table is a figure the server computed, so
-          the page explains how each one is derived rather than leaving the reader
-          to guess whether "Spent" was typed in by someone. */}
-      <HelpPanel
-        className="mb-4"
-        title="How budgeting works here"
-        persistKey="budgets"
-        defaultOpen
-        intro="A budget is a plan for one period, split per category. Nothing in the Spent and Used columns is typed in by anyone — it is re-added from the ledger on every load of this page."
-        items={[
-          {
-            title: 'Allocated',
-            body: 'What the Founder planned to spend on a category between the period start and end dates.',
-          },
-          {
-            title: 'Spent',
-            body: 'Expense entries in that category dated inside the period, summed from the ledger. Categories with no allocation are not counted here — that is unplanned spend, visible on the P&L.',
-          },
-          {
-            title: 'Used',
-            body: 'Spent as a share of the allocation. A category is flagged at 80% and again at 100%; both thresholds are set by the Founder in business settings.',
-          },
-          {
-            title: 'Draft, Active, Archived',
-            body: 'A new budget starts as a Draft. Approving it on the budget’s own page makes it the plan of record; archiving keeps every figure for history instead of deleting the row.',
-          },
-        ]}
-        footer="Editing, approving and archiving live on the budget’s own page — open any row."
       />
 
       {visible.length === 0 ? (

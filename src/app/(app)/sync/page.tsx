@@ -18,7 +18,6 @@ import { useAuth } from '@/components/auth/AuthProvider'
 import { PageHeader, PageSection } from '@/components/layout/Page'
 import { Metric, MetricGrid } from '@/components/layout/Page'
 import { Card } from '@/components/ui/Card'
-import { HelpPanel } from '@/components/ui/HelpPanel'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -150,42 +149,6 @@ export default function SyncPage() {
             </Button>
           </>
         }
-      />
-
-      {/* Phase 2 §8: "sync" is the word most likely to be misread as automatic
-          backup. The panel states what is stored where, and what Discard does
-          and does not delete. */}
-      <HelpPanel
-        className="mb-4"
-        title="What “sync” means here"
-        persistKey="sync"
-        defaultOpen
-        intro="A record created with no connection is kept on this device, not on the server. This page is that queue: it shows what is waiting, what has been confirmed, and what needs a decision from you."
-        steps={[
-          'An offline entry is stored locally and listed as Waiting to sync. Nothing has reached the ledger yet.',
-          'Sync now replays the queue in order, each entry under the same idempotency key the form already used — so a retry can never create the record twice.',
-          'The server’s answer decides the row. Accepted becomes Synced; refused becomes Needs your attention, with the reason shown.',
-          'A row that needs attention can be retried or edited and resubmitted. Discarding deletes it from this device only, and asks first.',
-        ]}
-        items={[
-          {
-            title: 'Waiting to sync',
-            body: 'Saved in this browser’s own storage, so it survives closing the tab or restarting the app. Clearing site data removes it — that is the one way an unsent entry can be lost.',
-          },
-          {
-            title: 'Needs your attention',
-            body: 'The server refused the entry — a validation problem or a conflict with something already saved. It is never dropped silently.',
-          },
-          {
-            title: 'Synced (last 24h)',
-            body: 'Confirmed by the server in the last day. Those rows are ordinary ledger entries now and appear on the page that owns them.',
-          },
-          {
-            title: 'Clear local data',
-            body: 'Empties this device’s queue and its stored drafts. It cannot undo anything already confirmed on the server.',
-          },
-        ]}
-        footer="Sync is per device. Another partner’s phone has its own queue and its own unsent drafts."
       />
 
       <MetricGrid>

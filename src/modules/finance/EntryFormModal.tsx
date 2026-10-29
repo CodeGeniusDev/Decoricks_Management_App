@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Modal } from '@/components/ui/Modal'
-import { HelpPanel } from '@/components/ui/HelpPanel'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
@@ -49,136 +48,6 @@ interface EntryFormModalProps {
   onCreated: (entry: EntryView, replayed: boolean) => void
   /** Entry stored in the offline queue instead of the server (design §6.1). */
   onQueued?: () => void
-}
-
-/**
- * EntryFormModal — create a ledger entry.
- *
- * Double submits are prevented twice: the button disables while a request is in
- * flight, and a ref guard rejects a second `submit()` from a fast click that
- * beats React's re-render. The idempotency key is generated when the modal
- * opens and kept across failed attempts, so a retry after a network drop can
- * never create a duplicate; a fresh key is minted only after a success.
- *
- * The type picker decides which fields appear, so the form explains each type
- * in plain language and tells the reader what saving actually does (Phase 2 §2).
- * Every statement here mirrors `transactionEffect` in src/lib/finance.ts; if a
- * rule changes there, this text has to change with it.
- */
-
-interface TypeHelp {
-  title: string
-  intro: string
-  items: { title: string; body: string }[]
-  footer?: string
-}
-
-/**
- * One entry per ledger type, keyed exactly as `LEDGER_ENTRY_TYPES` spells it.
- *
- * The three rows are always Cash / Profit / Where it shows, because those are
- * the three questions a mis-picked type actually breaks: a Transfer looks like
- * money arriving and a Partner withdrawal looks like an expense, and neither is.
- */
-const TYPE_HELP: Record<LedgerEntryType, TypeHelp> = {
-  income: {
-    title: 'What does “Income” mean?',
-    intro: 'Money the business earned, posted into one account.',
-    items: [
-      { title: 'Cash', body: 'Goes up by the amount in the account you choose.' },
-      {
-        title: 'Profit',
-        body: 'Counted as revenue. Income and Expense are the only two types that reach a profit figure.',
-      },
-      { title: 'Where it shows', body: 'Finance, the P&L and every period report.' },
-    ],
-  },
-  expense: {
-    title: 'What does “Expense” mean?',
-    intro: 'Money the business spent, taken out of one account.',
-    items: [
-      { title: 'Cash', body: 'Goes down by the amount in the account you choose.' },
-      {
-        title: 'Profit',
-        body: 'Counted as an operating expense, so profit falls by the same amount. Of the six entry types, only Income and Expense affect profit.',
-      },
-      {
-        title: 'Where it shows',
-        body: 'Finance, the P&L, budget actuals and the category totals.',
-      },
-    ],
-    footer: 'A category is required: it is what decides whether the spend counts against a budget.',
-  },
-  transfer: {
-    title: 'What does “Transfer” mean?',
-    intro: 'Moving your own money between two of your own accounts.',
-    items: [
-      {
-        title: 'Cash',
-        body: 'Unchanged in total — one account goes down and the other goes up by exactly the same amount.',
-      },
-      {
-        title: 'Profit',
-        body: 'No effect at all. Nothing was earned or spent, so the P&L ignores this entry.',
-      },
-      {
-        title: 'Where it shows',
-        body: 'The two account statements, and the cash movements list.',
-      },
-    ],
-    footer: 'Use this to bank cash, top up a float, or move money between partners’ accounts.',
-  },
-  partner_capital: {
-    title: 'What does “Partner capital” mean?',
-    intro: 'A partner putting their own money into the business.',
-    items: [
-      { title: 'Cash', body: 'Goes up by the amount in the account you choose.' },
-      {
-        title: 'Profit',
-        body: 'No effect. Money invested is not money earned, so it is never counted as revenue.',
-      },
-      {
-        title: 'Where it shows',
-        body: 'The equity section, separate from income and expenses.',
-      },
-    ],
-    footer: 'Recording capital as Income would overstate profit and change what gets distributed.',
-  },
-  partner_withdrawal: {
-    title: 'What does “Partner withdrawal” mean?',
-    intro: 'A partner taking money out of the business for themselves.',
-    items: [
-      { title: 'Cash', body: 'Goes down by the amount in the account you choose.' },
-      {
-        title: 'Profit',
-        body: 'No effect. Drawing money out is not a cost of trading, so it never reduces profit.',
-      },
-      {
-        title: 'Where it shows',
-        body: 'The equity section and the partner’s own ledger.',
-      },
-    ],
-    footer: 'Withdrawals are locked while a distribution for the period is unapproved.',
-  },
-  reinvestment: {
-    title: 'What does “Reinvestment” mean?',
-    intro: 'Profit agreed to be kept in the business instead of shared out.',
-    items: [
-      {
-        title: 'Cash',
-        body: 'Nothing moves. This is a decision about where profit belongs, not a payment.',
-      },
-      {
-        title: 'Profit',
-        body: 'No effect either — the profit has already been earned; only its destination changes.',
-      },
-      {
-        title: 'Where it shows',
-        body: 'The equity section, and the reinvested line of the distribution it came from.',
-      },
-    ],
-    footer: 'Reinvested money is recorded so a later distribution starts from the right pool.',
-  },
 }
 
 export const EntryFormModal = ({
@@ -380,19 +249,6 @@ export const EntryFormModal = ({
     (t) => t !== 'partner_withdrawal' || canApprove
   ).map((t) => ({ value: t, label: ENTRY_TYPE_LABELS[t] }))
 
-  /**
-   * Per-type help, mirroring `transactionEffect` in `src/lib/finance.ts` line for
-   * line: which account balance moves, whether the entry counts as cash in/out,
-   * and whether it belongs in a profit figure at all. Six types and two of them
-   * move money without touching profit — that is exactly the distinction a form
-   * should not leave implicit.
-   *
-   * Deliberately never `defaultOpen`: a panel that starts open pushes the amount
-   * field down on every entry, and the toggle's accessible name is the question
-   * it answers, so the closed state is also the readable one.
-   */
-  const typeHelp = TYPE_HELP[type]
-
   return (
     <Modal
       isOpen={isOpen}
@@ -431,13 +287,6 @@ export const EntryFormModal = ({
           }}
           options={typeOptions}
           hint="This decides what the entry does to your money — the fields below change with it."
-        />
-
-        <HelpPanel
-          title={typeHelp.title}
-          intro={typeHelp.intro}
-          items={typeHelp.items}
-          footer={typeHelp.footer}
         />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

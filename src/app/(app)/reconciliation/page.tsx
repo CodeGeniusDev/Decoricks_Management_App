@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PageTransition } from '@/components/PageTransition'
 import { HeaderActions, PageHeader } from '@/components/layout/Page'
 import { Card } from '@/components/ui/Card'
-import { HelpPanel } from '@/components/ui/HelpPanel'
 import { Table } from '@/components/ui/Table'
 import { Badge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -157,40 +156,6 @@ export default function ReconciliationPage() {
             />
           </HeaderActions>
         }
-      />
-
-      {/* Phase 2 §8: this page is the one place where a reader has to trust two
-          numbers that look identical. The panel says what is being compared and
-          what a failure actually means. */}
-      <HelpPanel
-        title="What this page actually checks"
-        persistKey="reconciliation"
-        defaultOpen
-        intro="Every row asks the same question twice: the figure your dashboards show, and the same figure rebuilt independently from the raw ledger. If the two disagree, one of them is wrong — and this page is where it surfaces."
-        steps={[
-          'The selected period is resolved to Karachi boundaries, then the whole ledger is read once.',
-          'Each money equality is computed by the reporting engine and again by a separate reduce over the same entries.',
-          'The two results are subtracted. Anything but zero is reported as a fail, in paisa — never rounded away or corrected.',
-        ]}
-        items={[
-          {
-            title: 'Recomputed',
-            body: 'The independent result — code that does not reuse the reporting engine’s own totals.',
-          },
-          {
-            title: 'Reported',
-            body: 'What the dashboard, P&L and reports currently show you.',
-          },
-          {
-            title: 'Difference',
-            body: 'Reported minus recomputed, in paisa. A non-zero value means money exists somewhere the two paths disagree about.',
-          },
-          {
-            title: 'The rows change',
-            body: 'Inventory, budget and account checks only appear when there is stock, an active budget or configured accounts to compare against.',
-          },
-        ]}
-        footer="A fail is a finding, not a warning: nothing on this page writes to the ledger."
       />
 
       {firstPaint && (
