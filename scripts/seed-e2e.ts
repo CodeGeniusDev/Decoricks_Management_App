@@ -53,6 +53,25 @@ import {
  *
  * SPEC list contents mirror `scripts/seed.ts` (kept standalone because seed.ts
  * executes `main()` on import; if a list changes there, change it here too).
+ *
+ * TWO THINGS THIS SCRIPT IS NOW RESPONSIBLE FOR, BOTH LEARNED FROM A RED SUITE.
+ *
+ *   **`--reset` wipes the test database, and only the test database.** The
+ *   disposable DB is where the specs leave their mess — dozens of `SEC Lockout
+ *   Probe` accounts, hundreds of ledger rows — and the only honest way to clear
+ *   it is a named, guarded command in the same script that owns the guards, not
+ *   a `mongosh` session where the connection string can be mistyped. The same
+ *   `assertTestTarget` check that protects an ordinary seed runs before a single
+ *   collection is dropped.
+ *   **One display name, one account.** Chat mentions are resolved by display
+ *   name on the server (see `src/lib/chat-mentions.ts`), so a test database that
+ *   holds two active users called "E2E Afnan" — which is what running this script
+ *   twice with different `E2E_*_EMAIL` values used to leave behind, because
+ *   upserts key on email — sends `@E2E Afnan` to whichever duplicate MongoDB
+ *   returns last, and `phase3-collab` then fails while every gate in the product
+ *   is behaving correctly. Provisioning now retires any other active account
+ *   carrying the name it just wrote. That is a data fix in the data layer; the
+ *   ambiguity in the product itself is documented in docs/E2E_RUNBOOK.md.
  */
 
 const loadEnvLocal = (): void => {
@@ -71,6 +90,16 @@ const E2E_DB = process.env.E2E_DB ?? process.env.MONGODB_TEST_DB ?? 'decoricks_t
 const FOUNDER_EMAIL = (process.env.E2E_FOUNDER_EMAIL ?? '').toLowerCase()
 const AFNAN_EMAIL = (process.env.E2E_AFNAN_EMAIL ?? 'afnan@decoricks.com').toLowerCase()
 const E2E_PASSWORD = process.env.E2E_PASSWORD ?? ''
+
+/**
+ * `--reset` empties the test database before re-provisioning it, so a run starts
+ * from the state the specs assume rather than from everything the last few
+ * hundred tests left behind. Destructive, and therefore reachable only by name:
+ * an ordinary seed never drops anything, and the drop still has to clear
+ * `assertTestTarget` first, which is the same check that stops a credential
+ * upsert landing on a real account.
+ */
+const RESET = process.argv.includes('--reset')
 
 const SPEC_EXPENSE_CATEGORIES: Array<[name: string, label: string]> = [
   ['meta_ads', 'Meta Ads'],
@@ -133,6 +162,14 @@ const upsertRoles = async (db: Db): Promise<number> => {
  * the suite working after any manual password edit in it. `mustChangePassword`
  * is false so `auth.setup.ts` lands on the dashboard instead of the forced
  * change-password screen.
+ *
+ * `name` is in the `$set` as well as in the insert, and that is the half that
+ * makes this idempotent rather than merely upserting: the document is keyed on
+ * email, so an account that already existed under a different display name used
+ * to keep the old one forever while the script printed the new one. Everything
+ * downstream — the mention autocomplete, the assignee list, this file's own
+ * duplicate check — reads the name, so the name has to be part of what the seed
+ * guarantees.
  */
 const upsertE2EUser = async (
   db: Db,
@@ -144,12 +181,19 @@ const upsertE2EUser = async (
   const now = new Date()
   const existing = await db.collection<User>('users').findOne({ email })
   if (existing) {
-    await db
-      .collection<User>('users')
-      .updateOne(
-        { _id: existing._id },
-        { $set: { passwordHash, isActive: true, mustChangePassword: false, role, updatedAt: now } }
-      )
+    await db.collection<User>('users').updateOne(
+      { _id: existing._id },
+      {
+        $set: {
+          name,
+          passwordHash,
+          isActive: true,
+          mustChangePassword: false,
+          role,
+          updatedAt: now,
+        },
+      }
+    )
     return existing._id!
   }
   const doc: User = {
@@ -165,6 +209,56 @@ const upsertE2EUser = async (
   }
   const result = await db.collection<User>('users').insertOne(doc)
   return result.insertedId
+}
+
+/**
+ * Deactivate every OTHER active account that carries the display name just
+ * provisioned, and report which ones went.
+ *
+ * Why this is the seed's job: an e2e display name is not cosmetic, it is a
+ * lookup key. `loadMentionDirectory` returns active users, `findMentions` folds
+ * that list into a `Map` of name → id, and a database with two active "E2E Afnan"
+ * rows therefore has no defined answer to `@E2E Afnan` — the last one in `_id`
+ * order wins and the alert goes to a person nobody logs in as. The specs are
+ * correct and the product is correct; the data was neither.
+ *
+ * Deactivating rather than deleting is deliberate. `isActive: false` removes the
+ * account from every resolution path the suite cares about (directory, mention,
+ * notification, login) while leaving its rows intact for anything that still
+ * points at them — tasks assigned to it, messages it wrote — so clearing the
+ * collision cannot itself invent dangling references in a database that other
+ * specs read. The stale account stays in the DB as evidence; only its name stops
+ * competing.
+ */
+const retireDuplicateDisplayNames = async (
+  db: Db,
+  name: string,
+  keepId: User['_id']
+): Promise<string[]> => {
+  const collisions = await db
+    .collection<User>('users')
+    .find({ name, _id: { $ne: keepId }, isActive: { $ne: false } })
+    .project({ email: 1 })
+    .toArray()
+  if (collisions.length === 0) return []
+
+  const now = new Date()
+  await db
+    .collection<User>('users')
+    .updateMany({ name, _id: { $ne: keepId } }, { $set: { isActive: false, updatedAt: now } })
+  return collisions.map((c) => c.email ?? '(no email)')
+}
+
+/**
+ * Drop every collection in the resolved test database. Called only under
+ * `--reset`, and only after `assertTestTarget` and `assertScriptDatabaseConsent`
+ * have both passed, so the name being dropped is provably a test name and
+ * provably not the one the application resolves to.
+ */
+const resetTestDatabase = async (db: Db): Promise<number> => {
+  const names = (await db.listCollections().toArray()).map((c) => c.name)
+  for (const name of names) await db.collection(name).drop()
+  return names.length
 }
 
 const seedFinance = async (db: Db, founderId: User['_id']): Promise<void> => {
@@ -338,13 +432,42 @@ const main = async () => {
     // database it would refuse here without DECORICKS_ALLOW_PROD_DB=1.
     assertScriptDatabaseConsent(db.databaseName, { script: 'scripts/seed-e2e.ts' })
 
+    /*
+     * Before anything is written, and after every guard above: `--reset` empties
+     * the database it has just proved is disposable. Indexes go with the
+     * collections, which is why `ensureAuthIndexes` sits after this rather than
+     * where it used to be first.
+     */
+    const dropped = RESET ? await resetTestDatabase(db) : 0
+
     await ensureAuthIndexes(db)
     const roleCount = await upsertRoles(db)
     const passwordHash = await hashPassword(E2E_PASSWORD)
     const founderId = await upsertE2EUser(db, FOUNDER_EMAIL, 'E2E Founder', 'founder', passwordHash)
-    await upsertE2EUser(db, AFNAN_EMAIL, 'E2E Afnan', 'partner_afnan', passwordHash)
+    const afnanId = await upsertE2EUser(db, AFNAN_EMAIL, 'E2E Afnan', 'partner_afnan', passwordHash)
+
+    /*
+     * One display name, one active account. Reported rather than silent: the last
+     * thing a duplicate should do is disappear without a trace, because the
+     * symptom it produces ("the mention went to nobody") looks like an app bug and
+     * costs a morning of reading `chat-mentions.ts` to explain.
+     */
+    const retiredFounder = await retireDuplicateDisplayNames(db, 'E2E Founder', founderId)
+    const retiredAfnan = await retireDuplicateDisplayNames(db, 'E2E Afnan', afnanId)
+
     await seedFinance(db, founderId)
     await seedNotifications(db, founderId)
+
+    if (dropped) console.log(`--reset: dropped ${dropped} collection(s) from "${E2E_DB}".`)
+    for (const [name, emails] of [
+      ['E2E Founder', retiredFounder],
+      ['E2E Afnan', retiredAfnan],
+    ] as const) {
+      if (emails.length > 0)
+        console.log(
+          `Retired ${emails.length} other active account(s) named "${name}" (deactivated, rows kept): ${emails.join(', ')}`
+        )
+    }
 
     console.log(
       `E2E database "${E2E_DB}" ready: ${roleCount} roles, founder ${FOUNDER_EMAIL}, partner ${AFNAN_EMAIL}, finance configuration.`
