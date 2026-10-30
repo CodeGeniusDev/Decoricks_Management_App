@@ -44,7 +44,15 @@ const OfflineContext = createContext<OfflineStatus>({ isOnline: true, sessionReq
 /** Banner/chip read-model for any shell component (Header uses it). */
 export const useOfflineStatus = (): OfflineStatus => useContext(OfflineContext)
 
-const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+/**
+ * How often a long-lived tab asks the platform for a new worker on its own
+ * timer. Navigations already re-check `sw.js`, so this only covers the tab that
+ * is never closed — a free host can sleep for hours and a deploy that lands in
+ * that window must not have to wait a working day to be noticed.
+ */
+const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000
+/** Floor for the focus/visibility re-check, so tabbing back in is not a fetch storm. */
+const UPDATE_CHECK_FLOOR_MS = 60 * 1000
 
 export const OfflineProvider = ({ children }: { children: React.ReactNode }) => {
   const { user } = useAuth()
@@ -86,24 +94,39 @@ export const OfflineProvider = ({ children }: { children: React.ReactNode }) => 
     if (!userId) return
     const teardown = startSyncTriggers(userId)
     // The worker serves `/_next/static` cache-first and document navigations
-    // stale-while-revalidate (public/sw.js). That is correct for a deployed
-    // shell but fatal under `next dev`: dev chunk paths are reused across
-    // rebuilds, so a cache-first hit hands the browser the *previous* build's
-    // module and Fast Refresh "had to perform a full reload". Register only in
-    // production; in development, take down any worker left over from a
-    // `next start`/preview on the same origin so it stops controlling the tab.
+    // network-first with the cache as the offline fallback (public/sw.js). That
+    // is correct for a deployed shell but fatal under `next dev`: dev chunk
+    // paths are reused across rebuilds, so a cache-first hit hands the browser
+    // the *previous* build's module and Fast Refresh "had to perform a full
+    // reload". Register only in production; in development, take down any
+    // worker left over from a `next start`/preview on the same origin so it
+    // stops controlling the tab.
     if (process.env.NODE_ENV === 'production') {
       void ensureServiceWorker()
-      // A sleeping host never fires the SW's own lifecycle; ask for updates on
-      // a client timer instead (design §5).
-      const timer = setInterval(() => {
+      // A sleeping host never fires the SW's own lifecycle; ask for updates on a
+      // client timer instead (design §5), and again the moment the tab is
+      // actually being looked at — the same self-healing rule the read layer
+      // follows for data. Throttled so flipping between tabs is not a fetch per
+      // focus event.
+      let lastCheck = Date.now()
+      const check = () => {
+        if (Date.now() - lastCheck < UPDATE_CHECK_FLOOR_MS) return
+        lastCheck = Date.now()
         void getServiceWorker()
           .then((reg) => reg?.update())
           .catch(() => undefined)
-      }, UPDATE_CHECK_INTERVAL_MS)
+      }
+      const timer = setInterval(check, UPDATE_CHECK_INTERVAL_MS)
+      const onVisible = () => {
+        if (document.visibilityState === 'visible') check()
+      }
+      window.addEventListener('focus', check)
+      document.addEventListener('visibilitychange', onVisible)
       return () => {
         teardown()
         clearInterval(timer)
+        window.removeEventListener('focus', check)
+        document.removeEventListener('visibilitychange', onVisible)
       }
     }
     void unregisterServiceWorker()

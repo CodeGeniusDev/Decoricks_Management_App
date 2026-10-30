@@ -1,14 +1,18 @@
 /**
  * Service-worker registration for Phase 9 Web Push (design §5, §10 / D7).
  *
- * Registered LAZILY — only when the user clicks "Enable notifications" — never on
- * page load. Registering a SW is not itself a permission prompt, but keeping it
- * behind a gesture means an unengaging visitor gets no background worker and no
- * surprise, and it matches the brief's "ask only after a user action."
+ * Registration has two entry points, deliberately. Step 3's offline shell needs a
+ * worker controlling the app before any prompt, so `OfflineProvider` registers it
+ * eagerly in production builds (and unregisters it in development, where a
+ * cache-first worker breaks Fast Refresh). "Enable notifications" uses the same
+ * idempotent `ensureServiceWorker`, which is what makes push work on a browser
+ * that never visited the offline path. Registering a SW is not itself a
+ * permission prompt — the prompt only comes from `showNotification`/`subscribe`,
+ * both behind a gesture.
  *
- * The Step 2 worker has no `fetch` handler, so registering it cannot cache or
- * serve anything; it exists purely to receive push events. Step 3 layers versioned
- * offline caching onto this same registration.
+ * The Step 2 worker only received push events. Step 3 layered versioned offline
+ * caching onto this same registration, which is why every cache decision lives in
+ * `public/sw.js` and nothing in page code touches the Cache API directly.
  *
  * Browser-only: every export no-ops on the server so it can never leak into a
  * server bundle graph and reference `navigator`.
@@ -63,5 +67,24 @@ export async function unregisterServiceWorker(): Promise<void> {
     await registration.unregister()
   } catch {
     // Best-effort; a failed unregister is not worth surfacing to the user.
+  }
+}
+
+/**
+ * Ask the active worker to drop the cached DOCUMENTS only — the shell, the icons
+ * and the hashed build assets stay, so the next sign-in is not a cold download.
+ *
+ * Unregistering instead would also kill push delivery for a device that merely
+ * signed out of one account, and keeping a signed-out account's page snapshots
+ * on a shared machine is not what "wipe on logout" means. The worker owns the
+ * cache names, so this posts a message rather than reaching into the Cache API
+ * from page code.
+ */
+export async function purgePageCaches(): Promise<void> {
+  const registration = await getServiceWorker()
+  try {
+    registration?.active?.postMessage({ type: 'PURGE_PAGE_CACHES' })
+  } catch {
+    // Best-effort: the document hand-off below already leaves a fresh app.
   }
 }

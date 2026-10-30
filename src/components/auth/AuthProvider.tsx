@@ -4,6 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { apiFetch } from '@/lib/api-client'
 import type { PermissionSet } from '@/lib/models/User'
 import { setLivePermissions } from '@/lib/permissions-client'
+import { purgePageCaches } from '@/lib/push/register-service-worker'
 
 /**
  * Client-side session state.
@@ -166,6 +167,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await apiFetch('/api/auth/logout', { method: 'POST' })
     } finally {
+      // The service worker holds cached copies of the screens this account
+      // visited. Ask it to drop the documents (nothing else) before the
+      // document hand-off below, so a second account on the same machine never
+      // gets a snapshot of the first one's navigation history.
+      void purgePageCaches()
       applyUser(null)
     }
   }, [applyUser])

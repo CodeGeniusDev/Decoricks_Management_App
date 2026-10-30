@@ -83,7 +83,20 @@ const nextConfig = {
   allowedDevOrigins: ['localhost:127.0.0.1', 'localhost::1'],
   poweredByHeader: false,
   async headers() {
-    return [{ source: '/:path*', headers: securityHeaders }]
+    return [
+      { source: '/:path*', headers: securityHeaders },
+      {
+        /*
+         * The worker's update check is a byte comparison against this file, so a
+         * copy served from the HTTP cache makes a new deploy invisible: the old
+         * worker keeps serving its own caches and the `UPDATE_READY` prompt never
+         * fires. `no-cache` still permits storage — it forces revalidation, which
+         * is exactly what an update check needs, and costs one 304 for a 9 KB file.
+         */
+        source: '/sw.js',
+        headers: [{ key: 'Cache-Control', value: 'no-cache' }],
+      },
+    ]
   },
 }
 

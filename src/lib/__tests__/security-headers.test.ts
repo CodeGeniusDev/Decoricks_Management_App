@@ -19,9 +19,17 @@ describe('security headers', () => {
     expect(config.poweredByHeader).toBe(false)
   })
 
-  it('applies to every path through a single catch-all group', async () => {
+  it('applies to every path through the catch-all group', async () => {
     const headers = await headersFor('/api/finance')
     expect(headers.size).toBeGreaterThan(0)
+  })
+
+  it('revalidates the service worker script, so a cached sw.js cannot hide a new deploy', async () => {
+    const groups = await config.headers()
+    const worker = groups.find((group) => group.source === '/sw.js')
+    expect(worker?.headers.find((header) => header.key === 'Cache-Control')?.value).toBe('no-cache')
+    // The security group is a catch-all, so it still covers this path.
+    expect(groups.some((group) => group.source === '/:path*')).toBe(true)
   })
 
   it('blocks MIME sniffing, framing and referrer leakage', async () => {

@@ -483,9 +483,17 @@ colors = brand colors (no gradients), `start_url: '/'`, `scope: '/'`.
 1. **Precached app shell** (versioned cache `decoricks-shell-v{n}`): the login
    page HTML, the offline fallback page, core static chunks, fonts, brand assets.
    Installed on `install`, activated (old versions deleted) on `activate`.
-2. **Runtime caches (stale-while-revalidate)** for navigational HTML of
-   already-visited authenticated screens and hashed immutable assets under
-   `_next/static/*` (safe to cache forever — content-hashed filenames).
+2. **Runtime caches** for navigational HTML of already-visited authenticated
+   screens and hashed immutable assets under `_next/static/*` (safe to cache
+   forever — content-hashed filenames). The two classes are served
+   differently on purpose: hashed assets are cache-first, while a **document
+   navigation is network-first** with the cache as the offline fallback. A saved
+   HTML snapshot belongs to the build that wrote it and points at that build's
+   chunk filenames, so serving it first would keep a tab on an old deploy — and
+   could ask for chunks the new deploy no longer publishes. Documents are only
+   fetched on a real page load (client-side route changes go through RSC
+   requests, which are never cached), so waiting for the network costs no extra
+   navigations.
 3. **Never-cached / network-only:** **every `/api/*` response** — financial reads,
    writes, the sync route, notifications, events stream. This satisfies "do not
    cache financial API responses." The service worker explicitly bypasses cache
@@ -503,8 +511,22 @@ colors = brand colors (no gradients), `start_url: '/'`, `scope: '/'`.
   Refresh" prompt (GSAP fade, respects reduced-motion); refreshing (or the user
   clicking the prompt, which posts `SKIP_WAITING`) activates the new version. This
   gives a _controlled_ update, no half-swapped cache, no stale-swipe.
-- `navigator.serviceWorker.register()` + an `update()` check on app open and
-  every N hours (client timer, not SW) to detect new deploys on the sleeping host.
+- `navigator.serviceWorker.register()` + an `update()` check on app open, every
+  15 minutes on a client timer (not in the SW) and again when the tab regains
+  focus or visibility (throttled to one check a minute) — a sleeping free-tier
+  host never fires the SW's own lifecycle, and a tab that is never closed must
+  still notice a deploy.
+- `/sw.js` is served with `Cache-Control: no-cache` (`next.config.js`). The
+  update check is a byte comparison against that file, so an HTTP-cached copy
+  would make a new deploy invisible; `no-cache` still allows storage, it only
+  forces revalidation.
+- Bumping the cache family `n` is required whenever the **policy** changes, not
+  only when the shell set changes: `activate` is what discards documents an
+  older policy wrote.
+- On sign-out the client posts `PURGE_PAGE_CACHES`, which deletes the
+  `decoricks-pages-*` caches only — the shell and hashed assets stay, so the
+  next sign-in is not a cold download, and no cached copy of one account's
+  screens survives into the next session on a shared machine.
 
 **Offline navigation:** if a navigation request fails and is not in cache, serve a
 tiny **offline fallback page** ("You're offline — X entries pending", with a link
