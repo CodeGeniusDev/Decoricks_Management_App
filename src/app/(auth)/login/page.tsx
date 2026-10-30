@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input'
 import { BrandMark } from '@/components/layout/BrandMark'
 import { IconAlert, IconEye, IconEyeOff, IconLock } from '@/components/ui/icons'
 import { useRevealOnMount } from '@/lib/gsap'
+import { safeRedirectPath } from '@/lib/safe-redirect'
 
 function LoginForm() {
   const router = useRouter()
@@ -24,8 +25,9 @@ function LoginForm() {
   const cardRef = useRef<HTMLDivElement>(null)
   useRevealOnMount(cardRef)
 
-  const nextPath = searchParams.get('next')
-  const safeNext = nextPath && /^\/(?!\/)/.test(nextPath) ? nextPath : '/'
+  // `?next=` is attacker-suppliable on a public page, so it is validated by
+  // `safeRedirectPath` rather than by a "one leading slash" test here.
+  const safeNext = safeRedirectPath(searchParams.get('next'))
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
