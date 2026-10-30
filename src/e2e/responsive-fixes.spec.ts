@@ -404,3 +404,109 @@ test.describe('cold start on Render', () => {
     await shot(page, testInfo, 'truly-offline')
   })
 })
+
+test.describe('headers left without their explanatory line', () => {
+  /*
+   * Brief item 2 took the "how this page works" sentences out of page headers and
+   * section titles. Deleting a line of copy from a component that used to render
+   * it has two failure modes, and both are measurable rather than a matter of
+   * taste: the element can stay in the DOM with nothing in it — a visible band of
+   * empty space — or the block can keep the rhythm it had when it was two lines
+   * tall, so the page opens with a hole under the title.
+   *
+   * `PageHeader` renders `{description && <p …>}`, so the paragraph should be gone
+   * rather than empty, and the header block's own `mb-5` (20px) is the only space
+   * between it and whatever follows. Asserted on every page that lost copy, at a
+   * phone width and a desktop width.
+   *
+   * Chromium only, deliberately: the loop sets its own viewport widths, so a Pixel
+   * 5 and an iPad Pro run would measure the same 360px and 1280px layout a third
+   * time under a different DPR — the pointer model matters for the tooltip and the
+   * panels above, and not at all for a gap between two blocks.
+   */
+  const ROUTES = [
+    '/',
+    '/finance',
+    '/finance/transactions',
+    '/finance/accounts',
+    '/budgets',
+    '/cash-flow',
+    '/profit-loss',
+    '/weekly-summary',
+    '/inventory',
+    '/inventory/products',
+    '/inventory/movements',
+    '/sales',
+    '/sales/returns',
+    '/distributions',
+    '/sync',
+    '/tasks',
+  ]
+
+  /*
+   * Scoped inside `main`, and that is not a style preference. Every signed-in
+   * screen in this app carries TWO `<h1>` — the shell Header's `titleForPath`
+   * label and `PageHeader`'s title (a condition `NotFoundPanel.tsx` documents by
+   * name). A bare `h1` therefore measures the wrong block: its nearest ancestor
+   * with a bottom margin is the fixed header, not the page title, and the gap
+   * assertion would silently compare nothing.
+   */
+  const probe = (page: Page) =>
+    page.evaluate(() => {
+      const h1 = document.querySelector('main h1') ?? document.querySelector('h1')
+      const block = h1?.closest('div[class*="mb-"]') ?? null
+      const next = block?.nextElementSibling ?? null
+      const empties = Array.from(document.querySelectorAll('p'))
+        .filter((p) => {
+          const r = p.getBoundingClientRect()
+          if (r.height <= 0 || p.offsetParent === null) return false
+          return (p.textContent ?? '').trim() === ''
+        })
+        .map((p) => `${p.className}`.split(' ').slice(0, 2).join(' ') || p.tagName.toLowerCase())
+      const gap =
+        block && next
+          ? Math.round(next.getBoundingClientRect().top - block.getBoundingClientRect().bottom)
+          : null
+      return { title: h1?.textContent?.trim() ?? '(no h1)', gap, empties }
+    })
+
+  for (const width of [360, 1280]) {
+    test(`no empty band and no hole under the title at ${width}px`, async ({ page }, testInfo) => {
+      test.skip(testInfo.project.name !== 'chromium', 'Width is set by the test, not the project')
+      const measured: Record<string, number | string> = {}
+      for (const route of ROUTES) {
+        await openAt(page, width, route)
+        await expect(page.locator('main h1')).toBeVisible()
+        const result = await probe(page)
+        expect(result.empties, `${route} left an empty paragraph at ${width}px`).toEqual([])
+        measured[route] = result.gap ?? '(header block is the last element)'
+        if (result.gap !== null) {
+          expect(
+            result.gap,
+            `${route} opens with a ${result.gap}px hole under the title at ${width}px`
+          ).toBeLessThanOrEqual(24)
+          expect(
+            result.gap,
+            `${route} header overlaps the content below it at ${width}px`
+          ).toBeGreaterThanOrEqual(0)
+        }
+      }
+
+      /*
+       * The numbers the assertions ran on, attached to the report. A guard that
+       * silently measured nothing is worse than no guard: `gap === null` skips, so
+       * this records what was actually measured and fails if that was nothing.
+       */
+      await testInfo.attach(`header-gaps-${width}.json`, {
+        body: JSON.stringify(measured, null, 2),
+        contentType: 'application/json',
+      })
+      expect(
+        Object.values(measured).filter((v) => typeof v === 'number').length,
+        'no page exposed a header block to measure'
+      ).toBeGreaterThanOrEqual(ROUTES.length - 1)
+
+      await shot(page, testInfo, `header-copy-removed-${width}`)
+    })
+  }
+})
