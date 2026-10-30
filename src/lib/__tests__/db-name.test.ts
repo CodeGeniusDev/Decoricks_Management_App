@@ -264,6 +264,24 @@ describe('assertScriptDatabaseConsent', () => {
 })
 
 describe('bareProdTestWarning — warn (never crash) on the live "test" DB', () => {
+  /*
+   * `isInTestRunner` reads the ambient `E2E_TEST_MODE` as well as the injected
+   * env, so these assertions are only theirs when the flag is off. Without this
+   * block the suite fails for a developer who has the e2e exports from
+   * docs/E2E_RUNBOOK.md in their shell, reporting "the production gate is broken"
+   * when nothing but the environment moved. Same isolation as `resolveDatabase`.
+   */
+  const originalE2E = process.env.E2E_TEST_MODE
+
+  beforeEach(() => {
+    delete process.env.E2E_TEST_MODE
+  })
+
+  afterEach(() => {
+    if (originalE2E === undefined) delete process.env.E2E_TEST_MODE
+    else process.env.E2E_TEST_MODE = originalE2E
+  })
+
   it('warns when the resolved name is the bare "test" outside a test runner', () => {
     const warning = bareProdTestWarning('test', false)
     expect(warning).toMatch(/OUTSIDE a test runner/)
@@ -299,6 +317,20 @@ describe('bareProdTestWarning — warn (never crash) on the live "test" DB', () 
 
 describe('productionDatabaseRefusal / assertProductionRunnable — hard boot gate (Phase 11)', () => {
   const prod = { nodeEnv: 'production', inTestRunner: false }
+
+  // `assertProductionRunnable` defaults its runner check to `isInTestRunner()`,
+  // which reads the ambient flag — the same isolation as the block above, so a
+  // developer's e2e exports cannot make the boot gate look disabled.
+  const originalE2E = process.env.E2E_TEST_MODE
+
+  beforeEach(() => {
+    delete process.env.E2E_TEST_MODE
+  })
+
+  afterEach(() => {
+    if (originalE2E === undefined) delete process.env.E2E_TEST_MODE
+    else process.env.E2E_TEST_MODE = originalE2E
+  })
 
   it('refuses a production process with no explicit database (driver would fall back to "test")', () => {
     const msg = productionDatabaseRefusal({ dbName: undefined, source: 'driver default' }, prod)
