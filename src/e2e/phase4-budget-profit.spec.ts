@@ -250,8 +250,24 @@ test.describe('phase 4 — budgeting and profit tracking', () => {
       await adjustDialog.getByLabel('Reason (required, audit-logged)').fill('E2E: test deduction')
       await adjustDialog.getByRole('button', { name: 'Apply adjustment' }).click()
       await expect(adjustDialog).toHaveCount(0)
+      /*
+       * What a re-split leaves in the shipped UI is the adjustment itself: both
+       * the per-partner badge in the share table and the reason list under the
+       * phone's share card render `adjustment.reason`
+       * (`src/app/(app)/distributions/[id]/page.tsx`). This spec used to wait for
+       * a caption — "Adjustments were applied after the first calculation." —
+       * which commit 8810f3e replaced with the payout notice, so the assertion has
+       * been red ever since against correct product behaviour. The stored reason
+       * is the better target anyway: a caption renders whether or not anything
+       * was applied, the reason only exists if the deduction actually landed.
+       *
+       * `visible=true` because that share is painted twice on purpose — a table
+       * badge from `md` up, a reason list below it on a phone — and the DOM-first
+       * match is the hidden one at a phone width. The same duplication the Live
+       * chip has, which `responsive-fixes.spec.ts` guards by selector.
+       */
       await expect(
-        page.getByText('Adjustments were applied after the first calculation.')
+        page.getByText('E2E: test deduction').locator('visible=true').first()
       ).toBeVisible()
       // No stale numbers: the proof still closes after the re-split.
       await expect(proof).toBeVisible()

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { FOUNDER_STATE } from './helpers'
+import { CSRF_HEADER, FOUNDER_STATE, csrfFromState } from './helpers'
 
 /**
  * Phase 4 regression guards — performance, sidebar usability, smooth UX.
@@ -445,15 +445,45 @@ test.describe('phase 4 — narrow-screen containment', () => {
     expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1)
   })
 
-  test('icon-only controls stay thumb-sized on a phone', async ({ page }) => {
+  test('icon-only controls stay thumb-sized on a phone', async ({ page, request }) => {
     await page.setViewportSize({ width: 390, height: 844 })
+
+    /*
+     * Deterministic precondition, learned from a red run: the board this screen
+     * selects on load is whichever board `/api/boards` lists first, and the suite
+     * creates boards as it goes — so the test used to look for a drag grip on a
+     * board that happened to be empty and fail against a correct product.
+     * Guarantee a board exists (the create route seeds the default columns), then
+     * create the card whose grip is measured below.
+     */
+    const listed = (await (await request.get('/api/boards')).json()) as {
+      data: { boards: Array<{ _id: string }> }
+    }
+    if ((listed.data.boards ?? []).length === 0) {
+      const created = await request.post('/api/boards', {
+        headers: { [CSRF_HEADER]: csrfFromState(FOUNDER_STATE) },
+        data: { name: `E2E thumb targets ${Date.now()}` },
+      })
+      expect(created.status()).toBe(200)
+    }
+
     await page.goto('/tasks')
     await settle(page)
 
+    const title = `Thumb grip ${Date.now().toString(36)}`
+    const todo = page
+      .locator('section')
+      .filter({ has: page.getByRole('heading', { name: 'To Do', exact: true }) })
+    await todo.getByLabel('Add card').click()
+    const modal = page.getByRole('dialog')
+    await modal.getByLabel('Title').fill(title)
+    await modal.getByRole('button', { name: 'Create task' }).click()
+
     // The board's drag grip is the only pointer path between columns; at 16x24 it
-    // was unreachable with a thumb.
-    const grip = page.getByLabel(/Drag .* to another column/).first()
-    await expect(grip).toBeVisible()
+    // was unreachable with a thumb. Measured on the card this test just made, so
+    // the label is unique and the bounding box belongs to exactly one element.
+    const grip = page.getByLabel(`Drag ${title} to another column`, { exact: true })
+    await expect(grip).toBeVisible({ timeout: 20_000 })
     const box = await grip.boundingBox()
     expect(box!.width).toBeGreaterThanOrEqual(32)
     expect(box!.height).toBeGreaterThanOrEqual(32)
