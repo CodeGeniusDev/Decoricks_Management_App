@@ -33,7 +33,19 @@ test.describe('authentication flow', () => {
     await page.setExtraHTTPHeaders(clientIpHeaders())
     await page.goto('/login')
 
-    await page.getByLabel('Email', { exact: true }).fill('nobody@decoricks.com')
+    /*
+     * A unique unknown address, for the same reason `phase10-security.spec.ts`
+     * creates a uniquely-emailed probe: the lockout is keyed by EMAIL in the
+     * database, not by device. This test records one failed attempt per project
+     * per run, so a fixed address reaches the 5-attempt threshold after two full
+     * runs (or one full run plus a re-run of this file alone) and the next
+     * answer is a 429 lockout instead of the credential error asserted below —
+     * measured, not theoretical: it is exactly how this test went red on Mobile
+     * Chrome and Tablet while the identical chromium test passed.
+     */
+    await page
+      .getByLabel('Email', { exact: true })
+      .fill(`nobody-${Date.now().toString(36)}@decoricks.test`)
     await page.getByLabel('Password', { exact: true }).fill('WrongPassword123')
     await page.getByRole('button', { name: 'Sign in' }).click()
     /*
@@ -61,6 +73,51 @@ test.describe('authentication flow', () => {
     await page.getByRole('button', { name: /account menu/i }).click()
     await page.getByRole('menuitem', { name: 'Sign out' }).click()
     await expect(page).toHaveURL(/\/login/, { timeout: 15_000 })
+  })
+
+  /*
+   * Item 4 — the login screen follows `?next=` after accepting a password, and
+   * the query string is whatever a link in an email said. The unit test
+   * (`src/lib/__tests__/safe-redirect.test.ts`) pins the parser rule; this proves
+   * the shipped bundle actually refuses to leave the origin, because the only
+   * place the rule matters is the moment a real session exists.
+   *
+   * `.test` is reserved (RFC 6761), so a regression cannot turn into a request to
+   * somebody's real domain — it fails to resolve and the assertion below fails on
+   * the URL instead.
+   */
+  for (const [label, hostile] of [
+    ['protocol-relative', '//evil.test'],
+    ['backslash-normalised', '/\\evil.test'],
+    ['absolute', 'https://evil.test/tasks'],
+  ] as const) {
+    test(`a hostile ?next (${label}) cannot carry a signed-in user off this origin`, async ({
+      page,
+    }) => {
+      await page.setExtraHTTPHeaders(clientIpHeaders())
+      await page.goto(`${BASE_URL}/login?next=${hostile}`)
+      await page.getByLabel('Email', { exact: true }).fill(FOUNDER_EMAIL)
+      await page.getByLabel('Password', { exact: true }).fill(E2E_PASSWORD)
+      await page.getByRole('button', { name: 'Sign in' }).click()
+
+      // Signed in, and still on this app: `/login?next=…` must not have been
+      // followed to `evil.test`, and the fallback destination is the dashboard.
+      await expect(page.locator('#main-content')).toBeVisible({ timeout: 15_000 })
+      const url = new URL(page.url())
+      expect(url.origin, `sign-in with next=${hostile} left the origin`).toBe(BASE_URL)
+      expect(url.pathname).toBe('/')
+    })
+  }
+
+  test('a friendly ?next still returns the user to where they were headed', async ({ page }) => {
+    // The guard is not a blanket "always go home": refusing a legitimate
+    // destination would be the regression that actually breaks daily use.
+    await page.setExtraHTTPHeaders(clientIpHeaders())
+    await page.goto(`${BASE_URL}/login?next=/tasks`)
+    await page.getByLabel('Email', { exact: true }).fill(FOUNDER_EMAIL)
+    await page.getByLabel('Password', { exact: true }).fill(E2E_PASSWORD)
+    await page.getByRole('button', { name: 'Sign in' }).click()
+    await expect(page).toHaveURL((url) => url.pathname === '/tasks', { timeout: 15_000 })
   })
 })
 
