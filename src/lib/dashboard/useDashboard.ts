@@ -60,6 +60,13 @@ export type DashboardPeriod = 'day' | 'week' | 'month' | 'custom'
 const POLL_MS = 60_000
 const POLL_MS_FALLBACK = 90_000
 
+/**
+ * How long a realtime signal waits before it is worth a snapshot read, so a
+ * burst of module signals costs one request. Below the 500 ms the e2e stampede
+ * guard treats as a duplicate, above the latency a user can notice.
+ */
+const SIGNAL_COALESCE_MS = 750
+
 export interface DashboardState {
   data: DashboardMetrics | null
   loading: boolean
@@ -465,11 +472,29 @@ export function useDashboard(): DashboardState {
    * A remote change re-reads the snapshot in place (`background`), keeping the
    * numbers on screen painted rather than blanking them (Phase 6 §3.1, §5.2).
    * Kept out of the effect above on purpose.
+   *
+   * SIGNALS COALESCE INTO ONE READ. Two module signals inside a second are
+   * ordinary — a write in another tab can touch finance and budget at once, and
+   * the dashboard tracks both. Each used to fire its own snapshot read, and a
+   * local round trip of a hundred milliseconds means the first read has already
+   * released `bgInFlight` by the time the second trigger lands, so the in-flight
+   * guard cannot stop it: the same expensive aggregate query twice within half a
+   * second, which is exactly the stampede `phase4-performance` measures and what
+   * this screen used to do intermittently under concurrent specs. The read is
+   * deferred a short window and every later signal re-arms that window, so a
+   * burst costs one request and still ends on the newest data.
+   *
+   * `loadRef` rather than `load` in the dependencies, deliberately: `load` is
+   * rebuilt whenever the applied range changes, and a rebuilt callback used to
+   * re-run this effect and spend an extra background read on top of the
+   * foreground read the range change already owns. The timeout also fires after
+   * a mount-identical tick, which is why the guard on `syncTick === 0` stays.
    */
   useEffect(() => {
     if (syncTick === 0) return
-    void load(true)
-  }, [syncTick, load])
+    const id = window.setTimeout(() => void loadRef.current(true), SIGNAL_COALESCE_MS)
+    return () => window.clearTimeout(id)
+  }, [syncTick])
 
   /*
    * The one timer that is always running, whatever the health store claims.
