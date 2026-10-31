@@ -9,6 +9,7 @@ import { NotificationBell } from '@/components/notifications/NotificationBell'
 import { SignOutModal } from '@/components/offline/SignOutModal'
 import { useOfflineQueueStats } from '@/hooks/useOfflineQueue'
 import { useBrowserOnline } from '@/hooks/useBrowserOnline'
+import { Avatar } from '@/components/ui/Avatar'
 import {
   IconChevronDown,
   IconLogout,
@@ -191,9 +192,7 @@ export const Header = () => {
               aria-haspopup="menu"
               className="flex h-11 items-center gap-1.5 rounded-md pl-1.5 pr-1 transition-colors hover:bg-surface-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-decoricks-brown"
             >
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-decoricks-dark text-xs font-semibold text-white">
-                {(user?.name ?? '?').charAt(0).toUpperCase()}
-              </span>
+              <Avatar name={user?.name ?? '?'} src={user?.avatarUrl} size="sm" />
               <span className="hidden text-sm font-medium text-ink-secondary sm:inline">
                 {user?.name ?? 'Account'}
               </span>

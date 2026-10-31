@@ -53,6 +53,7 @@ import {
   HiOutlineCalendarDays,
   HiOutlineBanknotes,
   HiOutlineLink,
+  HiOutlineCamera,
 } from 'react-icons/hi2'
 import {
   LuLayoutDashboard,
@@ -159,3 +160,6 @@ export const IconCalculation = LuCalculator
 
 /** Phase 3 collaboration glyphs. */
 export const IconReference = HiOutlineLink
+
+/** Profile picture affordance — the badge on the avatar that opens the picker. */
+export const IconCamera = HiOutlineCamera

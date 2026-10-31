@@ -1,6 +1,8 @@
 import { Collection, Db } from 'mongodb'
 import { ObjectId } from 'mongodb'
 import type { NotificationType } from '@/lib/notifications/types'
+import type { ImageContentType } from '@/lib/image-signature'
+import { avatarUrlFor } from '@/lib/models/Avatars'
 
 /**
  * Role permissions exactly as SPEC.md §4.2 / Appendix A.
@@ -70,6 +72,21 @@ export interface User {
    * always-read-with-the-user map with no independent query need.
    */
   notificationPrefs?: Partial<Record<NotificationType, { enabled: boolean }>>
+  /**
+   * Profile picture: a reference into the `avatars` collection, never the bytes
+   * themselves (see `src/lib/models/Avatars.ts` for why the image lives in its
+   * own collection). All four fields are written together in one `updateOne` by
+   * `PUT /api/profile/avatar`, and all four are cleared by `DELETE` — so a
+   * pointer without a document behind it is not a state the app can reach.
+   *
+   * Every field is optional at read time for the same reason `notificationPrefs`
+   * is: existing users simply have none, and a missing key means the
+   * initial-based avatar, not an error.
+   */
+  avatarFileId?: ObjectId
+  avatarContentType?: ImageContentType
+  avatarSizeBytes?: number
+  avatarUpdatedAt?: Date
 }
 
 export interface Role {
@@ -217,6 +234,15 @@ export const userToJSON = (user: User) => {
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
     lastLoginAt: user.lastLoginAt,
+    /**
+     * Where the picture is served from, or `undefined` — which every avatar in
+     * the app reads as "show the initial". It is a path, not the image, so this
+     * stays a small JSON payload on the session-check hot path.
+     *
+     * It is present on the user *list* too, which is harmless: the route behind
+     * it serves bytes to the owner and to nobody else.
+     */
+    avatarUrl: avatarUrlFor(user),
   }
 }
 

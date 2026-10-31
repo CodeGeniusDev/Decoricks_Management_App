@@ -12,7 +12,7 @@ import { ObjectId } from 'mongodb'
  *     `{ quantity: { $gte: n } }` filter is evaluated against the state at the
  *     moment the update is applied — the property that makes two concurrent
  *     sales of the last unit serialize instead of both succeeding;
- *   • `$inc`, `$set`, `$setOnInsert` and upsert.
+ *   • `$inc`, `$set`, `$setOnInsert`, `$unset` and upsert.
  *
  * Only the operators the app actually uses are implemented; anything else is an
  * explicit error rather than a silent no-op, so a test can never pass by
@@ -55,6 +55,43 @@ const setPath = (doc: Doc, path: string, value: unknown): void => {
     target = target[part] as Doc
   }
   target[last] = value
+}
+
+/**
+ * `unsetPath` is the mirror of `setPath`: it removes the key rather than writing
+ * it, so a `{ 'a.b': '' }` unset drops `b` and leaves `a` standing.
+ */
+const unsetPath = (doc: Doc, path: string): void => {
+  const parts = path.split('.')
+  const last = parts.pop() as string
+  let target = doc
+  for (const part of parts) {
+    const next = target[part]
+    if (!next || typeof next !== 'object') return
+    target = next as Doc
+  }
+  delete target[last]
+}
+
+/**
+ * Applies the update operators of one write to one document, in the driver's
+ * order of business: removals, then sets, then increments.
+ *
+ * `$unset` is here because production uses it (`change-password` clears
+ * `passwordResetAt`, the profile-picture route clears its avatar pointer) and a
+ * fake that silently ignored it would make "the field is gone" assertions pass
+ * without the code having removed anything — the exact class of vacuous test this
+ * helper exists to prevent.
+ */
+const applyUpdate = (
+  target: Doc,
+  update: { $inc?: Doc; $set?: Doc; $setOnInsert?: Doc; $unset?: Doc }
+): void => {
+  for (const key of Object.keys(update.$unset ?? {})) unsetPath(target, key)
+  for (const [key, value] of Object.entries(update.$set ?? {})) setPath(target, key, value)
+  for (const [key, value] of Object.entries(update.$inc ?? {})) {
+    setPath(target, key, Number(getPath(target, key) ?? 0) + Number(value))
+  }
 }
 
 /**
@@ -366,7 +403,7 @@ export class MemCollection {
    */
   private applyOne(
     filter: Doc,
-    update: { $inc?: Doc; $set?: Doc; $setOnInsert?: Doc },
+    update: { $inc?: Doc; $set?: Doc; $setOnInsert?: Doc; $unset?: Doc },
     opts: { upsert?: boolean; session?: unknown },
     session: MemSession | undefined
   ): {
@@ -389,12 +426,9 @@ export class MemCollection {
         if (isOperatorObject(value)) continue
         created[key] = value
       }
-      for (const [key, value] of Object.entries(update.$set ?? {})) setPath(created, key, value)
+      applyUpdate(created, update)
       for (const [key, value] of Object.entries(update.$setOnInsert ?? {}))
         setPath(created, key, value)
-      for (const [key, value] of Object.entries(update.$inc ?? {})) {
-        setPath(created, key, Number(getPath(created, key) ?? 0) + Number(value))
-      }
       // An explicit `_id` in the filter is carried onto the new document, as
       // MongoDB does — a counter upserted by `_id` has to be findable by that
       // same `_id` afterwards, or it would never increment.
@@ -411,10 +445,7 @@ export class MemCollection {
 
     const target = this.docs[index]
     const before = { ...target }
-    for (const [key, value] of Object.entries(update.$set ?? {})) setPath(target, key, value)
-    for (const [key, value] of Object.entries(update.$inc ?? {})) {
-      setPath(target, key, Number(getPath(target, key) ?? 0) + Number(value))
-    }
+    applyUpdate(target, update)
     this.updateCount += 1
     session?.record(() => {
       if (this.docs[index] === target) this.docs[index] = before
@@ -430,7 +461,7 @@ export class MemCollection {
    */
   async updateOne(
     filter: Doc,
-    update: { $inc?: Doc; $set?: Doc; $setOnInsert?: Doc },
+    update: { $inc?: Doc; $set?: Doc; $setOnInsert?: Doc; $unset?: Doc },
     opts: { upsert?: boolean; session?: unknown } = {}
   ): Promise<{
     acknowledged: true
@@ -452,12 +483,12 @@ export class MemCollection {
    * Applies the same read-modify-write to every matching document.
    *
    * The chat migration (`ensureChatCollections`) backfills legacy rows with
-   * `updateMany`, so the fake needs it; each matched doc goes through the
-   * synchronous `$set`/`$inc` path exactly as `updateOne` does.
+   * `updateMany`, so the fake needs it; each matched doc goes through the same
+   * `$unset`/`$set`/`$inc` path as `updateOne`.
    */
   async updateMany(
     filter: Doc,
-    update: { $inc?: Doc; $set?: Doc; $setOnInsert?: Doc },
+    update: { $inc?: Doc; $set?: Doc; $setOnInsert?: Doc; $unset?: Doc },
     opts: { session?: unknown } = {}
   ): Promise<{ acknowledged: true; matchedCount: number; modifiedCount: number }> {
     await Promise.resolve()
@@ -466,12 +497,14 @@ export class MemCollection {
     for (const doc of this.docs) {
       if (!matches(doc, filter)) continue
       const before = { ...doc }
-      for (const [key, value] of Object.entries(update.$set ?? {})) setPath(doc, key, value)
-      for (const [key, value] of Object.entries(update.$inc ?? {})) {
-        setPath(doc, key, Number(getPath(doc, key) ?? 0) + Number(value))
-      }
+      applyUpdate(doc, update)
       matched += 1
-      session?.record(() => Object.assign(doc, before))
+      session?.record(() => {
+        // `Object.assign` alone cannot un-write an `$unset`, so the keys the
+        // update introduced are dropped before the old values go back in.
+        for (const key of Object.keys(doc)) if (!(key in before)) delete doc[key]
+        Object.assign(doc, before)
+      })
     }
     return { acknowledged: true, matchedCount: matched, modifiedCount: matched }
   }
@@ -486,7 +519,7 @@ export class MemCollection {
    */
   async findOneAndUpdate(
     filter: Doc,
-    update: { $inc?: Doc; $set?: Doc; $setOnInsert?: Doc },
+    update: { $inc?: Doc; $set?: Doc; $setOnInsert?: Doc; $unset?: Doc },
     opts: { upsert?: boolean; returnDocument?: 'before' | 'after'; session?: unknown } = {}
   ): Promise<Doc | null> {
     await Promise.resolve()

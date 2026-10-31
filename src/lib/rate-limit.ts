@@ -121,3 +121,24 @@ export const cronAuthFailureLimiter = new SlidingWindowRateLimiter(10, 60_000)
 
 /** Process-wide ceiling on failed cron attempts, immune to IP rotation. */
 export const cronAuthFailureGlobalLimiter = new SlidingWindowRateLimiter(30, 60_000)
+
+/**
+ * Profile-picture writes (upload, replace, remove), keyed by USER rather than IP.
+ *
+ * The reason it is not IP-keyed like the auth limiters: an office of four
+ * teammates shares one egress IP through Render's proxy, and an IP bucket would
+ * let one person's re-uploads lock their colleagues out of their own profile.
+ * The asset being protected is a single small image per person, so ownership is
+ * the meaningful identity here.
+ *
+ * 30 per minute is far above a human replacement rate — the UI disables the
+ * submit button while an upload is in flight, so the realistic worst case is
+ * deliberate, repeated choose-and-save — while still turning an automated loop
+ * into a 429 long before it can write its way through the storage budget that
+ * the free-tier database shares with every financial record.
+ *
+ * Reads are not limited at all: the bytes are served from a URL that changes on
+ * every replacement and is cached `immutable`, so a page refresh costs a cache
+ * hit rather than a database read.
+ */
+export const avatarWriteLimiter = new SlidingWindowRateLimiter(30, 60_000)

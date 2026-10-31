@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getDatabase } from '@/lib/mongodb'
 import { getUserCollection, requiresPasswordChange } from '@/lib/models/User'
+import { avatarUrlFor } from '@/lib/models/Avatars'
 import { successResponse, validationError, errorResponse } from '@/lib/api-response'
 import { getRequestMeta, handleRouteError } from '@/lib/http'
 import { getRole } from '@/lib/authorization'
@@ -145,6 +146,17 @@ export async function POST(request: Request) {
         email: user.email,
         name: user.name,
         role: user.role,
+        /*
+         * Where the member's profile picture is served from, or absent when they
+         * have never uploaded one. It travels with the sign-in answer for the
+         * same reason `permissions` does below: the client renders the header
+         * avatar from this object immediately after `router.replace`, and the
+         * session check that would otherwise supply it does not run again inside
+         * the same document — so without it a member would see their initial
+         * until a manual reload. Display data only; the bytes it points at are
+         * served by an owner-checked route.
+         */
+        avatarUrl: avatarUrlFor(user),
         // The client uses this to force the change-password screen.
         mustChangePassword: requiresPasswordChange(user),
       },

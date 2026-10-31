@@ -52,7 +52,23 @@ export const apiFetch = async (input: string, init: RequestInit = {}): Promise<R
   const method = (init.method ?? 'GET').toUpperCase()
   const headers = new Headers(init.headers)
 
-  if (init.body !== undefined && !headers.has('Content-Type')) {
+  /*
+   * A `FormData` body must be left without a `Content-Type`. The browser generates
+   * `multipart/form-data` for it including the boundary parameter the server needs
+   * to split the parts apart, and stamping `application/json` on top — which is
+   * what the default below does for every other body — produces a request whose
+   * header contradicts its bytes, so `request.formData()` on the other end fails.
+   *
+   * The same reasoning covers `URLSearchParams` and `Blob`, which the fetch
+   * standard also types as bodies with their own natural content type. Everything
+   * else in this app sends JSON, which is what the fallback is for.
+   */
+  const browserSetsContentType =
+    (typeof FormData !== 'undefined' && init.body instanceof FormData) ||
+    (typeof URLSearchParams !== 'undefined' && init.body instanceof URLSearchParams) ||
+    (typeof Blob !== 'undefined' && init.body instanceof Blob)
+
+  if (init.body !== undefined && !browserSetsContentType && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
 

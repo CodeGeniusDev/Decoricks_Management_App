@@ -9,6 +9,7 @@ import { usePageEnter, useRevealOnMount } from '@/lib/gsap'
 import { roleLabel } from '@/lib/roles'
 import { can } from '@/lib/permissions-client'
 import { SignOutModal } from '@/components/offline/SignOutModal'
+import { AvatarEditor } from '@/components/profile/AvatarEditor'
 import { useOfflineQueueStats } from '@/hooks/useOfflineQueue'
 
 /**
@@ -79,9 +80,7 @@ export default function ProfilePage() {
 
       <div ref={cardRef} className="rounded-xl border border-line bg-surface-raised shadow-sm">
         <div className="flex flex-col gap-5 border-b border-line-subtle p-6 sm:flex-row sm:items-center">
-          <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-decoricks-dark text-xl font-semibold text-white">
-            {user.name.charAt(0).toUpperCase()}
-          </span>
+          <AvatarEditor />
           <div className="min-w-0">
             <h2 className="truncate text-lg font-semibold text-ink" title={user.name}>
               {user.name}

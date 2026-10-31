@@ -47,6 +47,16 @@ export interface SessionUser {
    * silently changes what the server enforces (which is always server-side).
    */
   permissions?: PermissionSet
+  /**
+   * Where the member's own profile picture is served from, derived server-side
+   * from the reference persisted on their user document. Absent until they upload
+   * one — which is what every avatar in the app reads as "show the initial".
+   *
+   * It arrives with the session rather than being fetched per screen, so a
+   * picture shows up in the header and on the profile page from the same read
+   * that decides whether the visitor is signed in at all.
+   */
+  avatarUrl?: string
 }
 
 interface AuthContextValue {
