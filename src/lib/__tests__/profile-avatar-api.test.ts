@@ -32,6 +32,7 @@ import { ObjectId } from 'mongodb'
 import { requireAuth, AuthenticationError } from '@/lib/authorization'
 import { PUT as putAvatar, DELETE as deleteAvatar } from '@/app/api/profile/avatar/route'
 import { GET as getAvatar } from '@/app/api/profile/avatar/[id]/route'
+import { PATCH as patchUser } from '@/app/api/users/[id]/route'
 import { MAX_IMAGE_BYTES } from '@/lib/image-signature'
 import { avatarWriteLimiter } from '@/lib/rate-limit'
 import { createMemDb, type MemDb, type Doc } from './helpers/mem-mongo'
@@ -605,5 +606,62 @@ describe('the write budget is per user', () => {
     signIn(ME)
     seedUser(ME)
     expect((await upload(PNG)).status).toBe(200)
+  })
+})
+
+/* ------------------------------ deactivation ------------------------------ */
+
+describe('deactivating a member leaves their picture exactly as it was', () => {
+  /*
+   * What an account closing means for a stored picture. The app has no user
+   * deletion anywhere — `PATCH /api/users/[id]` is the only mutation an account
+   * receives and no route removes a user document — so there is no cascade to
+   * write and none to forget. What the route DOES delete is the member's sessions,
+   * and the picture has to survive that blast radius for two reasons: bytes
+   * belonging to a person who might come back, and a pointer on a user document
+   * that must never name a document which is gone.
+   */
+  it('revokes the sessions and reclaims nothing else', async () => {
+    const partner = new ObjectId('507f1f77bcf86cd799439077')
+    signIn(partner)
+    seedUser(partner, { role: 'partner' })
+    expect((await upload(PNG)).status).toBe(200)
+
+    const pointer = String(userRow(partner).avatarFileId)
+    const stored = rowsOwnedBy(partner)
+    expect(stored).toHaveLength(1)
+
+    // Two live sessions for the member about to be switched off.
+    mem.db.sessions.push({ _id: new ObjectId(), userId: partner, tokenHash: 'one' })
+    mem.db.sessions.push({ _id: new ObjectId(), userId: partner, tokenHash: 'two' })
+    const other = new ObjectId()
+    mem.db.sessions.push({ _id: new ObjectId(), userId: other, tokenHash: 'three' })
+
+    const res = await patchUser(
+      new Request(`http://localhost/api/users/${partner}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: false }),
+        headers: { 'content-type': 'application/json' },
+      }) as never,
+      { params: Promise.resolve({ id: partner.toString() }) }
+    )
+    expect(res.status).toBe(200)
+
+    // The sessions are the only thing that was deleted.
+    expect(mem.db.sessions.docs.map((row) => String(row.tokenHash))).toEqual(['three'])
+
+    // The picture is unreachable rather than gone: the read is owner-scoped and an
+    // owner with no session cannot ask for it. The document and the pointer stay,
+    // byte-identical, so a reactivation returns the member to exactly what they had.
+    expect(String(userRow(partner).avatarFileId)).toBe(pointer)
+    const after = rowsOwnedBy(partner)
+    expect(after).toHaveLength(1)
+    expect(Array.from((after[0].data as { value(): Uint8Array }).value())).toEqual(Array.from(PNG))
+
+    // And the response the Founder sees still describes a real, resolvable picture.
+    const body = await envelope(res)
+    const user = body.data?.user as { avatarUrl?: string; isActive?: boolean }
+    expect(user.isActive).toBe(false)
+    expect(user.avatarUrl).toBe(`/api/profile/avatar/${pointer}`)
   })
 })

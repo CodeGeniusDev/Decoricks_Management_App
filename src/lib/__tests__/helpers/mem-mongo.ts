@@ -396,6 +396,34 @@ export class MemCollection {
   }
 
   /**
+   * Every match, one at a time, with the same filter semantics as `deleteOne`.
+   *
+   * The app uses it in exactly one kind of place — revoking a member's sessions
+   * when they are deactivated or have their role changed — and a test of that
+   * path needs to see what the route deleted and what it left alone. Each removed
+   * document registers its own undo, so a rolled-back transaction puts them back
+   * where they were.
+   */
+  async deleteMany(
+    filter: Doc,
+    opts?: unknown
+  ): Promise<{ acknowledged: true; deletedCount: number }> {
+    const keep: Doc[] = []
+    let deleted = 0
+    for (const doc of this.docs) {
+      if (!matches(doc, filter)) {
+        keep.push(doc)
+        continue
+      }
+      deleted += 1
+      const at = this.docs.indexOf(doc)
+      sessionOf(opts)?.record(() => this.docs.splice(at, 0, doc))
+    }
+    this.docs = keep
+    return { acknowledged: true, deletedCount: deleted }
+  }
+
+  /**
    * The synchronous heart of a single-document write: locate, apply, record the
    * undo. Kept synchronous on purpose — between the read and the write no other
    * caller may interleave, which is what makes `$inc` and a guarded `$gte`

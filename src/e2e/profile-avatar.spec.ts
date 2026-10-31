@@ -288,6 +288,14 @@ test.describe('Profile picture', () => {
     expect(fetched.status()).toBe(200)
     expect(fetched.headers()['content-type']).toBe('image/png')
     expect(fetched.headers()['cache-control']).toBe(PRIVATE_CACHE)
+    /*
+     * The route sets only Content-Type and Cache-Control; `nosniff` comes from
+     * next.config's catch-all group. Asserting it on the served response — rather
+     * than only reading it out of the config — is what proves the two layers meet:
+     * bytes uploaded as one thing can never be re-interpreted by the browser as
+     * another, because the type the route returns is the one sniffed from them.
+     */
+    expect(fetched.headers()['x-content-type-options']).toBe('nosniff')
     const bytes = await fetched.body()
     expect(bytes.length).toBe(expected.length)
     expect(bytes.equals(expected)).toBeTruthy()
