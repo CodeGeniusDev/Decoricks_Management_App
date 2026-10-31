@@ -150,7 +150,16 @@ export const BudgetFormModal = ({
       size="lg"
       dismissible={!saving}
     >
-      <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+      {/*
+        `method="post"` on every form. A form with no method defaults to GET, so a
+        submit that reaches the browser's native path serialises every NAMED field
+        into the URL — this form gives its fields no `name` and only appears after
+        a click, so there is nothing here to leak and no window in which it could.
+        The method is declared anyway: the rule has to live on the form itself, not
+        in the memory of whoever adds a named input to it later.
+        `src/app/(auth)/login/page.tsx` is the case where it matters.
+      */}
+      <form method="post" onSubmit={handleSubmit} className="space-y-4" noValidate>
         {formMessage && (
           <p
             role="alert"

@@ -360,7 +360,11 @@ export default function SuppliersPage() {
         title={editingSupplier ? 'Edit Supplier' : 'Add Supplier'}
         size="lg"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {/* `method="post"` on every form. No field here carries a `name`, so a
+            native submit would serialise nothing — the method is declared rather
+            than assumed, because a form is only harmless while nobody adds a
+            named input to it. See `BudgetFormModal` for the rule. */}
+        <form method="post" onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input
               label="Supplier Name"

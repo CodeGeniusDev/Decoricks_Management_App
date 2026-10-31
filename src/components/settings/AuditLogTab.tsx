@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react'
 import { ApiError, apiJson } from '@/lib/api-client'
+import { useHydrated } from '@/hooks/useHydrated'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
@@ -75,6 +76,10 @@ export function AuditLogTab() {
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<FilterForm>(EMPTY_FORM)
   const [applied, setApplied] = useState<FilterForm>(EMPTY_FORM)
+  // `loading` opens as `true`, so the submit below is already disabled in the
+  // first HTML. `hydrated` keeps it that way for the reason that matters — the
+  // handler is not attached yet — rather than by accident of the initial fetch.
+  const hydrated = useHydrated()
 
   const load = useCallback(async (targetPage: number, filters: FilterForm) => {
     setLoading(true)
@@ -133,7 +138,16 @@ export function AuditLogTab() {
         </p>
       </div>
 
+      {/*
+        `method="post"` on every form. This markup IS in a page's first HTML (the
+        tab is deep-linkable at `/settings?tab=audit`), so a submit before React
+        attaches `applyFilters` would really navigate. No field carries a `name`,
+        so nothing would be serialised, and the disabled submit below is what
+        actually closes the window — the method is declared so that a named field
+        added here later cannot reopen it. See `BudgetFormModal` for the rule.
+      */}
       <form
+        method="post"
         onSubmit={applyFilters}
         className="flex flex-col gap-3 rounded-lg border border-line bg-surface-raised p-4"
       >
@@ -185,7 +199,7 @@ export function AuditLogTab() {
           <Button type="button" variant="ghost" onClick={resetFilters}>
             Reset
           </Button>
-          <Button type="submit" variant="primary" disabled={loading}>
+          <Button type="submit" variant="primary" disabled={loading || !hydrated}>
             Apply filters
           </Button>
         </div>

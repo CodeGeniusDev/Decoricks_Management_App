@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/auth/AuthProvider'
+import { useHydrated } from '@/hooks/useHydrated'
 import { Button } from '@/components/ui/Button'
 import { IconAlert, IconCheck, IconEye, IconEyeOff, IconKey, IconLock } from '@/components/ui/icons'
 import { useRevealOnMount } from '@/lib/gsap'
@@ -34,6 +35,7 @@ export default function ChangePasswordPage() {
 
   const cardRef = useRef<HTMLDivElement>(null)
   useRevealOnMount(cardRef)
+  const hydrated = useHydrated()
 
   // Only redirect if not authenticated - AuthLayout handles the mustChangePassword redirect
   useEffect(() => {
@@ -47,6 +49,11 @@ export default function ChangePasswordPage() {
   const allRulesPassed = passed === RULES.length
   const mismatch = confirmPassword.length > 0 && newPassword !== confirmPassword
   const canSubmit =
+    // `hydrated` is the belt on the braces: every field is empty on the first
+    // render, so the rule checks already keep this false while the page is still
+    // native markup. Stating it means the guarantee does not depend on how many
+    // rules exist tomorrow. See `useHydrated`.
+    hydrated &&
     !submitting &&
     allRulesPassed &&
     !mismatch &&
@@ -114,7 +121,23 @@ export default function ChangePasswordPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        {/*
+          `method="post"` for the same reason the login form has it: a form with
+          no method defaults to GET, and a native submit — possible in the window
+          before React attaches `handleSubmit` — would serialise every named field
+          into the URL. These fields carry no `name` attribute, so a GET submit
+          would put nothing in the URL at all, but the method is declared rather
+          than assumed: the next person to add `name="password"` to a field here
+          must not have to remember why it matters. The submit button below is
+          also disabled until hydration, so this markup cannot navigate natively.
+        */}
+        <form
+          method="post"
+          action="/change-password"
+          onSubmit={handleSubmit}
+          noValidate
+          className="flex flex-col gap-4"
+        >
           {!mustChangePassword && (
             <PasswordField
               id="current-password"
