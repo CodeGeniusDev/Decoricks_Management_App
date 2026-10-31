@@ -22,6 +22,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { AuthorizationError, AuthenticationError } from '@/lib/authorization'
 import { HttpError, handleRouteError, logRouteFailure } from '@/lib/http'
+import { labelFromArgs } from '@/lib/timing'
 
 const messages = (spy: { mock: { calls: unknown[][] } }): string[] =>
   spy.mock.calls.map((call) => String(call[0]))
@@ -125,5 +126,85 @@ describe('route failure log hygiene', () => {
       expect.stringContaining('[api-refusal] PATCH /api/tasks/1 409'),
     ])
     expect(messages(warn)[0]).not.toContain('api-abort')
+  })
+})
+
+/*
+ * Everything above is about how MUCH a log line says. This is about what it is
+ * allowed to contain.
+ *
+ * The app writes no request URL into a log itself — `labelFromArgs` keeps a route
+ * label to `METHOD pathname`, and the audit trail stores no URL at all. The risk is
+ * the text that arrives from somewhere else: a driver echoing the query it failed
+ * on, a `fetch` rejection quoting the URL it was given, a stack frame carrying the
+ * request line. None of those were written to know which part of their string is a
+ * secret, so the loggers scrub rather than trust, and the assertions below are
+ * written against the whole captured output rather than the field under test.
+ */
+describe('credentials cannot reach a log line', () => {
+  const SECRET = 'Sup3r-Secret-Pa55w0rd'
+
+  it('redacts a leaked URL inside an error message on the refusal line', () => {
+    spyOnConsole()
+    logRouteFailure(
+      'POST /api/auth/login',
+      new HttpError(`upstream rejected /api/auth/login?password=${SECRET}`, 400, 'BAD_GATEWAY')
+    )
+    const line = messages(warn).join('\n')
+    expect(line).not.toContain(SECRET)
+    expect(line).toContain('password=[redacted]')
+    // Still a useful line: the label, status and code survive the redaction.
+    expect(line).toContain('[api-refusal] POST /api/auth/login 400')
+  })
+
+  it('redacts a context string that interpolated a query string', () => {
+    spyOnConsole()
+    // The one call shape that could turn the refusal line into a leak: a route
+    // building its context out of `request.url` instead of the pathname.
+    logRouteFailure(
+      `GET /login?email=a@b.pk&password=${SECRET}`,
+      new AuthorizationError('tasks', 'read')
+    )
+    const line = messages(warn).join('\n')
+    expect(line).not.toContain(SECRET)
+    expect(line).toContain('password=[redacted]')
+  })
+
+  it('redacts message and stack on the server-fault record too', async () => {
+    spyOnConsole()
+    const faulty = Object.assign(new Error(`GET http://localhost/login?password=${SECRET} 401`), {
+      stack: `Error: fetch failed\n  at signIn (file:///app/login?password=${SECRET})`,
+    })
+    const res = handleRouteError(faulty)
+    expect(res.status).toBe(500)
+
+    const everything = [...messages(warn), ...messages(error)].join('\n')
+    expect(everything).not.toContain(SECRET)
+    expect(everything).toContain('password=[redacted]')
+    // The client still gets only a generic message plus a trace id.
+    expect(JSON.stringify(await res.json())).not.toContain(SECRET)
+  })
+
+  it('labels a route by its pathname and drops the query string entirely', () => {
+    const label = labelFromArgs([
+      { url: `http://localhost/login?email=a@b.pk&password=${SECRET}`, method: 'post' },
+    ])
+    expect(label).toBe('POST /login')
+    expect(label).not.toContain(SECRET)
+    expect(label).not.toContain('email')
+
+    // A clean URL loses its parameters for the same reason: a route label never
+    // needs one, and "drop the whole thing" cannot miss a key invented later.
+    expect(
+      labelFromArgs([{ url: 'http://localhost/api/audit-log?page=2&limit=25', method: 'GET' }])
+    ).toBe('GET /api/audit-log')
+  })
+
+  it('leaves an ordinary message with no secret-shaped key alone', () => {
+    spyOnConsole()
+    // Over-redaction would destroy the very diagnostic value this file protects.
+    const message = 'E11000 duplicate key error collection: test.transactions index: idx_user'
+    logRouteFailure('POST /api/tasks/1', new HttpError(message, 409, 'CONFLICT'))
+    expect(messages(warn)[0]).toContain(message)
   })
 })

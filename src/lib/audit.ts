@@ -1,6 +1,7 @@
 import { ObjectId } from 'mongodb'
 import type { Db } from 'mongodb'
 import { getAuditLogCollection, type AuditLogEntry } from '@/lib/models/User'
+import { scrubCredentials } from '@/lib/credential-query'
 
 /**
  * Append-only audit trail.
@@ -37,7 +38,7 @@ export const recordAuditEntry = async (db: Db, input: AuditInput): Promise<void>
     entityId: input.entityId ?? null,
     oldValue: sanitize(input.oldValue),
     newValue: sanitize(input.newValue),
-    details: input.details,
+    details: scrubDetails(input.details),
     outcome: input.outcome ?? 'success',
     ipAddress: input.ipAddress,
     userAgent: input.userAgent,
@@ -58,7 +59,7 @@ export const recordManyAuditEntries = async (db: Db, inputs: AuditInput[]): Prom
     entityId: input.entityId ?? null,
     oldValue: sanitize(input.oldValue),
     newValue: sanitize(input.newValue),
-    details: input.details,
+    details: scrubDetails(input.details),
     outcome: input.outcome ?? 'success',
     ipAddress: input.ipAddress,
     userAgent: input.userAgent,
@@ -72,6 +73,18 @@ const toObjectIdOrNull = (value?: ObjectId | string | null): ObjectId | null => 
   if (value instanceof ObjectId) return value
   return /^[0-9a-fA-F]{24}$/.test(value) ? new ObjectId(value) : null
 }
+
+/**
+ * `details` is free text composed by the call site, and the audit trail is read
+ * back through the Settings screen — so anything a caller pastes into it ends up
+ * on somebody's screen and in a database that is backed up. `Updated x@y.pk` and
+ * `Invalid credentials` are what routes write today; the scrub is here so that the
+ * day a caller composes a detail out of a URL (`see /login?password=…`) is not the
+ * day a secret enters an append-only, exportable record. `oldValue`/`newValue` are
+ * covered by the key-based redaction in `sanitize` instead.
+ */
+const scrubDetails = (details: string | undefined): string | undefined =>
+  details === undefined ? undefined : scrubCredentials(details)
 
 /**
  * Strips secrets before anything is persisted.

@@ -10,6 +10,7 @@ import {
 import { CsrfError } from '@/lib/auth/session'
 import { errorResponse } from '@/lib/api-response'
 import { isTransientMongoError } from '@/lib/mongo-errors'
+import { scrubCredentials } from '@/lib/credential-query'
 import { labelFromArgs, withTrace } from '@/lib/timing'
 
 /**
@@ -85,13 +86,17 @@ const isClientDisconnect = (error: unknown): boolean => {
  * Server-side diagnostics without leaking internals to the client.
  *
  * The stack/message stay in the server log where an operator can see them; the
- * client only ever sees a generic message plus a trace id it can quote. Nothing
- * here reads request bodies or headers, so no credential can reach the log by
- * way of an error.
+ * client only ever sees a generic message plus a trace id it can quote.
+ *
+ * Both lines are passed through `scrubCredentials` before printing. This function
+ * reads no request body and no header, so it cannot pick up a credential itself —
+ * but an error MESSAGE can: a driver echoing the query it failed on, or a
+ * `fetch` rejection quoting the URL, lands here verbatim, and the code that
+ * produced that string was never written to know which part of it is a secret.
  */
 const logServerError = (error: unknown, traceId: string): void => {
   const name = error instanceof Error ? error.name : typeof error
-  const message = error instanceof Error ? error.message : String(error)
+  const message = scrubCredentials(error instanceof Error ? error.message : String(error))
   const stack = error instanceof Error ? error.stack : undefined
   if (isClientDisconnect(error)) {
     console.warn(`[api-abort] ${name}: ${message}`)
@@ -99,7 +104,7 @@ const logServerError = (error: unknown, traceId: string): void => {
   }
   console.error(`[api-error ${traceId}] ${name}: ${message}`)
   if (stack && process.env.NODE_ENV !== 'production') {
-    console.error(stack)
+    console.error(scrubCredentials(stack))
   }
 }
 
@@ -145,8 +150,13 @@ export const logRouteFailure = (context: string, error: unknown): void => {
   // No expected rejection, or an `HttpError` that carries a 5xx: in both cases
   // this is a server fault and `handleRouteError` owns the record.
   if (!rejection || rejection.status >= 500) return
-  const message = error instanceof Error ? error.message : String(error)
-  console.warn(`[api-refusal] ${context} ${rejection.status} ${rejection.code}: ${message}`)
+  const message = scrubCredentials(error instanceof Error ? error.message : String(error))
+  // `context` is caller-built text (`POST /api/tasks`) and is scrubbed like any
+  // other input: a route that ever interpolates `request.url` into it should not
+  // turn the refusal line into the one log line that carries a query string.
+  console.warn(
+    `[api-refusal] ${scrubCredentials(context)} ${rejection.status} ${rejection.code}: ${message}`
+  )
 }
 
 /**

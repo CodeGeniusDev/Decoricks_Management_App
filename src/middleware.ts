@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { findCredentialKeys, stripCredentialParams } from '@/lib/credential-query'
 
 /**
  * Edge-side gate. This is a *usability* redirect only — it keeps an anonymous
@@ -54,8 +55,81 @@ const isSessionProtectedPublic = (pathname: string): boolean =>
 /** API routes answer with JSON status codes, never a redirect. */
 const wantsJson = (request: NextRequest): boolean => request.nextUrl.pathname.startsWith('/api/')
 
+/**
+ * Screens whose own URL is the correct place to land after a credential is
+ * stripped from it. `/login?password=…&next=%2Ftasks` should come back to
+ * `/login?next=%2Ftasks` — the query belongs to that page, and its `?next=` is
+ * what preserves where the visitor was headed. Every other path goes to the
+ * sign-in screen instead, carrying the clean pathname only.
+ */
+const CREDENTIAL_PAGES = new Set(['/login', '/change-password'])
+
+/**
+ * A credential arrived in the query string. Refuse it.
+ *
+ * The app should never generate such a URL — see `method="post"` on the login
+ * form — but URLs survive: browser history, a pasted bookmark, a shared link, an
+ * old tab reopened while the Render instance was asleep. Whichever way it comes
+ * back, the answer is the same three properties:
+ *
+ *   - the value is never echoed, in a header, a body or a log line;
+ *   - the value is never forwarded to another URL, so the redirect cannot
+ *     reproduce the leak one hop later;
+ *   - the request is not served as though the credential were usable. Nothing
+ *     here logs in, changes a password, or reaches a handler that might.
+ *
+ * `303` rather than `302` for a state-changing method, because it instructs the
+ * browser to follow with a GET: a POST that carried a tainted query string cannot
+ * be replayed against the clean URL.
+ */
+function refuseCredentialsInUrl(request: NextRequest, keys: string[]): NextResponse {
+  const { pathname, searchParams } = request.nextUrl
+
+  // Key names only, never the URL. A guard that logs what it caught would be the
+  // leak it exists to close.
+  console.warn(`[credential-url] refused ${request.method} ${pathname} keys=${keys.join(',')}`)
+
+  if (wantsJson(request)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          message: 'Credentials cannot be sent in the URL. Sign in through the form.',
+          code: 'CREDENTIALS_IN_QUERY',
+        },
+        timestamp: new Date().toISOString(),
+      },
+      { status: 400 }
+    )
+  }
+
+  const status = SAFE_METHODS.has(request.method) ? 302 : 303
+
+  if (CREDENTIAL_PAGES.has(pathname)) {
+    const target = new URL(pathname, request.url)
+    target.search = stripCredentialParams(searchParams).params.toString()
+    return NextResponse.redirect(target, status)
+  }
+
+  const loginUrl = new URL('/login', request.url)
+  // The pathname is safe to carry forward; the query string it arrived with is
+  // exactly what must not be carried anywhere.
+  if (pathname !== '/') loginUrl.searchParams.set('next', pathname)
+  return NextResponse.redirect(loginUrl, status)
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+
+  /*
+   * First, before the public paths and before any session logic: a URL that names
+   * a credential is answered here and never reaches a handler. It has to be above
+   * `isPublic`, because `/login` is public — the leaked URL is the one this guard
+   * exists to catch, and it is exactly the path the early return below would wave
+   * straight through.
+   */
+  const credentialKeys = findCredentialKeys(request.nextUrl.searchParams)
+  if (credentialKeys.length > 0) return refuseCredentialsInUrl(request, credentialKeys)
 
   if (isPublic(pathname)) return NextResponse.next()
 

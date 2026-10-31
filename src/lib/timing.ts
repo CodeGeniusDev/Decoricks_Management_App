@@ -24,6 +24,7 @@
  * no user id. Only a route path, stage names and durations.
  */
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { safeLogPath } from '@/lib/credential-query'
 
 /** Read once at module load; the flag is a deployment-level switch. */
 export const apiTimingEnabled = process.env.API_TIMING === '1'
@@ -91,9 +92,11 @@ export function labelFromArgs(args: unknown[]): string {
     const url = (arg as { url?: unknown } | null)?.url
     if (typeof url !== 'string') continue
     try {
-      const parsed = new URL(url, 'http://localhost')
       const method = (arg as { method?: unknown }).method
-      return `${typeof method === 'string' ? method.toUpperCase() : 'REQ'} ${parsed.pathname}`
+      // `safeLogPath` rather than `parsed.pathname` spelled out here, so the
+      // "never a query string in a log line" rule has one owner and cannot be
+      // re-forgotten by the next edit to this function.
+      return `${typeof method === 'string' ? method.toUpperCase() : 'REQ'} ${safeLogPath(url)}`
     } catch {
       // Not a URL we can label; fall through to the generic one.
     }
