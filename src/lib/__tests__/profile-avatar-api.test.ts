@@ -429,10 +429,21 @@ describe('GET /api/profile/avatar/[id] serves bytes to the owner only', () => {
     const missing = await get(new ObjectId().toString())
     expect(stolen.status).toBe(404)
     expect(missing.status).toBe(404)
-    // Identical bodies: the response cannot be used to discover whether a colleague
-    // has a profile picture at all.
+    /*
+     * Identical bodies: the response cannot be used to discover whether a colleague
+     * has a profile picture at all. `timestamp` is the one field excluded, and it is
+     * excluded because it is not part of the claim: every response stamps the instant
+     * it was written, so two perfectly correct answers differ whenever the calls fall
+     * either side of a millisecond boundary. Comparing it made this test fail on the
+     * clock — observed as `…15.573Z` against `…15.574Z` — which is a defect in the
+     * assertion, not in the route.
+     */
+    const withoutTimestamp = (body: { timestamp?: unknown } & Record<string, unknown>) => {
+      const { timestamp, ...rest } = body
+      return rest
+    }
     const stolenBody = await stolen.json()
-    expect(await missing.json()).toEqual(stolenBody)
+    expect(withoutTimestamp(await missing.json())).toEqual(withoutTimestamp(stolenBody))
     expect(stolenBody.error?.message).toContain('Profile picture not found')
   })
 
