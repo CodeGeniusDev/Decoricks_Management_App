@@ -25,6 +25,10 @@ export type ImageContentType = 'image/jpeg' | 'image/png' | 'image/webp'
  * Atlas M0 instance with a 512 MB budget that currently holds every financial
  * record the business has. Uncapped, four team members could fill it with
  * camera originals.
+ * Disk the cap buys is measured in `src/lib/__tests__/avatars-storage-budget.test.ts`:
+ * the whole team at the cap is 8.00 MB of BSON — 1.6 % of the instance, 10.00 MB
+ * with one replacement still holding its previous picture — so this ceiling is
+ * what keeps a profile feature from being the thing that fills the budget.
  */
 export const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 
