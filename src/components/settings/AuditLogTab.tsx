@@ -76,9 +76,9 @@ export function AuditLogTab() {
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<FilterForm>(EMPTY_FORM)
   const [applied, setApplied] = useState<FilterForm>(EMPTY_FORM)
-  // `loading` opens as `true`, so the submit below is already disabled in the
-  // first HTML. `hydrated` keeps it that way for the reason that matters — the
-  // handler is not attached yet — rather than by accident of the initial fetch.
+  // `loading` opens as `true`, so the submit below starts disabled anyway.
+  // `hydrated` states the reason that matters — the handler is not attached yet —
+  // instead of relying on the accident of an initial fetch.
   const hydrated = useHydrated()
 
   const load = useCallback(async (targetPage: number, filters: FilterForm) => {
@@ -139,12 +139,12 @@ export function AuditLogTab() {
       </div>
 
       {/*
-        `method="post"` on every form. This markup IS in a page's first HTML (the
-        tab is deep-linkable at `/settings?tab=audit`), so a submit before React
-        attaches `applyFilters` would really navigate. No field carries a `name`,
-        so nothing would be serialised, and the disabled submit below is what
-        actually closes the window — the method is declared so that a named field
-        added here later cannot reopen it. See `BudgetFormModal` for the rule.
+        `method="post"` on every form. No field here carries a `name`, so a native
+        submit would serialise nothing, and the form is not in the first HTML either —
+        every `(app)` route renders `RequireAuth`'s skeleton until a session resolves,
+        so this markup appears with the client tree. The method is declared anyway: the
+        rule has to live on the form itself, not in the memory of whoever adds a named
+        input to it later. See `BudgetFormModal` for the rule.
       */}
       <form
         method="post"

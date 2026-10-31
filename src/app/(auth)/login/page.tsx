@@ -30,10 +30,11 @@ function LoginForm() {
   // `safeRedirectPath` rather than by a "one leading slash" test here.
   const safeNext = safeRedirectPath(searchParams.get('next'))
 
-  // See `useHydrated`: until React has attached `handleSubmit`, this form is
-  // an ordinary native form and submitting it would navigate for real. The
-  // button stays disabled across that window so the only possible submit is
-  // the one this handler controls.
+  // See `useHydrated`: the submit stays inert until `handleSubmit` is attached, so
+  // no click or Enter can ever reach the browser's native submit path. On this page
+  // that is a guarantee rather than a reproduction — the form is not in the server
+  // HTML at all (see the comment on the form below) — and it is the guarantee the
+  // `/change-password` screen needs, where the markup genuinely is.
   const hydrated = useHydrated()
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -82,13 +83,24 @@ function LoginForm() {
       )}
 
       {/*
-        `method="post"` is not decorative. A form with no method defaults to GET,
-        and a GET submit puts every named field — here `email` and `password` —
-        into the URL, the history entry and any Referer header. The browser can
-        submit this markup before React has hydrated, so declaring the method is
-        what keeps a field value out of a URL even if a native submit ever wins
-        the race. Next has no page handler for POST, so such a request is answered
-        with 405 without the body being read or reflected.
+        `method="post"` is not decorative. A form with no method is a GET form, and a
+        GET submit puts every named field — here `email` and `password` — into the URL,
+        the history entry and any Referer header.
+
+        What the shipped bundle actually does was measured, not assumed: `/login` is
+        prerendered, so the HTML a browser parses contains this component's Suspense
+        FALLBACK and nothing else — the form exists only after React has rendered it,
+        which is also when `handleSubmit` becomes reachable. So the pre-hydration
+        native submit does not have a target here, and a visitor with scripting off
+        gets a skeleton rather than a credential-leaking form (the notice for them is
+        in `(auth)/layout.tsx`, where it is genuinely server-rendered).
+
+        The method and the `hydrated` gate below are therefore the belt and the braces
+        rather than the fix: if this page is ever made server-rendered again — a
+        dynamic render of it already returns the full form, because a POST to a page
+        route is not served from the prerender cache — nothing has to be re-remembered.
+        The part that closes a leak that already happened is the edge guard on the URL
+        itself; see `src/lib/credential-query.ts`.
       */}
       <form
         method="post"
@@ -148,19 +160,6 @@ function LoginForm() {
         >
           {submitting ? 'Signing in…' : 'Sign in'}
         </Button>
-
-        {/*
-          The sign-in button stays disabled until the client handler is attached,
-          which is the point: without JavaScript there is no handler to attach.
-          Say so instead of leaving a greyed-out button unexplained.
-
-          Deliberately a bare text child: with scripting on, the browser keeps
-          `<noscript>` content as one text node, so element children inside it
-          would not match the server-rendered tree on hydration.
-        */}
-        <noscript className="block rounded-md border border-line bg-surface-sunken px-3 py-2 text-xs text-ink-secondary">
-          Sign-in needs JavaScript. Please enable it for this site.
-        </noscript>
       </form>
 
       <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-ink-muted">

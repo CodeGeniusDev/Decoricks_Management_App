@@ -122,14 +122,21 @@ export default function ChangePasswordPage() {
         )}
 
         {/*
-          `method="post"` for the same reason the login form has it: a form with
-          no method defaults to GET, and a native submit — possible in the window
-          before React attaches `handleSubmit` — would serialise every named field
-          into the URL. These fields carry no `name` attribute, so a GET submit
-          would put nothing in the URL at all, but the method is declared rather
-          than assumed: the next person to add `name="password"` to a field here
-          must not have to remember why it matters. The submit button below is
-          also disabled until hydration, so this markup cannot navigate natively.
+          `method="post"` for the same reason the login form has it: a form with no
+          method is a GET form, and a native submit serialises every NAMED field into
+          the URL. Two measured facts about this screen, which is the one auth form
+          that really is in the server HTML (`/login` is prerendered down to its
+          Suspense fallback):
+
+            - none of these three inputs carries a `name`, so a native submit puts
+              nothing in the URL. Verified against the built bundle's markup;
+            - the submit button below renders `disabled`, because `canSubmit` is false
+              while every field is empty — so there is no default button to click and
+              implicit submission has nothing to fire.
+
+          The method is declared and `hydrated` is stated rather than assumed: the next
+          person to add `name="currentPassword"` to a field here, or to loosen the rule
+          checks, must not have to remember why it matters.
         */}
         <form
           method="post"

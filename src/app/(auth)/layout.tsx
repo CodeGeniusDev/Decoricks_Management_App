@@ -44,7 +44,24 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <BrandMark size={26} />
         <span className="text-sm font-semibold tracking-tight text-ink">Decoricks</span>
       </header>
-      <div className="flex flex-1 items-center justify-center px-4 pb-16">{children}</div>
+      <div className="flex flex-1 items-center justify-center px-4 pb-16">
+        {children}
+        {/*
+          Both auth screens need JavaScript to do anything: the sign-in form is
+          client-rendered, and the change-password submit stays disabled until its
+          handler is attached. That state is what keeps a field value out of a URL
+          (`src/app/(auth)/login/page.tsx`), so it has to be explained rather than
+          left as a screen that never finishes loading.
+
+          This layout, not the pages, is where the notice belongs: it is the auth
+          markup that is actually in the server HTML. And it is a bare text child on
+          purpose — with scripting on, the browser keeps `<noscript>` content as one
+          text node, so element children inside it would not match on hydration.
+        */}
+        <noscript className="absolute inset-x-4 bottom-4 rounded-md border border-line bg-surface-raised px-3 py-2 text-center text-xs text-ink-secondary">
+          These screens need JavaScript. Please enable it for this site.
+        </noscript>
+      </div>
     </div>
   )
 }

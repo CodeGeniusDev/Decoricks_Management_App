@@ -19,8 +19,14 @@ import { useEffect, useState } from 'react'
  *
  * A form that only ever appears after a click (a modal opened by state) cannot
  * be submitted before hydration and does not need this. A form in the initial
- * HTML of a page does — and every form still declares `method="post"`, so a
- * navigation in this window can never put a field value in a URL either way.
+ * HTML of a page does — `/change-password` is that case, measured against the
+ * built bundle — and every form still declares `method="post"`, so a navigation
+ * in this window can never put a field value in a URL either way.
+ *
+ * Not every screen is in the initial HTML at all: `/login` is prerendered down to
+ * its Suspense fallback and the signed-in routes down to `RequireAuth`'s skeleton,
+ * so their forms arrive with the client tree. There this is the guarantee rather
+ * than the reproduction of a live window, and it is cheap enough to keep.
  */
 export function useHydrated(): boolean {
   const [hydrated, setHydrated] = useState(false)
