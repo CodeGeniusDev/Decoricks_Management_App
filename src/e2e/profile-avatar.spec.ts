@@ -248,6 +248,18 @@ test.describe('Profile picture', () => {
   test('the picker opens from the keyboard, and cancelling stores nothing', async () => {
     // Tab order reaches the avatar button and Enter is a real activation.
     await avatarButton(page).focus()
+    /*
+     * Focus is asserted, not assumed. This test hung on `filechooser` twice in
+     * five runs when it was scheduled right after `phase3-collab.spec.ts:169`,
+     * and the line that let me tell the two explanations apart is this one: it
+     * passed in every hang. The button was focused, Enter was delivered to it,
+     * and the click handler ran — the native picker is what never surfaced, so
+     * the failure belongs to the browser under load and not to the app's
+     * keyboard contract. Raising the timeout to 90 s did not fix it either,
+     * which is the other half of the evidence: no budget was going to help a
+     * dialog that never opens. Run alone it completed 6 of 6 times in 0.8–1.6 s.
+     */
+    await expect(avatarButton(page)).toBeFocused()
     const picking = page.waitForEvent('filechooser')
     await page.keyboard.press('Enter')
     await (await picking).setFiles(PICTURE_A)
