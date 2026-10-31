@@ -29,35 +29,47 @@ The full suite was recently observed to report **70 failures** under one set of
 conditions and **0 failures on the same commits, same tests** under another. The
 difference was the machine, not the code:
 
-| condition             | run that produced a verdict  | run that produced noise        |
-| --------------------- | ---------------------------- | ------------------------------ |
-| workers               | 1 (`CI=1`)                   | 2 (the non-CI default)         |
-| swap free             | ≥ 1.5 GB                     | ~70 MB of 10 GB                |
-| other `next dev`      | none anywhere on the machine | one idle, ~840 MB              |
-| other `next start`    | only the suite's own server  | a stale one on port 3113       |
-| 1-minute load average | under ~4                     | 2.9–9.4 with 5-min average > 8 |
+| condition             | runs that produced a verdict | run that produced noise       |
+| --------------------- | ---------------------------- | ----------------------------- |
+| workers               | 1 (`CI=1`)                   | 2 (the non-CI default)        |
+| other `next dev`      | none anywhere on the machine | one idle, ~840 MB             |
+| other `next start`    | only the suite's own server  | a stale one on port 3113      |
+| 1-minute load average | 3.3 and 5.1                  | 2.9–9.4, 5-min average over 8 |
+| swap free             | 302 MB and 1.4 GB            | ~70 MB of 10 GB               |
 
-**Before a full run, confirm all five.** A 1-minute load above ~4 or under ~1.5 GB of
-free swap is not a slow test run — it is a random number generator with a test runner
-attached. Timeouts, `ChunkLoadError`, missing locators and "element not found" all
-appear, and they point at nothing.
+Two full runs at 1 worker came back clean — **357 passed, 0 failed, 0 flaky in 14.4
+minutes** and **355 passed, 0 failed, 2 flaky in 20.5 minutes**. The run that produced 70
+phantom failures used 2 workers, with two foreign Next servers alive.
+
+Be careful reading that table: the variables that were _confounded_ in the bad run are
+worker count and competing Next processes, and those are the ones worth treating as hard
+rules. Load average and free swap were also worse, but a clean run started with only
+302 MB of free swap — so neither number is a guarantee, and a calm-looking `uptime` is no
+licence to raise the worker count. The two rules that are supported by the evidence:
+
+- **run at 1 worker** (`CI=1`), and
+- **run with no other `next dev` or `next start` alive on the machine** — including one
+  belonging to a different project, which steals memory just as effectively.
+
+If the machine is genuinely thrashing — swap nearly full and load climbing rather than
+falling — wait before starting. The run is not faster for having started; it is just later
+and wrong.
 
 ```bash
-uptime                       # 1-min load should be under ~4
-sysctl vm.swapusage          # free should be above ~1.5 GB
+uptime                       # want load falling, not climbing
+sysctl vm.swapusage
 ps aux | grep -E 'next (dev|start)' | grep -v grep
 lsof -nP -iTCP -sTCP:LISTEN | grep -E ':(3000|3111|3113|3201|3202|3203)'
 ```
 
-The `ps` check must be empty apart from servers **you are about to start for this suite**,
-and it must include **other projects** — a `next dev` for an unrelated repository steals
-memory just as effectively as one for this one. The `lsof` check matters because the
-config uses `reuseExistingServer: false` in CI mode: it will not steal a port, it will
-fail on it, and the failure looks like a test failure.
+The `ps` check must be empty apart from servers **you are about to start for this suite**.
+The `lsof` check matters because the config uses `reuseExistingServer: false` in CI mode:
+it will not steal a port, it will fail on it, and the failure looks like a test failure.
 
-Do not run the full suite while an IDE agent, a browser with many tabs, WhatsApp or a
-video call is active. 443 tests at 1 worker takes the better part of an hour; that hour
-is only worth anything if nothing else claims memory in it.
+443 tests at 1 worker takes 15–25 minutes, plus the seed and the production build the
+`webServer` block runs first. It is worth clearing the queue of heavy desktop work for
+that window anyway — the flake that survived the 20.5-minute run above was a browser
+dialog failing to open while chat tests were still holding server-side streams.
 
 ## 3. Environment variables
 
@@ -164,11 +176,12 @@ npm run build
 ```
 
 Use `CI=1` and do not add `--workers`. A 2-worker full run is not "the same result,
-faster"; on this backend it is a different, less trustworthy result. Measured on the same
-commits: **20.5 minutes at 1 worker — 355 passed, 86 skipped, 0 failed** — versus
-**38.7 minutes at 2 workers, reporting 70 failures that could not be reproduced at any
-commit under 1-worker conditions.** The slower run is the one that finished first, in the
-sense that it produced an answer worth acting on.
+faster"; on this backend it is a different, less trustworthy result — and it is not even
+faster. Measured: **14.4 minutes at 1 worker (357 passed, 86 skipped, 0 failed, 0
+flaky)** against **38.7 minutes at 2 workers reporting 70 failures that could not be
+reproduced at any commit under 1-worker conditions.** Two browser contexts holding live
+`/api/events` streams each cost the single free-tier M0 instance more than the parallelism
+wins, so the "slower" setting is the one that finishes first _and_ tells the truth.
 
 If you must compare commits, give each one its own worktree, port and dist directory so
 they cannot contend:
