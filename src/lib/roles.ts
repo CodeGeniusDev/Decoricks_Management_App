@@ -231,6 +231,13 @@ export const ASSIGNEE_OPTIONS = [{ value: '', label: 'Unassigned' }, ...TEAM_ROL
 export const roleLabel = (role?: string): string | undefined =>
   SPEC_ROLES.find((r) => r.name === role)?.displayName
 
+/**
+ * Check if a role is one of the original partner roles.
+ * Used to exclude custom roles from partner-specific financial logic.
+ */
+export const isPartnerRole = (role?: string): boolean =>
+  role === ROLE_HASNAT || role === ROLE_ALI || role === ROLE_AFNAN
+
 export const PERMISSION_MODULES: PermissionModule[] = [
   'finance',
   'budget',

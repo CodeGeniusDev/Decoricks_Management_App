@@ -2,7 +2,6 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/components/auth/AuthProvider'
-import { roleLabel, SPEC_ROLES } from '@/lib/roles'
 import { ApiError, apiJson, apiPatch, apiPost } from '@/lib/api-client'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -32,10 +31,15 @@ interface UsersResponse {
   users: UserRow[]
 }
 
-const ROLE_OPTIONS = SPEC_ROLES.map((role) => ({
-  value: role.name,
-  label: role.displayName,
-}))
+interface RoleInfo {
+  _id?: string
+  name: string
+  displayName: string
+}
+
+interface RolesResponse {
+  roles: RoleInfo[]
+}
 
 const PASSWORD_HINT =
   'At least 12 characters, with an uppercase letter, a lowercase letter and a number.'
@@ -45,6 +49,7 @@ type ToastState = { type: 'success' | 'error' | 'info' | 'warning'; message: str
 export function UsersTab() {
   const { user: me } = useAuth()
   const [users, setUsers] = useState<UserRow[]>([])
+  const [roles, setRoles] = useState<RoleInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -58,8 +63,12 @@ export function UsersTab() {
     try {
       setLoading(true)
       setError(null)
-      const data = await apiJson<UsersResponse>('/api/users')
-      setUsers(data.users ?? [])
+      const [usersData, rolesData] = await Promise.all([
+        apiJson<UsersResponse>('/api/users'),
+        apiJson<RolesResponse>('/api/roles'),
+      ])
+      setUsers(usersData.users ?? [])
+      setRoles(rolesData.roles ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load users')
     } finally {
@@ -159,6 +168,7 @@ export function UsersTab() {
               {users.map((u) => {
                 const self = isSelf(u)
                 const soleFounder = u.role === 'founder' && activeFounders <= 1
+                const roleLabel = roles.find((r) => r.name === u.role)?.displayName ?? u.role
                 return (
                   <tr key={u._id} className="hover:bg-surface-app/50">
                     <td className="px-3 py-3 sm:px-4">
@@ -200,7 +210,7 @@ export function UsersTab() {
                     <td className="px-3 py-3 sm:px-4">
                       <span className="inline-flex items-center gap-1 rounded-full bg-surface-sunken px-2 py-0.5 text-xs font-medium text-ink-secondary">
                         <IconShieldCheck size={12} />
-                        {roleLabel(u.role) ?? u.role}
+                        {roleLabel}
                       </span>
                     </td>
                     <td className="px-3 py-3 sm:px-4">
@@ -251,6 +261,7 @@ export function UsersTab() {
       <AddUserModal
         isOpen={addOpen}
         onClose={() => setAddOpen(false)}
+        roles={roles}
         onDone={async (message) => {
           setAddOpen(false)
           setToast({ type: 'success', message })
@@ -261,6 +272,7 @@ export function UsersTab() {
 
       <EditUserModal
         user={editing}
+        roles={roles}
         onClose={() => setEditing(null)}
         onDone={async (message) => {
           setEditing(null)
@@ -287,25 +299,35 @@ export function UsersTab() {
 function AddUserModal({
   isOpen,
   onClose,
+  roles,
   onDone,
   onError,
 }: {
   isOpen: boolean
   onClose: () => void
+  roles: RoleInfo[]
   onDone: (message: string) => void | Promise<void>
   onError: (message: string) => void
 }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState(ROLE_OPTIONS[1]?.value ?? 'partner_hasnat')
+  const [role, setRole] = useState('')
   const [partnerId, setPartnerId] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  const nonFounderRoles = roles.filter((r) => r.name !== 'founder')
+
+  useEffect(() => {
+    if (nonFounderRoles.length > 0 && !role) {
+      setRole(nonFounderRoles[0].name)
+    }
+  }, [nonFounderRoles, role])
+
   const reset = () => {
     setName('')
     setEmail('')
-    setRole(ROLE_OPTIONS[1]?.value ?? 'partner_hasnat')
+    setRole(nonFounderRoles[0]?.name ?? '')
     setPartnerId('')
     setPassword('')
   }
@@ -365,7 +387,7 @@ function AddUserModal({
         />
         <Select
           label="Role"
-          options={ROLE_OPTIONS}
+          options={nonFounderRoles.map((r) => ({ value: r.name, label: r.displayName }))}
           value={role}
           onChange={(e) => setRole(e.target.value)}
         />
@@ -392,11 +414,13 @@ function AddUserModal({
 
 function EditUserModal({
   user,
+  roles,
   onClose,
   onDone,
   onError,
 }: {
   user: UserRow | null
+  roles: RoleInfo[]
   onClose: () => void
   onDone: (message: string) => void | Promise<void>
   onError: (message: string) => void
@@ -405,6 +429,8 @@ function EditUserModal({
   const [role, setRole] = useState('')
   const [partnerId, setPartnerId] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  const nonFounderRoles = roles.filter((r) => r.name !== 'founder')
 
   useEffect(() => {
     if (user) {
@@ -456,7 +482,7 @@ function EditUserModal({
         <Input label="Email" value={user?.email ?? ''} disabled />
         <Select
           label="Role"
-          options={ROLE_OPTIONS}
+          options={nonFounderRoles.map((r) => ({ value: r.name, label: r.displayName }))}
           value={role}
           onChange={(e) => setRole(e.target.value)}
           disabled={founder}

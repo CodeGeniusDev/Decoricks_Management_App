@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { ObjectId } from 'mongodb'
 import { getDatabase } from '@/lib/mongodb'
-import { getRoleCollection, isValidObjectId } from '@/lib/models/User'
+import { getRoleCollection, getUserCollection, isValidObjectId } from '@/lib/models/User'
 import { successResponse, validationError, notFoundError, errorResponse } from '@/lib/api-response'
 import { getRequestMeta, handleRouteError } from '@/lib/http'
 import { invalidateRoleCache, requireFounder } from '@/lib/authorization'
@@ -24,6 +24,8 @@ export const dynamic = 'force-dynamic'
  * so the change is in force on the very next request rather than whenever the
  * in-memory cache happens to expire (SPEC §4.3 asks for a cache; the
  * "revocable immediately" requirement needs the invalidation to be explicit).
+ *
+ * Custom roles can be deleted (Founder-only) if no users are assigned to them.
  */
 
 type RouteContext = { params: Promise<{ id: string }> }
@@ -51,6 +53,20 @@ const updatePermissionsSchema = z
 export async function PUT(request: Request, context: RouteContext) {
   try {
     const meta = await getRequestMeta()
+    const { id } = await context.params
+
+    const parsed = updatePermissionsSchema.safeParse(await request.json().catch(() => null))
+    if (!parsed.success) {
+      return validationError('Invalid permissions payload', parsed.error.flatten().fieldErrors)
+    }
+
+    // Check authentication first to avoid database access for unauthenticated requests
+    const auth = await requireFounder({
+      entityId: id,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
+
     const ipKey = meta.ipAddress ? `ip:${meta.ipAddress}` : null
     if (ipKey) {
       const rl = adminRateLimiter.consume(ipKey)
@@ -63,18 +79,6 @@ export async function PUT(request: Request, context: RouteContext) {
         )
       }
     }
-    const { id } = await context.params
-
-    const parsed = updatePermissionsSchema.safeParse(await request.json().catch(() => null))
-    if (!parsed.success) {
-      return validationError('Invalid permissions payload', parsed.error.flatten().fieldErrors)
-    }
-
-    const auth = await requireFounder({
-      entityId: id,
-      ipAddress: meta.ipAddress,
-      userAgent: meta.userAgent,
-    })
 
     if (!isValidObjectId(id)) return notFoundError('Role not found')
 
@@ -121,6 +125,81 @@ export async function PUT(request: Request, context: RouteContext) {
         displayName: existing.displayName,
         permissions: after,
         updatedAt: new Date(),
+      },
+    })
+  } catch (error) {
+    return handleRouteError(error)
+  }
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  try {
+    const meta = await getRequestMeta()
+    const { id } = await context.params
+
+    // Check authentication first to avoid database access for unauthenticated requests
+    const auth = await requireFounder({
+      entityId: id,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
+
+    const ipKey = meta.ipAddress ? `ip:${meta.ipAddress}` : null
+    if (ipKey) {
+      const rl = adminRateLimiter.consume(ipKey)
+      if (!rl.allowed) {
+        const retryAfterSeconds = Math.max(1, Math.ceil(rl.retryAfterMs / 1000))
+        return errorResponse(
+          `Too many requests. Try again in ${retryAfterSeconds} second${retryAfterSeconds === 1 ? '' : 's'}.`,
+          429,
+          'RATE_LIMITED'
+        )
+      }
+    }
+
+    if (!isValidObjectId(id)) return notFoundError('Role not found')
+
+    const db = await getDatabase()
+    const roles = getRoleCollection(db)
+    const users = getUserCollection(db)
+
+    const existing = await roles.findOne({ _id: new ObjectId(id) })
+    if (!existing) return notFoundError('Role not found')
+
+    // Cannot delete the Founder role
+    if (existing.name === 'founder') {
+      return validationError('The Founder role cannot be deleted')
+    }
+
+    // Cannot delete a role that is assigned to users
+    const userCount = await users.countDocuments({ role: existing.name })
+    if (userCount > 0) {
+      return validationError(`Cannot delete role: ${userCount} user(s) are assigned to this role`)
+    }
+
+    await roles.deleteOne({ _id: existing._id })
+
+    invalidateRoleCache()
+
+    await recordAuditEntry(db, {
+      userId: auth.user._id,
+      userEmail: auth.user.email,
+      action: 'delete_role',
+      entityType: 'role',
+      entityId: existing._id,
+      oldValue: existing,
+      details: `Deleted role: ${existing.displayName}`,
+      outcome: 'success',
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    })
+
+    return successResponse({
+      deleted: true,
+      role: {
+        _id: existing._id?.toString(),
+        name: existing.name,
+        displayName: existing.displayName,
       },
     })
   } catch (error) {

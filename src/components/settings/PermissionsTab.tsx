@@ -6,16 +6,20 @@ import {
   LAHORE_STOCK_ROLES,
   MODULE_LABELS,
   PERMISSION_MODULES,
+  PERMISSION_ACTIONS,
   SALES_FULL_EDIT_ROLES,
   SCOPED_LAHORE_STOCK_PERMISSION,
   SCOPED_SALES_FULL_EDIT,
   type PermissionModule,
 } from '@/lib/roles'
-import { apiJson } from '@/lib/api-client'
+import { apiJson, apiPost } from '@/lib/api-client'
+import { ApiError } from '@/lib/api-client'
 import { Button } from '@/components/ui/Button'
 import { Select } from '@/components/ui/Select'
+import { Input } from '@/components/ui/Input'
+import { Modal } from '@/components/ui/Modal'
 import { Toast } from '@/components/ui/Toast'
-import { IconShieldCheck } from '@/components/ui/icons'
+import { IconShieldCheck, IconPlus } from '@/components/ui/icons'
 
 type PermissionSet = Record<string, Record<string, boolean>>
 
@@ -84,6 +88,7 @@ export function PermissionsTab() {
   const [error, setError] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -182,9 +187,15 @@ export function PermissionsTab() {
             options={roles.map((r) => ({ value: r.name, label: r.displayName }))}
           />
         </div>
-        <Button variant="primary" onClick={save} loading={saving} disabled={!dirty || isFounder}>
-          Save permissions
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" onClick={() => setCreateOpen(true)}>
+            <IconPlus size={16} />
+            Create role
+          </Button>
+          <Button variant="primary" onClick={save} loading={saving} disabled={!dirty || isFounder}>
+            Save permissions
+          </Button>
+        </div>
       </div>
 
       {isFounder && (
@@ -273,6 +284,133 @@ export function PermissionsTab() {
           ))}
         </div>
       </div>
+
+      <CreateRoleModal
+        isOpen={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onDone={async (message) => {
+          setCreateOpen(false)
+          setToast({ type: 'success', message })
+          await load()
+        }}
+        onError={(message) => setToast({ type: 'error', message })}
+      />
     </div>
+  )
+}
+
+function CreateRoleModal({
+  isOpen,
+  onClose,
+  onDone,
+  onError,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  onDone: (message: string) => void | Promise<void>
+  onError: (message: string) => void
+}) {
+  const [name, setName] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const reset = () => {
+    setName('')
+    setDisplayName('')
+  }
+
+  const submit = async () => {
+    if (submitting) return
+    setSubmitting(true)
+    try {
+      // Build least-privilege template
+      const permissions: Record<string, Record<string, boolean>> = {}
+
+      // Dashboard (mapped to 'finance' for view access to dashboard widgets)
+      permissions.finance = {
+        view: true,
+        create: false,
+        edit: false,
+        delete: false,
+        approve: false,
+      }
+
+      // Tasks: view only
+      permissions.tasks = { view: true, create: false, edit: false, delete: false }
+
+      // Chat: view and create (can read and send messages)
+      permissions.chat = { view: true, create: true, edit: false, delete: false }
+
+      // All other modules: no access
+      PERMISSION_MODULES.forEach((module) => {
+        if (!permissions[module]) {
+          const actions = PERMISSION_MODULES.includes(module as never)
+            ? PERMISSION_ACTIONS
+            : ['view']
+          permissions[module] = {}
+          actions.forEach((action: string) => {
+            permissions[module][action] = false
+          })
+        }
+      })
+
+      // Scoped permissions: default to false for custom roles
+      permissions[SCOPED_LAHORE_STOCK_PERMISSION] = { create: false }
+      permissions[SCOPED_SALES_FULL_EDIT] = { create: false }
+
+      await apiPost('/api/roles', {
+        name: name.trim(),
+        displayName: displayName.trim(),
+        permissions,
+      })
+      reset()
+      await onDone(`Created role: ${displayName.trim()}`)
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Could not create the role')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Create custom role"
+      description="Creates a new role with least-privilege access (view-only dashboard, tasks, and chat). Permissions can be adjusted after creation."
+      dismissible={!submitting}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={submit}
+            loading={submitting}
+            disabled={!name.trim() || !displayName.trim()}
+          >
+            Create role
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Input
+          label="Role name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. staff"
+          pattern="[a-z0-9_]+"
+          title="Lowercase letters, numbers, and underscores only"
+        />
+        <Input
+          label="Display name"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          placeholder="e.g. Staff"
+        />
+      </div>
+    </Modal>
   )
 }
