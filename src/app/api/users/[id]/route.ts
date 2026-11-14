@@ -4,6 +4,7 @@ import { getDatabase } from '@/lib/mongodb'
 import {
   getSessionCollection,
   getUserCollection,
+  getRoleCollection,
   isValidObjectId,
   userToJSON,
 } from '@/lib/models/User'
@@ -11,7 +12,7 @@ import { successResponse, validationError, errorResponse, notFoundError } from '
 import { getRequestMeta, handleRouteError } from '@/lib/http'
 import { requireFounder } from '@/lib/authorization'
 import { hashPassword, validatePasswordStrength } from '@/lib/auth/password'
-import { ROLE_NAMES } from '@/lib/roles'
+import { ROLE_FOUNDER } from '@/lib/roles'
 import { recordAuditEntry } from '@/lib/audit'
 import { adminRateLimiter } from '@/lib/rate-limit'
 
@@ -31,7 +32,7 @@ type RouteContext = { params: Promise<{ id: string }> }
 const updateUserSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
-    role: z.enum(ROLE_NAMES as [string, ...string[]]).optional(),
+    role: z.string().optional(),
     partnerId: z.string().trim().max(60).nullable().optional(),
     isActive: z.boolean().optional(),
   })
@@ -120,6 +121,18 @@ export async function PATCH(request: Request, context: RouteContext) {
     const found = await loadUser(id)
     if (!found) return notFoundError('User not found')
     const { db, user } = found
+
+    // Validate role if being changed
+    if (changes.role !== undefined) {
+      if (changes.role === ROLE_FOUNDER) {
+        return validationError('Cannot assign the Founder role')
+      }
+      const roles = getRoleCollection(db)
+      const roleExists = await roles.findOne({ name: changes.role })
+      if (!roleExists) {
+        return validationError('Role does not exist')
+      }
+    }
 
     // Guard rails: the app must not be able to lock its last Founder out.
     if (user.role === 'founder') {

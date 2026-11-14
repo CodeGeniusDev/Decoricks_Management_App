@@ -1,11 +1,11 @@
 import { z } from 'zod'
 import { getDatabase } from '@/lib/mongodb'
-import { getUserCollection, userToJSON, type User } from '@/lib/models/User'
+import { getUserCollection, getRoleCollection, userToJSON, type User } from '@/lib/models/User'
 import { successResponse, validationError, errorResponse } from '@/lib/api-response'
 import { getRequestMeta, handleRouteError } from '@/lib/http'
 import { authorize, requireFounder } from '@/lib/authorization'
 import { hashPassword, validatePasswordStrength } from '@/lib/auth/password'
-import { ROLE_NAMES } from '@/lib/roles'
+import { ROLE_FOUNDER } from '@/lib/roles'
 import { recordAuditEntry } from '@/lib/audit'
 import { adminRateLimiter } from '@/lib/rate-limit'
 
@@ -25,7 +25,7 @@ const createUserSchema = z
   .object({
     email: z.string().trim().email('Enter a valid email').max(254),
     name: z.string().trim().min(1, 'Name is required').max(120),
-    role: z.enum(ROLE_NAMES as [string, ...string[]]),
+    role: z.string().min(1, 'Role is required'),
     partnerId: z.string().trim().max(60).optional(),
     // A Founder may set an initial password, but it is always marked as
     // requiring a change so a shared temporary secret cannot become permanent.
@@ -92,7 +92,18 @@ export async function POST(request: Request) {
       return validationError('Password does not meet the security policy', strength.errors)
     }
 
+    // Validate that the role exists and is not "founder"
+    if (parsed.data.role === ROLE_FOUNDER) {
+      return validationError('Cannot assign the Founder role through user creation')
+    }
+
     const db = await getDatabase()
+    const roles = getRoleCollection(db)
+    const roleExists = await roles.findOne({ name: parsed.data.role })
+    if (!roleExists) {
+      return validationError('Role does not exist')
+    }
+
     const users = getUserCollection(db)
     const now = new Date()
 
