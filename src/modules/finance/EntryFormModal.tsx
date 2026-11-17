@@ -111,6 +111,8 @@ export const EntryFormModal = ({
   const needsSingleAccount = SINGLE_ACCOUNT_TYPES.has(type)
   const needsCategory = type === 'income' || type === 'expense'
   const needsPartner = type === 'partner_capital' || type === 'partner_withdrawal'
+  // Optional partner for all transaction types to track who made the entry
+  const showPartnerOption = true
 
   const visibleCategories = categories.filter(
     (c) => c.isActive && (needsCategory ? c.type === type : false)
@@ -154,7 +156,8 @@ export const EntryFormModal = ({
 
     if (needsSingleAccount) base.accountId = accountId
     if (needsCategory) base.category = category
-    if (needsPartner && partnerId) {
+    // Partner info for all transaction types to track who made the entry
+    if (partnerId) {
       base.partnerId = partnerId
       const partner = partners.find((p) => p._id === partnerId)
       if (partner) base.partnerName = partner.name
@@ -174,7 +177,6 @@ export const EntryFormModal = ({
     note,
     needsSingleAccount,
     needsCategory,
-    needsPartner,
     partners,
   ])
 
@@ -394,6 +396,19 @@ export const EntryFormModal = ({
                   ]}
                   hint="Whose money this is — it shows on the entry and in the ledger filters."
                   error={errors.partnerId}
+                />
+              )}
+              {/* Optional partner field for all transaction types to track who made the entry */}
+              {!needsPartner && (
+                <Select
+                  label="Partner (optional)"
+                  value={partnerId}
+                  onChange={(e) => setPartnerId(e.target.value)}
+                  options={[
+                    { value: '', label: 'None' },
+                    ...partners.map((p) => ({ value: p._id, label: p.name })),
+                  ]}
+                  hint="Track which partner made this transaction (optional)"
                 />
               )}
               <Select

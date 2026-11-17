@@ -173,12 +173,13 @@ export function computeBudgetActuals(
     if (!isWithin(date, range)) continue
 
     const effect = transactionEffect(entry)
-    spentByCategory.set(entry.category, (spentByCategory.get(entry.category) ?? 0) + effect.expense)
-    if (budget.categories.some((c) => c.category === entry.category)) {
+    const category = entry.category
+    spentByCategory.set(category, (spentByCategory.get(category) ?? 0) + effect.expense)
+    if (budget.categories.some((c) => c.category.toLowerCase() === category.toLowerCase())) {
       sourceEntries.push({
         _id: entry._id ?? '',
         type: entry.type,
-        category: entry.category,
+        category,
         date: date.toISOString(),
         amount: effect.expense,
         note: (entry as { note?: string }).note,
@@ -187,7 +188,7 @@ export function computeBudgetActuals(
   }
 
   const categories: BudgetCategoryActual[] = budget.categories.map((allocation) => {
-    const actual = spentByCategory.get(allocation.category) ?? 0
+    const actual = spentByCategory.get(allocation.category.toLowerCase()) ?? 0
     const percentUsed = percentOf(allocation.budgeted, actual)
     return {
       category: allocation.category,

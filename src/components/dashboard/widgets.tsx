@@ -151,52 +151,40 @@ export const ProfitWidget = ({ block, range }: WidgetProps & { block: ProfitBloc
         Sales &amp; Profit
       </Title>
 
-      <div className="mb-1">
-        <p className="text-2xl font-semibold tabular-nums text-decoricks-dark">
-          {fmt(block.revenue)}
+      <div className="mb-3">
+        <p className="text-3xl font-semibold tabular-nums text-decoricks-dark">
+          {fmt(block.netProfit)}
         </p>
-        <p className="text-xs text-ink-muted">
-          Total sales · {block.revenueCount} income {block.revenueCount === 1 ? 'entry' : 'entries'}
+        <p className="text-sm text-ink-muted">
+          Net profit · {block.revenueCount} sales
         </p>
       </div>
 
-      <div className="divide-y divide-line-subtle">
-        <Row label="Net sales" value={fmt(block.netSales)} />
-        <Row
-          label="Refunds &amp; returns"
-          value={fmt(block.refunds)}
-          tone={block.refunds.paisa > 0 ? 'negative' : 'default'}
-        />
-        <Row
-          label="COGS"
-          value={fmt(block.cogs)}
-          hint={block.cogsProvisional ? 'provisional — no movement data yet' : undefined}
-        />
-        <Row
-          label="Gross profit"
-          value={fmt(block.grossProfit)}
-          tone={sign(block.grossProfit.paisa)}
-        />
-        <Row label="Operating expenses" value={fmt(block.operatingExpenses)} tone="negative" />
-        <Row label="Net profit" value={fmt(block.netProfit)} tone={sign(net)} />
-        <Row
-          label="Net profit / day"
-          value={fmt(block.netProfitPerDay)}
-          tone={sign(block.netProfitPerDay.paisa)}
-        />
+      <div className="mb-3 grid grid-cols-2 gap-3">
+        <div className="rounded-md bg-surface-sunken px-3 py-2">
+          <p className="text-2xs text-ink-muted">Revenue</p>
+          <p className="text-base font-semibold tabular-nums text-status-success">
+            {fmt(block.revenue)}
+          </p>
+        </div>
+        <div className="rounded-md bg-surface-sunken px-3 py-2">
+          <p className="text-2xs text-ink-muted">Expenses</p>
+          <p className="text-base font-semibold tabular-nums text-status-danger">
+            {fmt(block.operatingExpenses)}
+          </p>
+        </div>
       </div>
 
       <ShowCalculation
-        formula="Net Profit = Gross Profit − Operating Expenses, where Gross Profit = Net Sales − COGS (SPEC §5.4–§5.5)"
+        formula="Net Profit = Gross Profit − Operating Expenses"
         rows={[
-          { label: 'Revenue (Σ income)', value: fmt(block.revenue) },
-          { label: '− Refunds (refunds_return_costs)', value: fmt(block.refunds) },
+          { label: 'Revenue', value: fmt(block.revenue) },
+          { label: '− Refunds', value: fmt(block.refunds) },
           { label: '= Net sales', value: fmt(block.netSales) },
-          { label: '− COGS (periodCogsInput)', value: fmt(block.cogs) },
+          { label: '− COGS', value: fmt(block.cogs) },
           { label: '= Gross profit', value: fmt(block.grossProfit) },
           { label: '− Operating expenses', value: fmt(block.operatingExpenses) },
           { label: '= Net profit', value: fmt(block.netProfit), strong: true },
-          { label: 'COGS source', value: block.cogsSource, wrap: true },
         ]}
         gate="finance.view + sales.view"
       />
@@ -230,45 +218,36 @@ export const ExpensesWidget = ({ block, range }: WidgetProps & { block: ExpenseB
         Expenses
       </Title>
 
-      <div className="mb-1">
-        <p className="text-2xl font-semibold tabular-nums text-status-danger">{fmt(block.total)}</p>
-        <p className="text-xs text-ink-muted">Total operating expenses</p>
+      <div className="mb-3">
+        <p className="text-3xl font-semibold tabular-nums text-status-danger">{fmt(block.total)}</p>
+        <p className="text-sm text-ink-muted">Total operating expenses</p>
       </div>
 
-      <div className="mb-2 rounded-md bg-surface-sunken px-3 py-2">
-        <Row
-          label="Advertising spend"
-          value={fmt(block.advertising)}
-          hint={block.advertisingCategories.join(', ') || 'no categories configured'}
-        />
+      <div className="mb-3 rounded-md bg-surface-sunken px-3 py-2">
+        <p className="text-2xs text-ink-muted">Advertising spend</p>
+        <p className="text-base font-semibold tabular-nums text-decoricks-dark">
+          {fmt(block.advertising)}
+        </p>
       </div>
 
-      {top.length > 0 ? (
-        <div className="divide-y divide-line-subtle">
-          {top.map((c) => (
+      {top.length > 0 && (
+        <div className="mb-3 divide-y divide-line-subtle">
+          {top.slice(0, 3).map((c) => (
             <Row key={c.category} label={c.category} value={fmt(c.amount)} tone="negative" />
           ))}
-          {block.byCategory.length > top.length && (
+          {block.byCategory.length > 3 && (
             <p className="py-1.5 text-2xs text-ink-muted">
-              + {block.byCategory.length - top.length} more categories
+              + {block.byCategory.length - 3} more categories
             </p>
           )}
         </div>
-      ) : (
-        <p className="text-xs text-ink-muted">No expense categories in this period.</p>
       )}
 
       <ShowCalculation
-        formula="Expenses = Σ expense entries whose category ∉ {product_purchasing, refunds_return_costs} (SPEC §5.5)"
+        formula="Expenses = Σ expense entries (excluding COGS categories)"
         rows={[
           { label: 'Total operating expenses', value: fmt(block.total), strong: true },
           { label: 'of which advertising', value: fmt(block.advertising) },
-          {
-            label: 'Advertising categories',
-            value: block.advertisingCategories.join(', ') || '—',
-            wrap: true,
-          },
-          ...top.map((c) => ({ label: c.category, value: fmt(c.amount) })),
         ]}
         gate="finance.view"
       />
@@ -310,7 +289,7 @@ export const CashWidget = ({
         cannot hold one line. They stack below `sm` and keep the original pair from
         `sm` up. The Team Tasks tiles hold small integers and stay two-up.
       */}
-      <div className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <div className="rounded-md bg-surface-sunken px-3 py-2">
           <p className="text-2xs text-ink-muted">Cash in</p>
           <p className="text-base font-semibold tabular-nums text-status-success">
@@ -325,50 +304,22 @@ export const CashWidget = ({
         </div>
       </div>
 
-      <div className="mb-2 divide-y divide-line-subtle">
-        <Row
-          label="Net cash flow (period)"
-          value={fmt(block.netCashFlow)}
-          tone={sign(block.netCashFlow.paisa)}
-        />
+      <div className="mb-3">
+        <p className="text-sm font-medium text-ink-secondary">
+          Total balance
+        </p>
+        <p className="text-2xl font-semibold tabular-nums text-decoricks-dark">
+          {fmt(block.totalBalanceEnd)}
+        </p>
       </div>
 
-      <p className="mb-1 text-xs font-medium text-ink-secondary">
-        Balances by account{' '}
-        <span className="font-normal text-ink-muted">
-          (as of {new Date(generatedAt).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' })})
-        </span>
-      </p>
-      {block.accounts.length > 0 ? (
-        <div className="divide-y divide-line-subtle">
-          {block.accounts.map((a) => (
-            <Row
-              key={a.accountId}
-              label={
-                <span>
-                  {a.name} <span className="text-2xs text-ink-muted">· {a.kind}</span>
-                </span>
-              }
-              value={fmt(a.balance)}
-              tone={sign(a.balance.paisa)}
-            />
-          ))}
-          <Row label="Total balance (end of period)" value={fmt(block.totalBalanceEnd)} strong />
-        </div>
-      ) : (
-        <EmptyState title="No accounts" description="Create finance accounts to see balances." />
-      )}
-
       <ShowCalculation
-        formula="totalBalanceEnd = totalBalanceStart + cashIn − cashOut; transfers are counted but cash-neutral (§B.2)"
+        formula="Total Balance = Start Balance + Cash In − Cash Out"
         rows={[
-          { label: 'Revenue receipts in', value: fmt(block.revenueIn) },
-          { label: 'Capital in', value: fmt(block.capitalIn) },
-          { label: 'Operating out', value: fmt(block.operatingOut) },
-          { label: 'Withdrawals out', value: fmt(block.withdrawalsOut) },
-          { label: 'Transfers (neutral)', value: `${block.transferCount}` },
-          { label: 'Balance at period start', value: fmt(block.totalBalanceStart) },
-          { label: 'Balance at period end', value: fmt(block.totalBalanceEnd), strong: true },
+          { label: 'Balance at start', value: fmt(block.totalBalanceStart) },
+          { label: '+ Cash in', value: fmt(block.cashIn) },
+          { label: '− Cash out', value: fmt(block.cashOut) },
+          { label: '= Total balance', value: fmt(block.totalBalanceEnd), strong: true },
         ]}
         gate="finance.view"
       />

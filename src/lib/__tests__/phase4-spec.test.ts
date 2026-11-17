@@ -243,6 +243,22 @@ describe('Budget actuals — ledger-derived with reversals, boundaries and thres
     const reversal = actuals.sourceEntries.find((e) => e.amount < 0)
     expect(reversal!.amount).toBe(-PAISA(250))
   })
+
+  it('matches categories case-insensitively to fix Meta Ads budget bug', () => {
+    // Budget stores lowercase slug, transaction may have different case
+    const budgetWithMixedCase = {
+      ...budget,
+      categories: [{ category: 'Meta_Ads', budgeted: PAISA(5000) }],
+    }
+    const transactionWithMixedCase = entry('expense', PAISA(1960), {
+      category: 'meta_ads',
+      date: '2026-09-10T08:00:00.000Z',
+    })
+    const actuals = computeBudgetActuals(budgetWithMixedCase, [transactionWithMixedCase])
+    const ads = actuals.categories.find((c) => c.category === 'Meta_Ads')
+    expect(ads?.actual).toBe(PAISA(1960))
+    expect(ads?.percentUsed).toBe(39)
+  })
 })
 
 describe('Budget period kinds', () => {
