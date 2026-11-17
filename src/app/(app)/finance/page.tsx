@@ -251,6 +251,9 @@ export default function FinanceOverviewPage() {
         title="Finance"
         actions={
           <>
+            <Button variant="outline" onClick={() => router.push('/finance/partner-investment')}>
+              Partner Investment
+            </Button>
             <Button variant="outline" onClick={() => router.push('/finance/accounts')}>
               Accounts
             </Button>
